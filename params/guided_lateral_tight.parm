@@ -1,0 +1,24 @@
+# 更紧的**横向**环：只把两个位置/速度增益从 2.0 抬到 3.0，其余与 guided_limits_flight.parm 相同。
+#
+# 为什么是这两个数（第 50 轮）：
+#   * W6 量的 |cmd−truth| 里，**横向**分量是决定项：0.50–0.63 m，判据 0.60（§24.4、
+#     scripts/w6_vs_altitude.py）。竖直分量已经修好（估计基准偏置 +0.10 m，§25.1）。
+#   * W4 的接触也是横向的：接触点是**跟踪偏进去 0.80 m**（`closest_command.py` 在 qi-01 上量到
+#     指令净空 +0.681 m 而真值 −0.117 m），不是规划贴太近。
+#   所以这两行判据共享同一个物理量：横向跟踪误差。抬增益是唯一直接动它的旋钮，
+#   而且用户明确授权过调固件参数（"如果pid参数不够，你需要调整固件的参数"）。
+#
+# 名字有效性已验证：`scripts/check_param_names.py params/guided_lateral_tight.parm` -> 全部命中
+# （ArduPilot 4.7 的 PSC_NE_POS_P / PSC_NE_VEL_P 存在；旧的 PSC_POSXY_P/PSC_VELXY_P 是 4.4 之前的名字）。
+#
+# 风险：过高会振荡，反而把 W6 和净空都弄差。所以这是一次**可判定的**实验：
+# 对照是验收档同配置的四次飞行（pw-01 W6 0.58 净空 +0.204、pi-01 0.59/+0.017、
+# qc-01 0.64/+0.119、rv-01 0.70/+0.034）。若 W6 没有变好、或净空变差，就退回 2.0。
+WP_SPD 5.5
+WP_ACC 8.0
+PSC_NE_JERK 100.0
+ATC_ANGLE_MAX 40.0
+PSC_NE_POS_P 3.0
+PSC_NE_VEL_P 3.0
+ATC_ANG_RLL_P 6.0
+ATC_ANG_PIT_P 6.0

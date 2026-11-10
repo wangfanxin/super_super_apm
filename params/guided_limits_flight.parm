@@ -1,0 +1,37 @@
+# GUIDED LIMITS FOR THE GRADED FLIGHT: fast enough to cruise above 4 m/s, organised enough to hold
+# the route.  This is `guided_limits_fast.parm` (the arm that repository already flew and measured)
+# with ONE number changed.
+#
+# WHY IT IS NEEDED.  `phase_a_mission_fast.parm` sets WP_SPD 2.0, and mode_guided.cpp takes the
+# shaper's horizontal SPEED limit from WP_SPD -- so >= 4 m/s was impossible no matter what the plan
+# asked.  `guided_limits_fast.parm` raises it to 4.0, which caps the aircraft AT the requirement:
+# MEASURED missionA-pb-03 (the first sortie that flew the whole 13-waypoint tour, on the gentle
+# 3.0 m/s plan) reached p95 3.00 / max 3.48 m/s -- i.e. exactly the plan's own ceiling, with the FCU
+# not limiting.  To measure "cruise >= 4 m/s" with margin, the plan and the FCU both need headroom
+# above 4.
+#
+#   WP_SPD        4.0 -> 5.5    the shaper's horizontal speed limit (5.5 leaves margin over 4)
+#   everything else is `guided_limits_fast.parm` unchanged, because those four bind together:
+#   WP_ACC 8.0 (under the 8.2 m/s2 a 40 deg tilt allows), PSC_NE_JERK 100 (reach the limit in 30 ms
+#   instead of 100), ATC_ANGLE_MAX 40 (the geometric ceiling g*tan(40)), PSC_NE_POS_P 2.0.
+#
+# MEASURED ON THE PAD over MAVLink for the parent file (docs in the harness): control reads
+# WP_ACC 2.5 / PSC_NE_JERK 5 / ATC_ANGLE_MAX 30 / WP_SPD 2.0, and with the file appended last it
+# reads 8.0 / 100 / 40 / 4.0.  run-mission.sh appends EXTRA_PARM LAST, and ArduPilot takes the last
+# value, so this file's WP_SPD wins over both the mission parm and the parent.
+#
+# WP_SPD IS BACK TO 5.5.  It was raised to 7.5 together with max_acc 6.5 -> 9.0 and
+# max_vel 7 -> 7.5 to chase the mean speed, and that is the configuration that COLLIDED:
+# missionA-pj-01, minimum truth-to-pillar-surface distance -0.117 m at (-6.02, -7.22), i.e. 1.5 m
+# from a corner.  Raising the ceiling only moved the PEAK speed (4.43 -> 6.44 m/s) and left the mean
+# at 2.45, because the mean was set by the stop at every waypoint, not by the ceiling.  The ceiling
+# is therefore back where it measured CLEAR (ph-01 +0.118 m, pi-01 +0.017 m), and the continuity
+# comes from the plan side instead (super_planner/hot_start_en, see scripts/patch_super_hot_start.py).
+WP_SPD 5.5
+WP_ACC 8.0
+PSC_NE_JERK 100.0
+ATC_ANGLE_MAX 40.0
+PSC_NE_POS_P 2.0
+PSC_NE_VEL_P 2.0
+ATC_ANG_RLL_P 6.0
+ATC_ANG_PIT_P 6.0

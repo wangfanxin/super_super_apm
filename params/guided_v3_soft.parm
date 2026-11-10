@@ -1,0 +1,26 @@
+# 3 m/s 档的飞控参数（第 87 轮）：**只把位置环/速度环的 P 放回 ArduPilot 默认**，其余与
+# `params/guided_limits_fast.parm` 完全一样。
+#
+# 为什么（这一条是被实测数据逼出来的，不是猜的）
+# ------------------------------------------------
+# 第 87 轮把 `traj_opt.boundary.max_vel` 提到 3.0 m/s 后，16 趟全部失败。把失败的趟和飞完的 2 m/s 趟
+# 摆在一起，唯一稳定的差别是**真值实际飞多快**：
+#
+#     mx8-01-01（2.0 m/s，飞完三圈）  W2: >4 m/s 的时长不够 ⇒ p95 < 4 m/s
+#     v3pv-02-01（3.0 m/s，最远一趟） W2: p50 1.05  p90 4.22  p95 **5.23**  max 14.35 m/s
+#
+# 也就是说：参考 3.0 m/s，飞机实际跑到 **4–5 m/s**（p95），是参考的 1.7 倍。`PSC_NE_POS_P 3.0 /
+# PSC_NE_VEL_P 3.0` 是第 50 轮为了"横向更紧"抬上去的（ArduPilot 4.7 默认 `PSC_POSXY_P 1.0`、
+# `PSC_VELXY_P 2.0`），第 78 轮就发现"单独抬它无效"，但一直留在文件里。1.7 倍超速把 LIO/EKF 推到
+# 了它的跟踪极限之外（§69.6 的"模型与估计分家"），不是规划层的问题。
+#
+# 所以这一档把这两个增益**放回默认**，其余一个不动（`WP_SPD 6.5` 仍远高于 3 m/s，不会变成限速器）。
+# 名字有效：`python3 scripts/check_param_names.py params/guided_v3_soft.parm`（ArduPilot 4.7，全命中）。
+WP_SPD 6.5
+WP_ACC 10.0
+PSC_NE_JERK 150.0
+ATC_ANGLE_MAX 45.0
+PSC_NE_POS_P 1.0
+PSC_NE_VEL_P 2.0
+ATC_ANG_RLL_P 6.0
+ATC_ANG_PIT_P 6.0

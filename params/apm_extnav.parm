@@ -1,0 +1,53 @@
+# ArduPilot 真机配置：把 EKF 的位置/速度/航向源切成"外部导航"（LIO）。
+#
+# 为什么需要
+# ----------
+# SUPER 的规划坐标来自 LIO。飞行器必须让 EKF 认同一套坐标：
+# 位置/速度来自 LIO 的 ODOMETRY/VISION_POSITION_ESTIMATE（本文用 MAVLink 视觉消息），
+# 高度可以走气压计，航向也可以走外部。SITL 阶段用的是仿真 GPS，
+# 见 apm_sitl.parm（那份在 SITL 里最后合并、会覆盖本文件）。
+#
+# ★ 注意：本文件不能有"行尾注释" ★
+#   实测 EK3_SRC1_POSXY 写成 `6   # 6 = ExternalNav` 时整行解析失败，
+#   参数停在旧值 3（GPS）；没写行尾注释的 EK3_SRC1_VELXY=6 正常生效。
+#   所以下面所有注释都单独占行。
+#
+# ★ 名字必须是固件里真实存在的 ★
+#   本版固件（ARMING_CHECK replaced with ARMING_SKIPCHK，PR #31568）里
+#   `ARMING_CHECK` 与 `GPS_TYPE` **不存在**，写了也只是 PARAM_ERROR 静默丢弃。
+#   正确名字：ARMING_SKIPCHK（位掩码，语义相反）、GPS1_TYPE。
+
+# --- EKF 类型与源 ---
+AHRS_EKF_TYPE 3
+EK3_ENABLE 1
+EK3_SRC1_POSXY 6
+EK3_SRC1_VELXY 6
+# ★ 第 88 轮补 9：高度的源从 Baro 改成 ExternalNav（用户口述"高度要用 lio"）★
+#   以前是 `EK3_SRC1_POSZ 1`（Baro）：水平/速度/航向都吃外部导航，**唯独高度吃气压计**。
+#   后果实测：W3 的 z 偏置恒定 −0.10 m（气压计基准）、长航时高度自己漂（`kwB-01-01`
+#   在 107 s 触发 6.02 m 的高度门）、而 A1 改 VISO 的位/速 sigma 对 z 毫无作用（它没碰这条）。
+#   ★ 注释必须单独占行 ★：这个文件第 11-12 行记着，写成 `EK3_SRC1_POSZ 6   # ...` 会让整行
+#   解析失败、参数停在旧值（以前 `EK3_SRC1_POSXY` 就这么被静默丢过一次）。
+#   6 = ExternalNav；z 的噪声地板是 VISO_POS_M_NSE（ekf_trust_lio_flight.parm 里 0.10）。
+EK3_SRC1_POSZ 6
+# 竖直速度同理：默认 `EK3_SRC1_VELZ 3`（GPS）在这架"机上没有 GPS"的飞机上等于没有源。
+EK3_SRC1_VELZ 6
+EK3_SRC1_YAW 6
+EK3_SRC_OPTIONS 0
+
+# --- 外部导航输入的噪声 ---
+# 旧注释说"4.7 已经删掉 VISO_*_NSE"，**是错的**：2026-11-07 直接问过这台固件
+# （build/sitl/bin/arducopter，按名字请求）：VISO_POS_M_NSE=0.20 / VISO_VEL_M_NSE=0.10 /
+# VISO_YAW_M_NSE=0.20 都在，就是它们的默认值。而 EK3_*_M_NSE 在 EK3_SRC1_* = 6（ExternalNav）
+# 下是**不读**的（那是 GPS 源的噪声），真正兜住零协方差消息的是 VISO_*。三个值在
+# ekf_trust_lio_flight.parm 里按本工程的实测设。
+VISO_TYPE 1
+EK3_POSNE_M_NSE 0.3
+EK3_VELNE_M_NSE 0.2
+EK3_YAW_M_NSE 0.3
+
+# --- 机上没有 GPS ---
+GPS1_TYPE 0
+
+# --- 解锁检查：保持开启（真机不允许跳过）---
+ARMING_SKIPCHK 0

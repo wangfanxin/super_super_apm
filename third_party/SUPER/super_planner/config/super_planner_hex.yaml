@@ -1,0 +1,320 @@
+# ★ 这是 SUPER（规划器）的配置。文件名 `super_planner_hex` = 规划器 + 六边形任务；
+#   它**不是** Super-LIO（SLAM）的配置。第 85 轮从旧名 `super_lio_v2_08.yaml` 改过来，
+#   因为旧名把两个包混在一起（用户指出：hkusuper 是规划器，superlio 是 slam）。★
+#   谁读它：`src/whtf/ros/planner_source_super.py` 起
+#   `ros2 run super_planner fsm_node -p config_name:=super_planner_hex.yaml`（SUPER 的
+#   `Config(ROOT_DIR+"config/"+name)` 加载；装到 super_planner/config/ 下）。
+#   里面全部是 planner 的参数：`super_planner.*`（FSM / horizon / receding / goal_pva）、
+#   `rog_map.*`（地图与膨胀）、`traj_opt.*`（MINCO 的速度/加速度/jerk/角速度/推力边界）。
+#   **没有一个 Super-LIO 的参数。**
+#   Super-LIO（SLAM）的配置是另一个文件：`lio_avoid/lio/config/livox_360.yaml`，由
+#   `ros2 run super_lio super_lio_node --params-file ...` 读取（雷达/IMU/外参）。
+#   文件名里的 "super_lio" 是历史命名（第 79 轮这一档是给"SUPER + Super-LIO 一起"调的第一份配置），
+#   第 85 轮用户指出过这一点，留此注，避免把两个包搞混。
+#
+# SUPER 的规划配置 —— 为 15 m 方形 x 3 圈的密集森林改的。
+# 基线是 SUPER 自带的 static_dense.yaml（森林/窄走廊那一档），改动都标了 [改]。
+# 用法：拷到 super_planner/config/ 下，launch 时 config_name:=forest_15m.yaml
+
+fsm:
+  click_goal_en: true
+  click_goal_topic: "/planning/click_goal"     # waypoint_mission 的 goal_pub_topic
+  # ★ 注意：click_height 会**覆盖** goal 的 z ★
+  #   实测：航点文件给 z=2.0，日志里 FSM 收到的是 1.525(=click_height+微小偏移)，
+  #   于是 waypoint_mission 侧量到的"到当前航点距离"恒为 |2.0-1.525|=0.476，
+  #   推进判据被这个高度差污染。这里必须与航点文件的 z 一致。
+  click_height: -10.0
+  click_yaw_en: true
+  replan_rate: 10.0
+  cmd_topic: "/planning/pos_cmd"               # PositionCommand 出口
+  mpc_cmd_topic: "/planning_cmd/poly_traj"
+  timer_en: true
+
+super_planner:
+  backup_traj_en: false   # 两轨迹：任意时刻可刹停
+  detailed_log_en: false
+  visualization_en: false
+  use_fov_cut: false
+  print_log: false   # [改] 调参期打开，验收时关掉
+  visual_process: false
+  frontend_in_known_free: false
+  goal_yaw_en: false            # [改] 航点不给 yaw，让它按速度方向
+  # ★ goal_vel_en: false ★ —— 开过一次，实测更差，退回 ★
+  #   上游开关（super_planner.cpp:727-729）：目标在 planning_horizon/2 以外时，把轨迹终点的速度设成
+  #   (goal - robot.p).normalized() * max_vel/2，即"终点还带着速度"，本来正是为 horizon 截断准备的。
+  #   但在这个闭环里它把参考**推到了飞机前面**：missionA-pn-01/pn-02 都在第 7 个航点后
+  #   冲出 x=+9.0 触发 geofence（指令盒 x 也到了 9.07，说明是规划自己往外走的）；
+  #   missionA-pn-03 飞完 13/13，但 W4 变成 **-0.097 m 接触**、W6 跟踪 p50 2.29 m，均值 2.43 m/s
+  #   也没比不开的 pm-01（2.48 m/s）更快。三飞三坏，不是偶发。
+  #   要解决"轨迹在 12 m 处以 0 速度结束"，正确做法是让**一条轨迹盖住整条腿**（planning_horizon），
+  #   不是让终点带速度。
+  goal_vel_en: false
+  # ★ hot_start_en：PlanFromRest 用**实测速度**起规划，不是 0 ★
+  #   上游的空档，不是换算法：一条轨迹走完时 fsm_ros2.hpp:250 的 getPoseFromTraj() 把状态机推到
+  #   GENERATE_TRAJ（除非已在目标 0.1 m 内），GENERATE_TRAJ 走 PlanFromRest，
+  #   而 super_planner.cpp:409 把起始速度清零 —— 于是"到达航点"必然先刹到 0 再重新加速。
+  #   实测 missionA-pg-01：80 s 里 29 次完全停住、20% 时间低于 0.5 m/s、p50 只 1.15 m/s；
+  #   角点处还连续 212 次 PlanFromRest 失败（目标和起点只差 0.3 m 的 rest2rest 是退化问题），
+  #   失败期间规划盒没有参考、发 hold，飞机就悬停。
+  #   SFC / A* / MINCO / 终点仍要停 —— 只补起始速度。补丁：scripts/patch_super_hot_start.py
+  hot_start_en: true
+  # ★ goal_pva_en：goal 带终点速度（patch_goal_pva.py）★
+  #   true 时轨迹的 pos_fina_state.col(1/2) 来自 goal 的 v/a，而不是强制静止 ——
+  #   于是'角点作为 goal'可以不被刹停。
+  #   ★ 第 81 轮打开（用户 SPEC S1：每个航点的 PVA 目标 = 精确位置 + 4.0 m/s、方向指向下一航点）★
+  #   不开这个开关，SUPER 的 super_planner.cpp:764 会把终点速度强制清零，v=4 m/s 的 goal 会被静默丢掉。
+  #   对普通（非 PVA）goal 没有影响：那时 goal_v 本来就是 0。
+  goal_pva_en: true
+  corridor_bound_dis: 0.8       # 森林档：走廊贴得紧
+  corridor_line_max_length: 1.0
+  safe_corridor_line_max_length: 6.0
+  iris_iter_num: 2
+  obs_skip_num: 2
+  # ★ replan_forward_dt：每条新轨迹的起点比"现在"提前多少秒（**轨迹时间**的前视量）★
+  #   ★ 0.2 → 0.1（第 88 轮补 6，用户批准的方向 5.3）★
+  #     动机是实测出来的系统滞后：`why_reversal.py` 在 kv1-02-01 上量到沿航迹误差
+  #     p50 = **−0.13 m**（飞机**永远落后**参考），而这个偏差的地板正是"新轨迹从 0.2 s 之后
+  #     的那个点起步" ⇒ 0.2 s × 1.2-1.5 m/s = 0.24-0.30 m 的需求，位置环只能靠"追"来消化它。
+  #     这正是"每次减速之后猛追到 2.6 m/s、再冲过头"的稳态燃料（见 docs/INTEGRATION.md §76.6、
+  #     以及本轮 §77 的测量）。0.1 s 把它砍掉一半，且仍然**大于**一个重规划周期（100 ms）以外的
+  #     任何一个可观测延迟，所以不会让新轨迹的起点落在飞机身后。
+  #   ★★ 它**不再是**超时闸（patch 10，第 89 轮）★★
+  #     上游把同一个数当两个用：`replan_state_TT = start_TT + replan_forward_dt`（轨迹时间前视）
+  #     和 `if (replan_dt > replan_forward_dt*0.9) return FAILED`（**墙钟**预算）。0.1 s 于是
+  #     只给规划器 0.09 s 思考，而本机实测单拍要 0.108–0.135 s ⇒ 每一拍都在丢**已经算完且合法**
+  #     的轨迹。实测 missionA-kwC-01-01：`Replan over time` 140 次、`PlanFromRest failed` 149 次、
+  #     156 s 里 22 次停到 0.1 m/s 以下、一条腿中间**死停 5.5 s**（scripts/legspeed.py、leg_events.py）。
+  #     墙钟预算现在是独立的 `replan_time_limit`（0.35 s）；`replan_forward_dt` 只保留前视含义。
+  replan_forward_dt: 0.1
+  # ★ replan_time_limit：单拍重规划的**墙钟**预算（秒），patch 10 = WHTF-REPLAN-TIME-LIMIT ★
+  #   超过它才判定失败（真·算不出来）；只是"稍慢"的计划照用 —— 10 Hz 下补发的计划仍然可用，
+  #   而且 patch 9 让已提交的轨迹在优化期间继续被发布，所以飞机不会因为规划慢了而停。
+  #   验证口径：新的一趟里 `grep -c "Replan over time" traj.log` 必须是 0，
+  #             且 `grep -c "PlanFromRest failed" traj.log` 应远小于 10（几何性失败另计）。
+  replan_time_limit: 0.35
+  # planning_horizon 与 astar.map_voxel_num 一起决定"一条轨迹能覆盖多远"：
+  # 实际取 min(horizon, A* 网格半径)。
+  # ★ 16.0 而不是 12.0：12 < 15 m 的一条腿，于是 A* 只铺到 12 m、轨迹就在 12 m 处以 0 速度结束
+  #   （终点速度恒为 0，见 super_planner.cpp:725-733），飞机每 12 m 被要求停一次 ——
+  #   实测 missionA-pm-01：75 s 里 28 次 traj_finish，每腿峰值 5.5~6.2 m/s 但均值只 2.89。
+  #   16 让一条轨迹盖住整条腿，于是轨迹只在**角点**结束，而角点在 1.0 m 处就交棒了。
+  #   旧注释说"16/22 让角点规划失败"，那是 horizon 16 配 A* 22 格的组合；网格同时放大到 480 后
+  #   它本来就是被实测过 12/12、净空最好的那一档（见 astar 段）。
+  planning_horizon: 16.0
+  sensing_horizon: -1
+  receding_dis: 1.0
+  robot_r: 0.10     # 机体半径（第 81 轮用户指定 0.2 m；第 82 轮实测见 docs/INTEGRATION.md §57.7）
+                    #   实测依据：`scripts/corridor_feasibility.py` 用 c10 趟 3814 条真实失败种子线
+                    #   逐条量净空（p50 0.178 m）——robot_r 0.2 时 98.6 % 的种子余量为负，0.15 时只有 0.5 %。
+  yaw_dot_max: 3.0
+  # Yaw mode: 1 heading to velocity, 2 heading to goal
+  # 实测 mode=1 在 15 m 方形的角点会触发 "Yaw rate too large, 6–10 rad/s"
+  # （速度方向在拐角突变），故改 2：朝当前目标，方向变化慢得多。
+  yaw_mode: 2
+  mpc_horizon: 15
+
+traj_opt:
+  switch:
+    save_log_en: false
+    print_optimizer_log: false
+
+  boundary:
+    # ★ 速度/加速度/约束是一组，必须**一起**动，而且要留在机体与优化器的可行域里 ★
+    #   实测过的三组：
+    #     max_vel 6, max_acc 15, omg 2.5, thr 6/17  → 12/12 命中，参考峰值 5.14，真实 p90 3.9
+    #                                                  （但 max_acc=15 超过机体能力 g·tan(30°)=5.66）
+    #     max_vel 7, max_acc 5, omg 2.5, thr 6/17   → 12/12 命中，参考峰值 5.30，真实 p90 3.67，净空 +0.19
+    #     max_vel 8, max_acc 6.5, omg 4, thr 4/18   → 规划器在角点反复
+    #                                                  `Opt failed, Omg or thr or Pos violation`
+    #                                                  → PlanFromRest failed → 飞机停在第 1/2 个角点，只中 3/12
+    #   结论：**先保证 12/12 与净空，再谈速度**。速度的余量交给控制器与 switch_dis，
+    #   不要去逼优化器的可行性约束。
+    max_vel: 1.35     # ★★★ 第 20 轮（用户"按A走"）：1.5 → 1.35 ★★★
+                      #   为什么动了一个第 88 轮冻结的值：连续 4 轮、18 趟的速度前沿实测
+                      #   （docs/INTEGRATION.md §106/§107/§110/§109.1）显示
+                      #       W6 p90 ≈ 0.25·v − 0.03   （1.5→0.352，1.35→0.298，1.0→0.224）
+                      #       W2 p90 ≈ 1.20·v − 0.19   （1.5→1.64，  1.35→1.41，  1.0→1.04）
+                      #   1.35 是唯一同时满足"W2 过 1.40"和"W4 自己转正"的点：
+                      #   三趟 kx1-01/02/03-01-01 —— W2 1.41/1.41/1.43 全过、W6 0.283–0.313、
+                      #   W4 +0.055/−0.007/+0.010（2/3 CLEAR）、2/3 趟 14 通过 0 失败且不需要 KNOWN。
+                      #   代价（必须记住）：W2 余量只剩 0.01–0.03，跑动方差可能让它偶尔掉线；
+                      #   若要更稳需把 accept.py 的 --cruise-p90 从 1.40 放到 1.38（阈值改动，
+                      #   必须用户再次授权，本轮**未**动）。
+                      #   同步项：scripts/fly_hex.sh 的 REF_MAX_MPS（第二道速度上限）也改成 1.35。
+    # --- 以下为第 88 轮原注释，留作对照（当时的冻结值 1.5）---
+    # max_vel: 1.5      # ★第 88 轮：与臂的 CORNER_SPEED 同步（两处相等又成为硬约束）★
+                      #   为什么是 1.5 而不是 2.8/3.0：这一轮在新图上连撞四次围栏，每一次都在角点。
+                      #   hy0-01-01（角点 1.5、直道 2.8）：规划自己在角点外凸 **0.74 m**，而飞机在
+                      #   2.8 m/s 下按实测 ~0.4 s 的位置环滞后要外冲 ~1.1 m —— 0.74 + 1.1 ≈ 2.0 m，
+                      #   正好等于角点(10 m)到围栏(12 m)的那点余量，于是 `truth at [-12.01 -3.31]`。
+                      #   直道 2.8 → 角点 1.5 的减速段也是问题：10 m 的腿 0.16 s 就加速到 2.8 了，
+                      #   进角点的速度根本没降下来。**统一 1.5** 把减速段整个去掉，过弯半径
+                      #   R = v²/max_acc = 0.28 m（2.8 时是 0.98 m）。
+                      #   旧图（R=5 六边形、腿长 5 m）从来没跑到过 2.8，所以同一套臂在那里能活。
+                      # ★ 第 89 轮：这个数是 **SPEC 冻结值**（spec_check.py 的 S1 行会拦 2.5），
+                      #   所以提速实验走**变体配置** `super_planner_hex_fast.yaml`（max_vel 2.5），
+                      #   交付配置保持 1.5 不动。变体与判据见 docs/INTEGRATION.md §90。
+    # max_acc 从 5.0 抬到 6.5：A* 网格把一条轨迹限制在 ~8 m，
+    # 三角形速度剖面的峰值 ≈ sqrt(a·d/2)，a 从 5→6.5 能把参考峰值从 5.15 推到 ~5.9。
+    # 实测跟踪比约 83%（4.30/5.15），峰值 5.9 对应真实峰值 ~4.9、p90 ~4.2。
+    # 机体能力：g·tan(ATC_ANGLE_MAX=45°) = 9.8 m/s²，6.5 留 34% 余量。
+    # 注意：约束组（omg/thr）不要跟着动，动了优化器会在角点不可行（见下）。
+    max_acc: 6.0    # ★第 88 轮补 8（用户指定）：9.0 → 6.0★
+                    #   依据：闭环实测水平加速度 p50 1.23 / p90 3.79 / p99 6.02 m/s²，
+                    #   而规划尾部要 6–8 只兑现 35–46 %。6.0 让规划的加速度尾部落进
+                    #   闭环真正给得出的范围（巡航速度仍是 1.5 m/s，不受影响）。
+                    #   动机：角点速度上限 = sqrt(max_acc × R_free)。最紧角点 R_free = 1.026 m，
+                    #   max_acc 8 ⇒ 2.86 m/s（第 87 轮的 3.0 m/s 目标在界外 0.14 m/s），
+                    #   max_acc 9 ⇒ **3.04 m/s**，3.0 m/s 回到界内。机体 g·tan(45°) = 9.81，留 8 % 余量。
+                    #   动机：出弯弧高 = v^2/max_acc。实测（§67.1）出弯 2.05-2.74 m/s 时
+                    #   弓高 0.70-1.54 m，与 v^2/5.0 = 0.84-1.50 m 一一对应；抬到 8.0 后同一速度下
+                    #   R = 0.53-0.94 m（预期弓高降 35-40 %）。
+                    #   机体能力：g*tan(45°) = 9.81 m/s^2，8.0 用掉 82 % 的倣角预算。
+                    #   不动的：max_jerk 40 / max_omg 2.5 / thr 6-17 / penna_margin 0.05（约束组一起动会在角点不可行）。
+    max_jerk: 15.0   # ★第 88 轮补 9（用户指定）：25 → 15★ 15 m/s³ = a_dot 对应倾角速率 88 °/s，
+                     #   正好是机体实际角速率的 p90（118 °/s 是 p99）。再往下会限制转弯速度。
+                     #   依据：发布的 a_dot p99 = 40.3 m/s³（正好顶在桥的 40 钳位上），
+                     #   换算成倾角速率需求 a_dot/g = 236 °/s，而机体实际角速率 p99 只有 118 °/s
+                     #   （p90 88 / p50 27）⇒ 规划的 jerk 尾部是实际用量的约 2 倍。
+                     #   25 m/s³ ↔ 147 °/s，留了一点余量。
+    max_omg: 2.5
+    max_acc_thr: 17.0
+    min_acc_thr: 6.0
+    penna_margin: 0.05
+
+  exp_traj:
+    pos_constraint_type: 1
+    energy_cost_type: 4
+    block_energy_cost: false
+    opt_accuracy: 5.0e-6
+    scale_factor: 1.0
+    integral_reso: 15
+    smooth_eps: 0.01
+    penna_t: 1.0e+7
+    penna_pos: 5.0e+9
+    penna_vel: 5.0e+8
+    penna_acc: 5.0e+8
+    penna_jerk: 5.0e+7   # ★负值=关闭（源码 `if (weightJer > 0)`）→ 改成正值才真的生效★
+                         #   权重比 pos/vel/acc 小一个量级，先温柔地试，避免变成硬约束。
+    penna_attract: 5.0e+8
+    penna_omg: -1
+    penna_thr: -1
+
+  backup_traj:
+    uniform_time_en: true
+    pos_constraint_type: 2
+    piece_num: 2
+    energy_cost_type: 4
+    block_energy_cost: true
+    opt_accuracy: 1.0e-5
+    scale_factor: 1.0
+    integral_reso: 12
+    smooth_eps: 0.01
+    penna_t: 100.0
+    penna_ts: 1.0e+7
+    penna_pos: 1.0e+10
+    penna_vel: 1.0e+8
+    penna_acc: 1.0e+8
+    penna_jerk: -1.0e+6
+    penna_omg: -1
+    penna_thr: -1
+
+  flatness:
+    mass: 1.64
+    dh: 0.35
+    dv: 0.35
+    cp: 0.001
+    v_eps: 0.0001
+    grav: 9.81
+
+astar:
+  # A* 的局部体素网格：格数 × 0.05 m，以当前点为原点。三种尺寸都实测过：
+  #   300 (15 m, ±7.5) → 12/12、p90 3.78~3.84、净空 +0.20
+  #   480 (24 m, ±12)  → 12/12、净空最好 +0.238，但 p90 3.66  ← 采用
+  #   640 (32 m, ±16)  → 跟踪更准，但 GCOPTER 在更长走廊上不可行（Opt failed ×476）→ 只中 6/12
+  # 当时结论"网格大小不影响峰值 ~4.3"，那是在**每 12 m 刹一次**的工况下量的 —— 现在
+  # planning_horizon 抬到 16 m，网格必须跟着放大，否则一条腿的终点（15 m 外）落在网格外，
+  # A* 只能返回 REACH_HORIZON 的残段，"盖住整条腿"就不成立。取实测过、净空最好的 480。
+  map_voxel_num: [480,480,60]
+  visual_process: false
+  allow_diag: true
+  heu_type: 2
+  debug_visualization_en: false
+
+rog_map:
+  resolution: 0.05
+  inflation_resolution: 0.1
+  inflation_step: 2   # ★第 88 轮用户指定 = 2★ 地图按 0.1 × 2 = **0.2 m** 膨胀（第 83-87 轮是 1 = 0.1 m）。
+                      #   依据（第 88 轮实测）：两趟达标飞行的**规划**最小柱面净空只有 +0.014 / +0.100 m，
+                      #   而跟踪残差是 p50 0.14 / p90 0.34 m ⇒ 净空比残差小一个量级，W4 擦碰是**结构性**的，
+                      #   不是跟踪坏。抬到 0.2 m 让规划自己先留出这个量。
+                      #   A* 因此更贴柱（代价见 docs/INTEGRATION.md §57.11：种子线本来就停在 0.178 m），
+                      #   而 CIRI 要 robot_r = 0.15 m ⇒ 余量 **−0.05 m**，按实测预计 CIRI 会重新开始失败。
+                      #   这是用户的选择，量到的数字会写回 §58。旧注释保留：
+                      #   A* 因此在膨胀图上保持 ~0.2 m，CIRI 的种子线判据（isLineFree + seed_line_neighbour
+                      #   = ceil(robot_r/resolution) = 4 个体素 = 0.2 m）与走廊半径也是 0.2 m。
+                      #   上游 static_dense/forest_15m 是 3（0.3 m），click_smooth 是 2；
+                      #   第 79/80 轮曾用 0（那时格子 0.8 m，0.3 m 膨胀会把通道挤没）。
+  unk_inflation_en: false
+  unk_inflation_step: 0
+  map_size: [ 24, 24, 6 ]
+  fix_map_origin: [ 0, 0, 2.0 ]
+  frontier_extraction_en: false
+
+  # 虚拟地面/天花板：现在飞行高度 2.0 在盒子中间，地面可以恢复成真实地面。
+  # 地面 -0.1 + 0.3 m 膨胀只盖到 z=0.2，离飞机 1.8 m，不会再出现
+  # "自己的格子被判 OCCUPIED"（那是 fix_map_origin 写错时的连带现象）。
+  virtual_ceil_height: 3.5
+  #   （第 88 轮试过 4.6，想避免"爬过天花板 ⇒ 规划器以为机器人在障碍里"；实测连同 map_size 32
+  #    一起改之后，新旧两张图都开始出现 round-87 好趟从未出现的 occupied/below-ground 故障，故回退。）
+  virtual_ground_height: -1.0
+
+  load_pcd_en: false
+
+  map_sliding:
+    enable: false
+    threshold: 3.0
+
+  esdf:
+    enable: false
+    resolution: 0.1
+    local_update_box: [ 5, 5, 3 ]
+
+  ros_callback:
+    enable: true
+    cloud_topic: "/lio/cloud_world"   # 必须是 world 系点云
+    odom_topic: "/lio/robo/odom"
+    odom_timeout: 0.5
+
+  visualization:
+    enable: false   # 临时打开：用 /rog_map/occ 与 /rog_map/unk 判断"地图里有多少格子"
+    use_dynamic_reconfigure: false
+    time_rate: 2
+    frame_rate: 0
+    range: [ 15, 15, 4 ]
+    frame_id: "world"
+    pub_unknown_map_en: false
+
+  intensity_thresh: -10
+  point_filt_num: 1
+
+  raycasting:
+    enable: true                # [改] 打开射线清除：否则 free 空间不会被标记，
+                                #     走廊会穿过"没扫到"的区域（这是安全相关的）
+    batch_update_size: 1
+    local_update_box: [ 100, 100, 5 ]
+    ray_range: [ 0.5, 100 ]
+    p_min: 0.12
+    p_miss: 0.49
+    p_free: 0.499
+    p_occ: 0.85
+    p_hit: 0.9
+    p_max: 0.98
+    unk_thresh: 1.0
+
+# ---------------------------------------------------------------------------
+# Generated by scripts/make_super_lio_config.sh from super_forest_15m.yaml.
+# Do not hand-edit: change the generator (or the source) and re-run it.
+# L frame: origin on the pad, z up.  Printed map window comes out as
+#   ground -0.65 / ceil 3.15  (see the arithmetic above -- NOT the written values).
+# RViz demo variant: scripts/make_super_viz_config.sh

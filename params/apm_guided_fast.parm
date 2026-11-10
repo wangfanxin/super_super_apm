@@ -1,0 +1,96 @@
+# ArduPilot GUIDED 参数：为"SUPER 输出 PositionCommand、4–6 m/s 穿林"准备的。
+#
+# ★ 本文件里每个名字都必须在**这个固件版本**里存在 ★
+#   本机固件：ArduCopter 4.7.1 (459cb45b)。
+#   4.7 把位置控制器的参数整体改了名，老名字在本机**不存在**：
+#
+#     旧名(≤4.5)     新名(4.7)          含义
+#     PSC_POSXY_P    PSC_NE_POS_P      水平位置 P（NE = North/East）
+#     PSC_VELXY_P    PSC_NE_VEL_P      水平速度 P
+#     PSC_VELXY_I    PSC_NE_VEL_I      水平速度 I
+#     PSC_VELXY_D    PSC_NE_VEL_D      水平速度 D
+#     PSC_JERK_XY    PSC_NE_JERK       水平加加速度限幅（单位换成 m/s^3，旧的是 cm/s^3）
+#     PSC_POSZ_P     PSC_D_POS_P       垂直位置 P（D = Down）
+#     PSC_VELZ_P     PSC_D_VEL_P       垂直速度 P
+#
+#   MAVLink 写一个不存在的参数名**不报错**：GCS_Param.cpp:265 的
+#   handle_param_set 只回一条 PARAM_ERROR 就 return。所以旧名字在本机
+#   是**静默失效**——和 ARMING_CHECK / GPS_TYPE 完全同一类问题。
+#   灌参数前先跑 `python3 scripts/check_param_names.py params/*.parm`，
+#   它会拿整表（/tmp/params.csv）对名字，不认识的直接列出来。
+#
+# 数值只是**起点**：4.7 的默认值本身已经比旧版硬（PSC_NE_VEL_P 默认 2.0，
+# 旧版 PSC_VELXY_P 默认 1.0），所以这里只做 ~1.5x 上调，配合姿态环一起抬，
+# 避免第一轮就自激。真机必须按台架+低速试飞复调。
+# 依据：headless 实验里 perfect tracking 的净空 0.266 m，位置环滞后
+# 0.376 m（松增益）→ 撞；0.123 m（紧增益）→ 过。所以需要"更硬"而不是"更软"。
+
+# ---- GUIDED 的运动学上限：WP_*（实测这一组**不要**动）----
+# ArduCopter 4.7 的 GUIDED 在 mode_guided.cpp:255 里做的是
+#     pos_control->NE_set_max_speed_accel_m(wp_nav->get_default_speed_NE_ms(),
+#                                          wp_nav->get_wp_acceleration_mss());
+# 也就是说位置控制器的速度/加速度/加加速度上限来自 WP_SPD / WP_ACC / WP_JERK，
+# 不是来自 PSC_*。本机默认：WP_SPD 10.0 m/s、WP_ACC 2.5 m/s²、WP_JERK 1.0 m/s³。
+#
+# ★ 试过 WP_ACC 2.5→6.5、WP_JERK 1.0→20（想让飞机更"敢"加速），结果**更差**：
+#   12 盒只剩 6 个命中（有个角点差 0.35 m，超出 0.25 m 的盒），
+#   p90 3.84→3.41、峰值 4.28→3.74。
+#   机理：跟踪变紧之后飞机忠实地跟参考的"三角形"速度剖面（峰谷都跟）；
+#   宽松跟踪反而在峰谷之间"抹平"，平均更高 —— 代价是角点精度失守。
+#   所以这两项保持固件默认，把"更快的持续速度"留给规划侧（见 docs/STATUS.md 二十三）。
+WP_SPD       10.0
+WP_ACC       2.5
+WP_JERK      1.0
+WP_ACC_CNR   0.0
+
+# ---- 水平位置环 ----
+# ★ 能力上限 ★：水平加速度上限 = g·tan(ATC_ANGLE_MAX)。默认 30° → 5.66 m/s²，
+#   本文件把它抬到 45° → 9.8 m/s²，给规划侧 6.5 m/s² 的参考留余量。
+# 位置环：速度阶跃的稳态滞后 ∝ v / PSC_NE_POS_P。
+# 实测（同一条 15 m 边）：
+#   POS_P=2.4 → p90 3.67 峰值 4.16 净空 +0.186
+#   POS_P=3.0 → p90 3.84 峰值 4.28 净空 +0.208   ← 采用
+#   POS_P=5.0 → p90 3.58 峰值 4.76 净空 +0.017（z=2.0 方盒口径 -0.050，擦到树）
+# 加硬只把"峰值"推高、把"p90 和净空"压下去 —— 位置环再硬就开始超调。
+# 3.0 是这两档之间的折中：比 2.4 快一点，又不至于把余量吃光。
+PSC_NE_POS_P     3.0
+PSC_NE_VEL_P     4.0
+PSC_NE_VEL_I     1.4
+PSC_NE_VEL_D     0.24
+PSC_NE_JERK      10
+
+# ---- 垂直环：暂保持默认（爬升/悬停不是瓶颈）----
+# PSC_D_POS_P 默认 1.0、PSC_D_VEL_P 默认 5.0
+
+# ---- 姿态环：位置环调快后必须跟得上 ----
+# ATC_ANGLE_MAX 抬到 45°：水平加速能力从 5.66（默认 30°）到 9.8 m/s²，
+# 给规划侧 6.5 m/s² 的参考留出 50% 余量（跟得住的前提）。
+ATC_ANGLE_MAX   45
+ATC_ANG_RLL_P   14.0
+ATC_ANG_PIT_P   14.0
+ATC_ANG_YAW_P   6.0
+ATC_RAT_RLL_P   0.18
+ATC_RAT_RLL_I   0.18
+ATC_RAT_RLL_D   0.005
+ATC_RAT_PIT_P   0.18
+ATC_RAT_PIT_I   0.18
+ATC_RAT_PIT_D   0.005
+ATC_RAT_YAW_P   0.35
+ATC_RAT_YAW_I   0.035
+
+# ---- GUIDED 行为 ----
+# 4.7 里叫 GUID_OPTIONS（不是 GUIDED_OPTIONS）；GUID_TIMEOUT 是"收不到定点指令多久
+# 退出 GUIDED"，SITL 里由 apm_sitl.parm 覆盖成 0。
+GUID_OPTIONS    1
+GUID_TIMEOUT    3
+
+# ---- 故障保护（真机试飞前必须确认生效；SITL 被 apm_sitl.parm 覆盖成 0）----
+FS_GCS_ENABLE   1
+FS_THR_ENABLE   1
+FENCE_ENABLE    1
+FENCE_ACTION    1
+FENCE_ALT_MAX   6
+FENCE_RADIUS    15
+
+# ---- 日志：验收要看真实跟踪误差 ----
+LOG_BITMASK     131071

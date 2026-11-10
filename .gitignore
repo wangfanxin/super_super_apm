@@ -1,0 +1,16 @@
+# build outputs and recordings -- never committed
+.build/
+.runs/
+logs/
+*.pyc
+__pycache__/
+*.BIN
+eeprom.bin
+*.bag
+*.tar.gz
+
+# editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

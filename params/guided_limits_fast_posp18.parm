@@ -1,0 +1,14 @@
+# 第 88 轮补 6（方向 5.4）：在 yaw 修好之后重测位置环 P —— 1.8 这一档。
+#
+# 见 `guided_limits_fast_posp08.parm` 的说明：1.2 是在"机头歪 95°"的那一版上选出来的，yaw 修好后
+# 必须用同一套臂重测 0.8 / 1.2 / 1.8 三点，才能说位置环该多大。
+#
+# 这一份只改一行（PSC_NE_POS_P 1.2 → 1.8），其余与 `guided_limits_fast.parm` 逐字相同。
+WP_SPD 1.5
+WP_ACC 4.0
+PSC_NE_JERK 80.0
+ATC_ANGLE_MAX 45.0
+PSC_NE_POS_P 1.8
+PSC_NE_VEL_P 2.0
+ATC_ANG_RLL_P 6.0
+ATC_ANG_PIT_P 6.0

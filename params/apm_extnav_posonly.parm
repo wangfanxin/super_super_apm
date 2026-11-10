@@ -1,0 +1,25 @@
+# EK3_SRC1_VELXY/VELZ 6 -> 0   （第 89 轮：EKF 耐久性 A/B，目标 §82.5 第 3 条）
+#
+# 观察（本轮 30 次尝试里 11 次）：
+#   `ABORT: geofence: truth at [±13.0, ...] -- the FCU disagrees by 5.0-7.3 m`
+#   而同一时刻 `scripts/lio_drift.py` 显示 **LIO 对真值只差 0.01-0.11 m**（`kx8-03-01` 一路到 t=70 s 都是如此），
+#   飞控自己的估计却在 t≈70 s 之后一路漂到 6 m 外。
+#   `kx1-01-01` 更极端：飞控 z 估计从 2.05 m 跳到 10.3 m，随后 `EKF variance` / `SIM Hit ground`。
+#
+# 现在的配置把四条轴全部交给外部导航（`apm_extnav.parm`: POSXY/POSZ/VELXY/VELZ/YAW 都是 6）。
+# 其中**速度**是我们喂进去的一条派生量：桥接层在 `/lio/odom` 没有 twist 时用位置差分
+# （`bridge_node.py:467-470`，一阶滤波 α=0.2，200 Hz 差分 ⇒ 单拍噪声可达 0.2-0.4 m/s）。
+# 把这样一条速度按 `VISO_VEL_M_NSE 0.25` 融进 EKF，任何一个速度尖峰都会推着位置估计走，
+# 而 EKF 又没有第二条高度/水平来源做交叉检查。
+#
+# 这一档只改一件事：**不要速度辅助，只做位置辅助**。EKF 用 IMU + 位置自己估速度。
+# 位置与高度仍然全部来自 LIO（用户要求"高度要用 LIO"不受影响）。
+#
+# 判据：
+#   * 出围栏次数（本轮 11/30）是否下降；
+#   * `accept.py` 的 H5（tap vs FCU 的 span 一致性）是否每趟都 PASS；
+#   * H3/H4 不变、W1b 13/13、W6 p90 与 REV 不变差。
+#
+# 回退：不传 EXTRA_PARMS 即回到 `params/apm_extnav.parm` 的 6/6。
+EK3_SRC1_VELXY 0
+EK3_SRC1_VELZ 0

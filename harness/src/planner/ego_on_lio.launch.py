@@ -1,0 +1,423 @@
+#!/usr/bin/env python3
+"""ego-planner-swarm ON THIS STACK: our LIO in, the `/plan/cmd` contract out.
+
+WHY THIS FILE EXISTS.  `advanced_param.launch.py` starts exactly ONE node (`ego_planner_node`) with the
+tuning of ego's OWN simulator, and the launch files that DO start `traj_server`
+(`single_run_in_sim.launch.py:142-154`, `run_in_sim.launch.py:88-100`) also start ego's own simulator
+(`so3_quadrotor_simulator`, `so3_control`, `poscmd_2_odom`, `pcl_render_node`), which would fight ArduPilot
+for the same topics.  Neither is usable here, so this file starts the planner and NOTHING ELSE.
+
+WHAT STARTS: one node, `drone_<id>_ego_planner_node`, fed our cloud and our odometry.
+
+WHAT DELIBERATELY DOES NOT START, and each one is a decision rather than an omission:
+
+  * `traj_server` -- the ONLY producer of `quadrotor_msgs/PositionCommand` in that tree
+    (`plan_manage/src/traj_server.cpp:211,244`; `grep -rn PositionCommand` matches nothing else).  It is not
+    started because the CONTRACT is produced on our side instead: `src/planner/ego_source.py` samples the
+    same B-spline itself and publishes `/plan/cmd` with `trajectory_id` per WAYPOINT and a synthesised
+    COMPLETED.  Two reasons, both measured: `traj_server` hard-codes `frame_id="world"` (`:210`) and writes
+    `trajectory_flag` exactly once, to READY (`:211`) -- it can never say the mission is over -- and its
+    `time_forward` parameter defaults to **-1.0** (`:261`), which evaluates the yaw look-ahead one second in
+    the PAST.  Route B (`traj_server` + remap `position_cmd:=/plan/cmd`) remains possible: start it
+    yourself, remap it, and set `traj_server/time_forward: 1.0`.
+  * ego's simulator -- ArduPilot is the flight controller here.
+  * `map_generator` / `mockamap` -- the world is `worlds/pillars.yaml`, flown by SITL.
+  * `rosmsg_tcp_bridge` -- a multi-machine swarm relay (TCP 8080 ring + UDP 8081 broadcast), launched by no
+    launch file in that tree, not built in `planner_ws`, and it never touches `PositionCommand`.  This
+    stack has its own bridge, with its own two MAVLink endpoints.
+
+THE WIRING THAT MATTERS, and it is the one item that silently ruins a sortie if it is missed: the FSM reads
+`twist.twist.linear` from `odom_world` (`ego_replan_fsm.cpp:443-445`) and uses it as the `> 0.1 m/s` gate to
+leave EMERGENCY_STOP (`:1047`), while the map reads ONLY `pose.pose.position` (`grid_map.cpp:799-801`).  Our
+`/lio/robo/odom` carries a pose and an identically ZERO twist (Super-LIO fills only the pose), so:
+
+    odom_world      -> /lio/odom        (10 Hz, and the ONLY one of our odometry topics with a real twist)
+    grid_map/odom   -> /lio/robo/odom   (200 Hz, pose only -- which is all the map reads)
+
+Those are two independent remap rules in the upstream launch file too (`advanced_param.launch.py:96,108`),
+so this is the intended way to wire it, not a trick.
+
+NO TF, ANYWHERE.  `grep -rn tf2 plan_env plan_manage` is empty and `tf2` is in none of their `package.xml`
+files: the cloud is compared to the odometry position AS-IS, so both must already be in L.  Ours are.
+`grid_map/frame_id` is only a LABEL on outgoing clouds (`grid_map.cpp:957,1007`).
+
+THE MAP BOX IS FIXED AND CENTRED ON THE L ORIGIN (`grid_map.cpp:92`), and a point OUTSIDE it reads as
+OCCUPIED: `getInflateOccupancy` returns -1 there and every caller casts it to `bool`
+(`grid_map.h:357-366`, `dyn_a_star.h:62`).  The upstream defaults are 42 x 30 x 5 m, which is ~94 MB of
+map plus ~56 MB of A* pool for an arena of +-6 m -- so the sizes below are an ARGUMENT, not a constant.
+
+usage:  ros2 launch ego_planner ego_on_lio.launch.py
+        (the goals come from `src/planner/ego_source.py`, which also produces /plan/cmd)
+"""
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+    # ------------------------------------------------------------------ arguments
+    args = [
+        DeclareLaunchArgument('drone_id', default_value='0',
+                              description='must be >= 0: a negative id switches the swarm topic name'),
+        DeclareLaunchArgument('odom_vel_topic', default_value='/lio/odom',
+                              description='10 Hz, pose AND the twist the FSM needs for its >0.1 m/s gate'),
+        DeclareLaunchArgument('odom_topic', default_value='/lio/robo/odom',
+                              description='200 Hz, pose only: all the MAP reads'),
+        DeclareLaunchArgument('cloud_topic', default_value='/lio/cloud_world',
+                              description='the registered scan, ALREADY in L (no TF is applied)'),
+        DeclareLaunchArgument('bspline_topic', default_value='planning/bspline',
+                              description='what ego publishes and our adapter samples'),
+        DeclareLaunchArgument('map_size_x', default_value='16.0',
+                              description='the map box is FIXED, centred on the L origin'),
+        DeclareLaunchArgument('map_size_y', default_value='16.0',
+                              description='-- and outside it reads as OCCUPIED'),
+        DeclareLaunchArgument('map_size_z', default_value='5.0',
+                              description='ground_height .. virtual_ceil_height'),
+        DeclareLaunchArgument('ground_height', default_value='-0.50',
+                              description='THE MAP Z ORIGIN.  It was -0.02 until a MEASURED defect: at -0.02 the '
+                                          'map box is [-0.02, 4.98], so a vehicle that touches down -- whose '
+                                          'odometry z reads about -0.02, exactly the ground plane -- falls '
+                                          'OUTSIDE its own map, isInMap fails, getInflateOccupancy returns -1, '
+                                          'and the collision check reads -1 as OCCUPIED '
+                                          '(bspline_optimizer.cpp:1329).  DIAG12: 1 058 710 "the drone is in '
+                                          'obstacle", GEN_NEW_TRAJ 19 049 against EXEC_TRAJ 207, 370 s of '
+                                          'deadlock.  At -0.50 the box is [-0.50, 4.50]: a landed vehicle is '
+                                          'inside it, the 4.2 m pillars are still inside it, and the virtual '
+                                          'ceiling lands at 2.9 m, above the 1.88 m the missions fly.'),
+        DeclareLaunchArgument('virtual_ceil_height', default_value='3.00',
+                              description='our ceiling in L: above the 2.50 m mission altitude, below the 6.60 m geofence'),
+        DeclareLaunchArgument('max_vel', default_value='2.0',
+                              description='SOFT: a quadratic penalty, not a constraint'),
+        DeclareLaunchArgument('max_acc', default_value='3.0', description='SOFT, likewise'),
+        DeclareLaunchArgument('planning_horizon', default_value='7.5', description='both fsm/ and manager/'),
+        DeclareLaunchArgument('lambda_fitness', default_value='1.0',
+                              description="`optimization/lambda_fitness`: the ONLY cost term that pulls the B-spline "
+                                          "onto the A* reference (`calcFitnessCost`).  Exposed on 2026-10-17 to "
+                                          "settle a question the map has now answered the other way: Flight U "
+                                          "flies the x = +-3 edges to within 3 cm and the y = +-4 edges 0.24-0.28 m "
+                                          "OUTSIDE, while `_stage/edge-map.py` measures ALL FOUR commanded lines "
+                                          "FREE in the planner's own occupancy slices (0 occupied cells out of "
+                                          "1413 / 1679 / 915 / 914), so the bulge is neither the map nor the "
+                                          "aircraft -- it is the path or the spline that follows it.  Raising this "
+                                          "weight moves the spline onto the A* path: if the bulge is the "
+                                          "OPTIMISER it shrinks, and if it is the A* itself it does not move at "
+                                          "all.  Upstream's 1.0; 4.0 was tried once in DIAG15/17 under a "
+                                          "completely different configuration (inflation 0.099, 0.1 m lattice, "
+                                          "0.8 m/s) and was inconclusive."),
+        DeclareLaunchArgument('resolution', default_value='0.1',
+                              description="`grid_map/resolution`: the lattice.  Exposed on 2026-10-17 because the "
+                                          "tour's legs run 0.500 m from the pillar axes while the run's OWN "
+                                          "occupancy slices measure the planner's obstacle reaching 0.380 m from "
+                                          "a 0.300 m axis -- a 2-cell channel at 0.1 m, which the planner keeps "
+                                          "declining in favour of a wider one 1.2 m outside it (Flights M and N "
+                                          "both bulge there, and the x = 3 channel is measured FREE in all 23 "
+                                          "flight-height slices of the right half).  At 0.05 m the same marks "
+                                          "leave 6 cells, and PATCH RESOLUTION/1 makes the A* pool +-5 m of "
+                                          "SPACE rather than 100 cells so the search still covers the mission."),
+        DeclareLaunchArgument('obstacles_inflation', default_value='0.099',
+                              description="HOW FAT THE PLANNER'S OBSTACLE IS ON TOP OF THE MARKED CELLS. "
+                                          "0.099 = ONE 0.1 m cell, and because `inflatePoint` grows a CUBE "
+                                          "(`inf_step` in all three axes, `grid_map.cpp:842`) it is +0.10 m on "
+                                          "the axes and +0.141 m on the in-plane diagonal.  Exposed as an "
+                                          "argument on 2026-10-16 because the MISSION GEOMETRY moved: the "
+                                          "6 x 8 m rectangle's legs run 0.50 m from the pillar axes, and "
+                                          "`_stage/map-inflation.py` MEASURES the map's obstacle reaching "
+                                          "0.540 m from the axis in Flight E's own DIAG/2 slices (0.240 m past "
+                                          "the 0.300 m true surface, from the cell + cube + the relay's 0.10 m "
+                                          "voxel).  A leg at 0.50 m is therefore INSIDE the planner's obstacle "
+                                          "in every sortie so far, which is why the plans detour 1-2 m and why "
+                                          "the odometry start can land in an obstacle at all.  0.0 is the only "
+                                          "other value the integer `inf_step = ceil(inflation/resolution)` can "
+                                          "express besides one cell, and it is the point of Flight F."),
+        DeclareLaunchArgument('emergency_time', default_value='0.0',
+                              description="`fsm/emergency_time`: in `checkCollisionCallback`, when the remaining part "
+                                          "of the committed spline is found in collision AND `planFromCurrentTraj()` "
+                                          "fails, the FSM compares the time to the collision against this value -- "
+                                          "inside it, EMERGENCY_STOP (a STATIONARY spline, so the reference the "
+                                          "shell forwards FREEZES); outside it, REPLAN_TRAJ (a fresh plan).  "
+                                          "MEASURED round 17 (`_stage/leg-stall.py`): every leg over 6 s contains a "
+                                          "FREEZE of 0.5-3.4 s at |v_ref| < 0.20 m/s (BF leg 5 26.8 % of the leg, "
+                                          "BF2 leg 5 3.40 s continuous, BG leg 4 53.4 %), and the FSM's own log "
+                                          "carries the matching `[SAFETY]: from EXEC_TRAJ to EMERGENCY_STOP` "
+                                          "events -- so the seconds that were being blamed on the planner's speed "
+                                          "are the emergency stop's, and a value of 0.0 turns the stop into a "
+                                          "re-plan instead."),
+        DeclareLaunchArgument('thresh_no_replan_meter', default_value='1.0',
+                              description="`fsm/thresh_no_replan_meter`: the FSM's ARRIVAL METER -- it declares the "
+                                          "goal reached when the plan's clock is out AND the vehicle is within this "
+                                          "distance of it (`ego_replan_fsm.cpp:968`), and stops planning there.  "
+                                          "Exposed on 2026-10-17 because that is what makes the aircraft OVERSHOOT "
+                                          "a corner: MEASURED Flight J, the shell's own log records arrivals at "
+                                          "|v| 1.06-2.92 m/s -- at 1.0 m the planner hands the last metre to a "
+                                          "controller holding a FIXED point, so the aircraft crosses it at speed, "
+                                          "loops back (the loop is visible at every corner in the figure) and, "
+                                          "past the corner, cuts into the pillar the map has not seen yet.  The "
+                                          "floor is 0.20-0.30 m: `planner_manager.cpp:55` REFUSES to plan when the "
+                                          "replan's start is within 0.2 m of its local target."),
+        DeclareLaunchArgument('thresh_replan_time', default_value='1.0',
+                              description="`fsm/thresh_replan_time`: how long a committed spline is EXECUTED "
+                                          "before the FSM re-plans from its own tail.  Exposed because a re-plan "
+                                          "restarts `traj_server`'s clock, so this is also 'how much of each "
+                                          "spline the aircraft ever flies'."),
+        DeclareLaunchArgument('flight_type', default_value='1',
+                              description="1 = MANUAL_TARGET (one goal at a time on /move_base_simple/goal, our "
+                                          "shell owns the tour); 2 = PRESET_TARGET (ego's own sequencer walks "
+                                          "the `waypoints` list, Plan X).  Kept as an argument because the "
+                                          "PRESET path cannot be reached otherwise without editing this file."),
+        DeclareLaunchArgument('waypoints', default_value='',
+                              description="THE PRESET TOUR, in L: \"x,y,z;x,y,z;...\".  Empty means 'no tour', "
+                                          "which under `flight_type 1` is exactly right (the list is not read) "
+                                          "and under `flight_type 2` is a refusal to fly, not a silent default."),
+        DeclareLaunchArgument('waypoint_start_alt', default_value='0.0',
+                              description="PATCH 0008's START-ALTITUDE GATE: with a value > 0 the tour is armed "
+                                          "by the FSM loop once odometry z reaches it, instead of in the "
+                                          "constructor while the vehicle is still on the pad (a first plan "
+                                          "taken there leaves the FSM in GEN_NEW_TRAJ, 599 replans, 0 "
+                                          "successes).  0 disables the gate and arms immediately."),
+        DeclareLaunchArgument('waypoint_advance_m', default_value='-1.0',
+                              description='PATCH 0008: how far before a waypoint the next leg is planned; -1.0 '
+                                          'keeps the node\'s own default'),
+        DeclareLaunchArgument('waypoint_loop', default_value='false',
+                              description='PATCH 0008: repeat the tour for ever (false = one pass)'),
+        DeclareLaunchArgument('realworld_experiment', default_value='false',
+                              description="FEEDS `fsm/realworld_experiment`, i.e. `have_trigger_ = "
+                                          "!flag_realworld_experiment_` (`ego_replan_fsm.cpp:35`).  Default "
+                                          "FALSE on 2026-10-16 (was True).  WHAT IT DOES NOT DO, because the "
+                                          "review that asked for it expected otherwise: under "
+                                          "`flight_type: 1` (MANUAL) it is BEHAVIOUR-NEUTRAL.  Every "
+                                          "`have_trigger_` gate on the MANUAL path is either unreachable or "
+                                          "redundant -- `:180` sits inside the PRESET branch, `:702`/"
+                                          "`:715` need `have_target_` which an arrival clears, and the FSM "
+                                          "leaves WAIT_TARGET from the goal CALLBACK "
+                                          "(`planNextWaypoint` -> `changeFSMExecState(GEN_NEW_TRAJ, "
+                                          "\"TRIG\")`), not from the FSM tick.  So the transition counts do "
+                                          "NOT move (bench A/B, `docs/metrics/fsm-trigger-20261016.txt`: "
+                                          "22/0/22/9 either way) and the '1 Hz resend drags the FSM' story is "
+                                          "not what this flag fixes.  WHAT IT DOES DO: it is REQUIRED for "
+                                          "`flight_type: 2` (PRESET), where the constructor BLOCKS at `:180` "
+                                          "(`while (!have_odom_ || !have_trigger_) rclcpp::spin_some(...)`) "
+                                          "waiting for a `/traj_start_trigger` nothing in this stack "
+                                          "publishes -- and `spin_some` on a node the main executor already "
+                                          "owns ABORTS the process (PATCH B/3).  Evidence: "
+                                          "`docs/metrics/review-egoplanner-20261016.txt` P1-1."),
+    ]
+
+    params = {
+        # ---- the FSM: one goal at a time on /move_base_simple/goal, and it must WAIT for one
+        'fsm/flight_type': LaunchConfiguration('flight_type'),
+        'fsm/realworld_experiment': LaunchConfiguration('realworld_experiment'),
+        'fsm/thresh_replan_time': LaunchConfiguration('thresh_replan_time'),
+        'fsm/thresh_no_replan_meter': LaunchConfiguration('thresh_no_replan_meter'),
+        'fsm/planning_horizon': LaunchConfiguration('planning_horizon'),
+        'fsm/planning_horizen_time': 3.0,
+        'fsm/emergency_time': LaunchConfiguration('emergency_time'),
+        'fsm/fail_safe': True,
+        # PATCH COLLISION-FIX/1 (H1): the FSM's collision check tests the PLAN at 20 Hz and, until 2026-10-16,
+        # never the VEHICLE -- measured: the aircraft sat 0.136 m inside a pillar for 0.330 s while `Suddenly
+        # discovered obstacles`, `current traj in collision` and `Depth Lost` all read ZERO.  With this true the
+        # FSM also tests `odom_pos_` against the map (airborne only: 0.50 < z < 2.90 m, which excludes the pad-top
+        # and ceiling-slab self-marks this map is known to produce) and re-commits from odometry.  Stated here so
+        # the arm is visible in the configuration rather than inherited from a C++ default.
+        'fsm/vehicle_collision_check': True,
+        # THE PRESET TOUR (Plan X).  Inert under `flight_type 1` (MANUAL): the sequencer is entered only by
+        # `flight_type 2`, which is why the list used to be a single dummy waypoint at the origin.  Under
+        # `flight_type 2` the patched additions matter, and each is an argument here so the tour can be moved
+        # WITHOUT editing this file: `waypoint_start_alt` gates the arming until the vehicle has actually
+        # climbed off the pad (PATCH 0008 -- a first plan taken on the pad leaves the FSM in GEN_NEW_TRAJ with
+        # 599 replans and 0 successes), `waypoint_advance_m` -1.0 keeps the node's own default advance,
+        # `waypoint_loop` 0 is a single pass.  The waypoints are parsed from ONE argument, `waypoints`, because
+        # a launch file cannot declare a variable number of them: "x,y,z;x,y,z;...".
+
+        # ---- the map: a boolean inflated grid, 0.1 m voxels, and NO distance query anywhere
+        'grid_map/resolution': LaunchConfiguration('resolution'),
+        'grid_map/map_size_x': LaunchConfiguration('map_size_x'),
+        'grid_map/map_size_y': LaunchConfiguration('map_size_y'),
+        'grid_map/map_size_z': LaunchConfiguration('map_size_z'),
+        'grid_map/local_update_range_x': 5.5,
+        'grid_map/local_update_range_y': 5.5,
+        'grid_map/local_update_range_z': 4.5,
+        'grid_map/obstacles_inflation': LaunchConfiguration('obstacles_inflation'),   # ONE VOXEL by default.  The
+                                                # two-cell route is CLOSED, and not for the old reason:
+                                                # `cloud_relay.py --self-blind` did fix the defect that made two
+                                                # cells hang -- `the drone is in obstacle` fell from 112 729 to
+                                                # **3 107** and the sortie completed (DIAG16) -- but the flown
+                                                # result got WORSE, not better: truth minimum -0.100 m and
+                                                # **27 999 of 100 127** samples inside the C2 footprint (15.8%),
+                                                # the worst of any ego crossing.  So the 0.20 m footprint is not
+                                                # reachable by RAISING this parameter, with or without the bubble.
+                                                # ONE CELL is flown and healthy (DIAG14: rc=0, `a star error` 1,
+                                                # truth min -0.222 m); its best crossing cleared by +0.150 m.
+                                                # WHAT WAS NEVER TRIED, and is Flight F's question: ZERO, i.e.
+                                                # no cube at all.  `map-inflation.py` on Flight E measures the
+                                                # map's obstacle at 0.540 m from the axis while the rectangle's
+                                                # legs run at 0.500 m, so every leg so far has been planned
+                                                # through an obstacle; the cube is the only part of that 0.240 m
+                                                # this parameter can remove.
+        'grid_map/local_map_margin': 10,
+        'grid_map/ground_height': LaunchConfiguration('ground_height'),
+        'grid_map/virtual_ceil_height': LaunchConfiguration('virtual_ceil_height'),
+        # NO DEPTH CAMERA.  `pose_type` 1 builds a message_filters synchroniser that can never fire, and
+        # `use_depth_filter` True arms a watchdog that would then never be fed -- so both are off, and the
+        # cloud path (which never raycasts: `occupancy_buffer_` is never written) is the only input.
+        'grid_map/use_depth_filter': False,
+        'grid_map/pose_type': 0,
+        'grid_map/frame_id': 'lio_world',        # a LABEL on outgoing clouds only
+        'grid_map/cx': 321.04638671875,          # unused without depth, kept so the set matches upstream
+        'grid_map/cy': 243.44969177246094,
+        'grid_map/fx': 387.229248046875,
+        'grid_map/fy': 387.229248046875,
+        # DEAD PARAMETER, named here so nobody waits for output that will never come: `grid_map/show_occ_time`
+        # is declared (`grid_map.cpp:42`) and read (`:79`) but its only USE is a COMMENTED-OUT log
+        # (`:750-752`).  There is no way to time ego's occupancy update from inside the node -- a round of
+        # this project assumed otherwise and the plan_env audit refuted it.  It is set anyway, so that this
+        # file's parameter set can still be diffed against upstream's and come out equal.
+        'grid_map/show_occ_time': False,
+        # The DEPTH-FILTER and RAY-FUSION blocks are INERT here (`use_depth_filter` False, `pose_type` 0 --
+        # nothing on the depth path is ever called), and they are set anyway so that this file's parameter
+        # set can be diffed against `advanced_param.launch.py` and come out equal except where our world
+        # decides otherwise.  MEASURED: the first version of this file omitted `optimization/max_vel`,
+        # `optimization/max_acc` and the four `optimization/lambda_*` weights that upstream DOES set, which
+        # would have left the optimiser on its C++ defaults with nothing said -- found by comparing the
+        # parameter list the running node declares against the names this file sets.
+        'grid_map/depth_filter_tolerance': 0.15,
+        'grid_map/depth_filter_maxdist': 5.0,
+        'grid_map/depth_filter_mindist': 0.2,
+        'grid_map/depth_filter_margin': 2,
+        'grid_map/k_depth_scaling_factor': 1000.0,
+        'grid_map/skip_pixel': 2,
+        'grid_map/p_hit': 0.65,
+        'grid_map/p_miss': 0.35,
+        'grid_map/p_min': 0.12,
+        'grid_map/p_max': 0.90,
+        'grid_map/p_occ': 0.80,
+        'grid_map/min_ray_length': 0.1,
+        'grid_map/max_ray_length': 4.5,
+        'grid_map/visualization_truncate_height': 1.8,
+
+        # ---- the optimiser and the trajectory
+        'manager/max_vel': LaunchConfiguration('max_vel'),
+        'manager/max_acc': LaunchConfiguration('max_acc'),
+        'manager/max_jerk': 4.0,
+        'manager/control_points_distance': 0.4,
+        'manager/feasibility_tolerance': 0.05,
+        'manager/planning_horizon': LaunchConfiguration('planning_horizon'),
+        'manager/use_distinctive_trajs': True,
+        'manager/drone_id': LaunchConfiguration('drone_id'),
+        # The weights come from upstream VERBATIM.  They are the ones `advanced_param.launch.py` sets, and
+        # a file that leaves them out does not get the upstream behaviour -- it gets whatever the C++
+        # defaults happen to be, silently.
+        'optimization/lambda_smooth': 1.0,
+        'optimization/lambda_collision': 0.5,   # TESTED AT 2.0, WINDOW 8, REVERTED (DIAG27).  This weight
+                                                 # multiplies a term that is INERT for one vehicle at window 0
+                                                 # (the rebound fired 43 times per crossing) and LIVE at window 8
+                                                 # (2.2 M calls, 15 000-17 000 collisions, populating exactly the
+                                                 # arrays it multiplies).  At 2.0 it changed nothing measurable:
+                                                 # +0.154 m and 4234 of 43901 inside, both mid-band for the arm.
+                                                 # CORRECTION (STATUS row 107): the same flight was to raise `dist0`
+                                                 # to 0.8 m too and did NOT -- this edit had ADDED a second `dist0`
+                                                 # key instead of replacing the existing one, and Python keeps the
+                                                 # LAST, so the node loaded 0.5.  The duplicate is removed;
+                                                 # **`dist0` is still UNTESTED at window 8**.  Original reasoning:
+        'optimization/lambda_feasibility': 0.1,
+        'optimization/lambda_fitness': LaunchConfiguration('lambda_fitness'),
+                                                 # DIAG15 (4.0) cleared by +0.068 m with 1231 of 54097 samples
+                                                 # inside the C2 footprint; the reproduction DIAG17 (same
+                                                 # configuration) PENETRATED at -0.078 m with 6741 inside.  The
+                                                 # same pattern as the relay window -- one good run, then it does
+                                                 # not hold -- and the reason is now quantified: across ELEVEN
+                                                 # ego crossings of this mission the truth's minimum clearance has
+                                                 # a spread of about +-0.15 m around -0.10 m, so every lever tried
+                                                 # (+0.05 .. +0.15 m) is smaller than the run-to-run VARIANCE.
+                                                 # C2's 0.20 m footprint sits about two standard deviations above
+                                                 # that mean, which is why no parameter reaches it.  See STATUS row
+                                                 # 85 for the distribution and row 86 for what is left.
+                                                 # `calcFitnessCost` is the only term that pulls the B-spline onto
+                                                 # the A* reference; `lambda_collision`/`dist0` multiply a SWARM
+                                                 # separation cost that is empty for one vehicle.
+                                                 # DIAG15 (4.0) moved the plan's 1st-percentile clearance from
+                                                 # -0.031 to +0.124 m and gave the best C2 numbers at one cell
+                                                 # (truth min +0.068 m, 1231 of 54097 inside the 0.20 m footprint,
+                                                 # against 2108-12028 elsewhere) with tracking unaffected.  It was
+                                                 # NOT promoted on one run; the reproduction is DIAG17 and the
+                                                 # decision is STATUS row 85.  Note what 4.0 did NOT move: the
+                                                 # plan's MINIMUM stayed at -0.285 m, unchanged from DIAG8/DIAG14,
+                                                 # so the worst single excursion has another cause (a trajectory
+                                                 # published and then replaced, most likely).
+                                                 # `calcFitnessCost` is the only term that pulls the B-spline onto
+                                                 # the A* reference; `lambda_collision`/`dist0` below multiply a
+                                                 # SWARM separation cost that is empty for one vehicle.
+        'optimization/dist0': 0.5,               # TESTED AT 0.8 m, WINDOW 8, REVERTED (DIAG28): the term
+                                                 # is live there (2.2 M rebound calls, 15 000-17 000
+                                                 # collisions populating exactly the arrays this
+                                                 # scales) and raising the standoff to 0.8 m made the
+                                                 # crossing WORSE, not better: truth minimum -0.291 m
+                                                 # and 7987 of 39973 samples inside the footprint
+                                                 # (20%), against +0.058..+0.167 m and 1887..4749 for
+                                                 # the same arm at 0.5.  With this, EVERY value this
+                                                 # architecture exposes has been flown and refuted.
+                                                 # Upstream: 0.5.
+        'optimization/swarm_clearance': 0.5,
+        'optimization/max_vel': LaunchConfiguration('max_vel'),
+        'optimization/max_acc': LaunchConfiguration('max_acc'),
+        'bspline/limit_vel': LaunchConfiguration('max_vel'),
+        'bspline/limit_acc': LaunchConfiguration('max_acc'),
+        'bspline/limit_ratio': 1.1,
+        'prediction/obj_num': 10,          # inert: nothing in THIS stack publishes dynamic obstacles
+        'prediction/lambda': 1.0,
+        'prediction/predict_rate': 1.0,
+    }
+
+    remaps = [
+        # THE WIRING.  Two independent rules, and they must NOT be pointed at the same topic: the FSM needs
+        # the twist, the map needs only the pose, and our 200 Hz pose topic has an identically zero twist.
+        ('odom_world', LaunchConfiguration('odom_vel_topic')),
+        ('grid_map/odom', LaunchConfiguration('odom_topic')),
+        ('grid_map/cloud', LaunchConfiguration('cloud_topic')),
+        ('planning/bspline', LaunchConfiguration('bspline_topic')),
+        ('grid_map/occupancy_inflate', ['drone_', LaunchConfiguration('drone_id'),
+                                        '_grid/grid_map/occupancy_inflate']),
+        ('goal_point', ['drone_', LaunchConfiguration('drone_id'), '_plan_vis/goal_point']),
+        ('global_list', ['drone_', LaunchConfiguration('drone_id'), '_plan_vis/global_list']),
+        ('init_list', ['drone_', LaunchConfiguration('drone_id'), '_plan_vis/init_list']),
+        ('optimal_list', ['drone_', LaunchConfiguration('drone_id'), '_plan_vis/optimal_list']),
+        ('a_star_list', ['drone_', LaunchConfiguration('drone_id'), '_plan_vis/a_star_list']),
+    ]
+
+    # THE TOUR LIST -> `fsm/waypoint_num` + `fsm/waypoint{i}_{x,y,z}`.  This has to happen at EXECUTION time,
+    # inside an OpaqueFunction, because a launch argument's value is only known then -- and a launch file
+    # cannot declare a variable number of arguments.  The parsing is strict on purpose: a malformed list must
+    # stop the launch, not silently fly a shorter tour.
+    def make_node(context):
+        wps = [w.strip() for w in context.launch_configurations.get('waypoints', '').split(';') if w.strip()]
+        for i, w in enumerate(wps):
+            parts = [p.strip() for p in w.split(',')]
+            if len(parts) != 3:
+                raise RuntimeError('waypoints: entry %d is %r -- expected "x,y,z"' % (i, w))
+            params['fsm/waypoint%d_x' % i] = float(parts[0])
+            params['fsm/waypoint%d_y' % i] = float(parts[1])
+            params['fsm/waypoint%d_z' % i] = float(parts[2])
+        params['fsm/waypoint_num'] = len(wps)
+        params['fsm/waypoint_start_alt'] = LaunchConfiguration('waypoint_start_alt')
+        params['fsm/waypoint_advance_m'] = LaunchConfiguration('waypoint_advance_m')
+        params['fsm/waypoint_loop'] = LaunchConfiguration('waypoint_loop')
+        return [Node(
+            package='ego_planner',
+            executable='ego_planner_node',
+            name=['drone_', LaunchConfiguration('drone_id'), '_ego_planner_node'],
+            output='screen',
+            parameters=[params],
+            remappings=remaps,
+        )]
+
+    note = LogInfo(msg=[
+        'ego_on_lio: ONE node (ego_planner_node).  NOT started, on purpose: traj_server (the contract is '
+        'produced by src/planner/ego_source.py instead -- see this file\'s header), ego\'s own simulator, '
+        'map_generator, and rosmsg_tcp_bridge.  ',
+        'Wiring: odom_world <- ', LaunchConfiguration('odom_vel_topic'),
+        ' (the twist the FSM gate needs); grid_map/odom <- ', LaunchConfiguration('odom_topic'),
+        ' (pose only); grid_map/cloud <- ', LaunchConfiguration('cloud_topic'),
+        ' (must be in L: there is no TF).',
+    ])
+
+    return LaunchDescription(args + [note, OpaqueFunction(function=make_node)])

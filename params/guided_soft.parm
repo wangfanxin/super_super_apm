@@ -1,0 +1,32 @@
+# 温和档（第 85 轮）：把"位置环放大"那一档收回来，专治 0.2-0.5 Hz 的共振。
+#
+# 为什么要这一档（本轮实测，scripts/loop_response.py + scripts/loop_lag.py，读 flight.BIN 的 PSCN/PSCE）：
+#   闭环的频率响应 |H| = 实际加速度 / 位置环要求的加速度（分段平均互谱，10 Hz 采样）：
+#     band 0.05-0.20 Hz : |H| 1.03-1.04   <- 跟踪忠实
+#     band 0.20-0.50 Hz : |H| 1.73-1.91   <- 放大 1.8-1.9 倍（共振），v4a-01 与 pv1-02-02 都一样
+#     band 0.50-1.00 Hz : |H| 1.16-1.23
+#     band 1.00-2.00 Hz : |H| 0.67-1.33
+#   而"参考自己的主频"两套世界差得很远：
+#     v4a-01（第 79 轮宽车道，跟踪误差 0.090 m）：0.16 Hz  <- 落在 |H|≈1 的区间
+#     冻结六边形（跟踪误差 0.19-0.61 m）    ：0.30-0.67 Hz <- 正好落在共振带
+#   所以问题不是"飞机慢"，是**参考的频率内容撞在位置环的共振上**。降速只把主频按 v/λ 往下挪
+#   （2 m/s -> 1 m/s 才把 0.67 挪到 0.33，仍在共振带），这就是单靠降速不够的原因。
+#
+# 这一档只动"让环变尖"的那几个增益，不动几何、不动 SPEC 的数字：
+#   PSC_NE_POS_P 3.0 -> 1.5   位置环 P（本项目上一阶段用 posvelacc 时验证过的值就是 1.5）
+#   PSC_NE_VEL_P 3.0 -> 2.0   速度环 P（ArduPilot 4.7 默认 2.0）
+#   PSC_NE_VEL_I 1.4 -> 1.0   速度环 I（减小积分在阶跃上的过冲）
+#   ATC_ANG_RLL/PIT_P 6.0 -> 4.5 姿态环回到 4.7 默认（6.0 是"更紧"的一档，只换来振荡）
+#   WP_SPD 6.5 -> 2.5        位置环追赶速度上限，与 max_vel 2.0 一致
+#   WP_ACC 10  -> 5.0        与 SUPER 的 max_acc 5.0 一致
+#   PSC_NE_JERK 150 -> 100   收到第 50 轮的水平
+# 名字有效性：python3 scripts/check_param_names.py params/guided_soft.parm
+WP_SPD 2.5
+WP_ACC 5.0
+PSC_NE_JERK 100.0
+ATC_ANGLE_MAX 45.0
+PSC_NE_POS_P 1.5
+PSC_NE_VEL_P 2.0
+PSC_NE_VEL_I 1.0
+ATC_ANG_RLL_P 4.5
+ATC_ANG_PIT_P 4.5

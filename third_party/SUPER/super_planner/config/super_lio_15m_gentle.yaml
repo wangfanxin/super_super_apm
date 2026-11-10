@@ -1,0 +1,219 @@
+# SUPER 的规划配置 —— 为 15 m 方形 x 3 圈的密集森林改的。
+# 基线是 SUPER 自带的 static_dense.yaml（森林/窄走廊那一档），改动都标了 [改]。
+# 用法：拷到 super_planner/config/ 下，launch 时 config_name:=forest_15m.yaml
+
+fsm:
+  click_goal_en: true
+  click_goal_topic: "/planning/click_goal"     # waypoint_mission 的 goal_pub_topic
+  # ★ 注意：click_height 会**覆盖** goal 的 z ★
+  #   实测：航点文件给 z=2.0，日志里 FSM 收到的是 1.525(=click_height+微小偏移)，
+  #   于是 waypoint_mission 侧量到的"到当前航点距离"恒为 |2.0-1.525|=0.476，
+  #   推进判据被这个高度差污染。这里必须与航点文件的 z 一致。
+  click_height: -10.0
+  click_yaw_en: true
+  replan_rate: 10.0
+  cmd_topic: "/planning/pos_cmd"               # PositionCommand 出口
+  mpc_cmd_topic: "/planning_cmd/poly_traj"
+  timer_en: true
+
+super_planner:
+  backup_traj_en: true          # 两轨迹：任意时刻可刹停
+  detailed_log_en: false
+  visualization_en: false
+  use_fov_cut: false
+  print_log: false   # [改] 调参期打开，验收时关掉
+  visual_process: false
+  frontend_in_known_free: false
+  goal_yaw_en: false            # [改] 航点不给 yaw，让它按速度方向
+  goal_vel_en: false
+  corridor_bound_dis: 0.8       # 森林档：走廊贴得紧
+  corridor_line_max_length: 1.0
+  safe_corridor_line_max_length: 6.0
+  iris_iter_num: 2
+  obs_skip_num: 2
+  replan_forward_dt: 0.2
+  # planning_horizon 与 astar.map_voxel_num 一起决定"一条轨迹能覆盖多远"：
+  # 实际取 min(horizon, A* 网格半径 7.5 m)。12 m 是实测 12/12 命中的那一档；
+  # 加大到 16/22 反而让角点规划失败（见 astar 段注释）。
+  planning_horizon: 12.0
+  sensing_horizon: -1
+  receding_dis: 1.0
+  robot_r: 0.22                 # 机体半径（先回退到能规划的基线；余量以后再加）
+  yaw_dot_max: 3.0
+  # Yaw mode: 1 heading to velocity, 2 heading to goal
+  # 实测 mode=1 在 15 m 方形的角点会触发 "Yaw rate too large, 6–10 rad/s"
+  # （速度方向在拐角突变），故改 2：朝当前目标，方向变化慢得多。
+  yaw_mode: 2
+  mpc_horizon: 15
+
+traj_opt:
+  switch:
+    save_log_en: false
+    print_optimizer_log: false
+
+  boundary:
+    # ★ 速度/加速度/约束是一组，必须**一起**动，而且要留在机体与优化器的可行域里 ★
+    #   实测过的三组：
+    #     max_vel 6, max_acc 15, omg 2.5, thr 6/17  → 12/12 命中，参考峰值 5.14，真实 p90 3.9
+    #                                                  （但 max_acc=15 超过机体能力 g·tan(30°)=5.66）
+    #     max_vel 7, max_acc 5, omg 2.5, thr 6/17   → 12/12 命中，参考峰值 5.30，真实 p90 3.67，净空 +0.19
+    #     max_vel 8, max_acc 6.5, omg 4, thr 4/18   → 规划器在角点反复
+    #                                                  `Opt failed, Omg or thr or Pos violation`
+    #                                                  → PlanFromRest failed → 飞机停在第 1/2 个角点，只中 3/12
+    #   结论：**先保证 12/12 与净空，再谈速度**。速度的余量交给控制器与 switch_dis，
+    #   不要去逼优化器的可行性约束。
+    max_vel: 3.0
+    # max_acc 从 5.0 抬到 6.5：A* 网格把一条轨迹限制在 ~8 m，
+    # 三角形速度剖面的峰值 ≈ sqrt(a·d/2)，a 从 5→6.5 能把参考峰值从 5.15 推到 ~5.9。
+    # 实测跟踪比约 83%（4.30/5.15），峰值 5.9 对应真实峰值 ~4.9、p90 ~4.2。
+    # 机体能力：g·tan(ATC_ANGLE_MAX=45°) = 9.8 m/s²，6.5 留 34% 余量。
+    # 注意：约束组（omg/thr）不要跟着动，动了优化器会在角点不可行（见下）。
+    max_acc: 3.0
+    max_jerk: 40.0
+    max_omg: 2.5
+    max_acc_thr: 17.0
+    min_acc_thr: 6.0
+    penna_margin: 0.05
+
+  exp_traj:
+    pos_constraint_type: 1
+    energy_cost_type: 4
+    block_energy_cost: false
+    opt_accuracy: 5.0e-6
+    scale_factor: 1.0
+    integral_reso: 15
+    smooth_eps: 0.01
+    penna_t: 1.0e+7
+    penna_pos: 5.0e+9
+    penna_vel: 5.0e+8
+    penna_acc: 5.0e+8
+    penna_jerk: -5.0e+8
+    penna_attract: 5.0e+8
+    penna_omg: -1
+    penna_thr: -1
+
+  backup_traj:
+    uniform_time_en: true
+    pos_constraint_type: 2
+    piece_num: 2
+    energy_cost_type: 4
+    block_energy_cost: true
+    opt_accuracy: 1.0e-5
+    scale_factor: 1.0
+    integral_reso: 12
+    smooth_eps: 0.01
+    penna_t: 100.0
+    penna_ts: 1.0e+7
+    penna_pos: 1.0e+10
+    penna_vel: 1.0e+8
+    penna_acc: 1.0e+8
+    penna_jerk: -1.0e+6
+    penna_omg: -1
+    penna_thr: -1
+
+  flatness:
+    mass: 1.64
+    dh: 0.35
+    dv: 0.35
+    cp: 0.001
+    v_eps: 0.0001
+    grav: 9.81
+
+astar:
+  # A* 的局部体素网格：格数 × 0.05 m，以当前点为原点。三种尺寸都实测过：
+  #   300 (15 m, ±7.5) → 一条轨迹覆盖 ~8 m；12/12、p90 3.78~3.84、净空 +0.20  ← 采用
+  #   480 (24 m, ±12)  → 12/12、净空最好 +0.238，但 p90 3.66（没有速度收益）
+  #   640 (32 m, ±16)  → 跟踪 rms 2.26→1.06 m 更准，但 GCOPTER 在更长走廊上不可行
+  #                      （OptimizationExpTrajInPolytopes failed ×476）→ 只中 6/12
+  # 结论：网格大小不影响"飞机峰值 ~4.3 m/s"这件事（见 docs/STATUS.md 二十三），取 300。
+  map_voxel_num: [ 300, 300, 60 ]
+  visual_process: false
+  allow_diag: true
+  heu_type: 2
+  debug_visualization_en: false
+
+rog_map:
+  resolution: 0.05
+  inflation_resolution: 0.1
+  inflation_step: 3             # 0.1 m x 3 = 0.3 m 膨胀（回退；4 会把 1.6 m 柱间隙挤没）
+  unk_inflation_en: false
+  unk_inflation_step: 1
+  map_size: [ 24, 24, 6 ]
+  # ★★ fix_map_origin 是地图的**中心**，不是最小角 ★★
+  #   rog_map.cpp:45-46
+  #       bound_min = -half_map_size + fix_map_origin
+  #       bound_max = +half_map_size + fix_map_origin
+  #   之前写 [-20,-20,-2] + [40,40,8]，真实覆盖是
+  #       x,y ∈ [-40, 0]，z ∈ [-6, 2]
+  #   也就是整张地图被推到负象限，而**顶面 z=2.0 正好等于飞行高度**。
+  #   它不表现为"没有地图"，而表现为走廊搜索被顶面裁掉：
+  #       getSeedBBox → boundBoxByLocalMap() 把 box_max.z 夹到 2.0，
+  #       再 -= robot_r(0.22) → 1.78；而种子线在 z≈1.95，
+  #       种子线跑到包围盒外面 → CIRI 的 convexDecomposition 必失败：
+  #       "SearchPolytopeOnPath for new path failed" → "PlanFromRest failed"
+  #       → SUPER 一条轨迹都不发 → bridge 的 plan_rx=0 → 飞机悬停不动。
+  #   现在中心放在 (0,0,2)，即世界原点 + 飞行高度：
+  #       x,y ∈ [-15, 15]，z ∈ [-1, 5]（树干 ±9.6、z 0..4.15 全在盒内）
+  fix_map_origin: [ 0, 0, 2.0 ]
+  frontier_extraction_en: false
+
+  # 虚拟地面/天花板：现在飞行高度 2.0 在盒子中间，地面可以恢复成真实地面。
+  # 地面 -0.1 + 0.3 m 膨胀只盖到 z=0.2，离飞机 1.8 m，不会再出现
+  # "自己的格子被判 OCCUPIED"（那是 fix_map_origin 写错时的连带现象）。
+  virtual_ceil_height: 3.5
+  virtual_ground_height: -1.0
+
+  load_pcd_en: false
+
+  map_sliding:
+    enable: false
+    threshold: 3.0
+
+  esdf:
+    enable: false
+    resolution: 0.1
+    local_update_box: [ 5, 5, 3 ]
+
+  ros_callback:
+    enable: true
+    cloud_topic: "/lio/cloud_world"   # 必须是 world 系点云
+    odom_topic: "/lio/robo/odom"
+    odom_timeout: 0.5
+
+  visualization:
+    enable: false   # 临时打开：用 /rog_map/occ 与 /rog_map/unk 判断"地图里有多少格子"
+    use_dynamic_reconfigure: false
+    time_rate: 2
+    frame_rate: 0
+    range: [ 15, 15, 4 ]
+    frame_id: "world"
+    pub_unknown_map_en: false
+
+  intensity_thresh: -10
+  point_filt_num: 1
+
+  raycasting:
+    enable: true                # [改] 打开射线清除：否则 free 空间不会被标记，
+                                #     走廊会穿过"没扫到"的区域（这是安全相关的）
+    batch_update_size: 1
+    local_update_box: [ 100, 100, 5 ]
+    ray_range: [ 0.5, 100 ]
+    p_min: 0.12
+    p_miss: 0.49
+    p_free: 0.499
+    p_occ: 0.85
+    p_hit: 0.9
+    p_max: 0.98
+    unk_thresh: 1.0
+
+# ---------------------------------------------------------------------------
+# Generated by scripts/make_super_lio_config.sh from super_forest_15m.yaml.
+# Do not hand-edit: change the generator (or the source) and re-run it.
+# L frame: origin on the pad, z up.  Printed map window comes out as
+#   ground -0.65 / ceil 3.15  (see the arithmetic above -- NOT the written values).
+# RViz demo variant: scripts/make_super_viz_config.sh
+
+# ---------------------------------------------------------------------------
+# GENTLE: the profile that flew the whole 13-waypoint tour (missionA-pb-03).
+# Only the optimiser ceiling differs from super_lio_15m.yaml: max_vel 3.0, max_acc 3.0.
+# Generated by scripts/make_super_variants.sh

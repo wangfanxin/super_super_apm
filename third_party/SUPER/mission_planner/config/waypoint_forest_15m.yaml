@@ -1,0 +1,31 @@
+# waypoint_mission 的配置 —— 12 个航点、提前 X 米切下一个。
+# 基线是 SUPER 自带的 waypoint.yaml，改动标了 [改]。
+# 用法：拷到 mission_planner/config/，launch 时 config_name:=waypoint_forest_15m.yaml
+
+goal_pub_topic: "/planning/click_goal"    # 与 super_planner 的 fsm.click_goal_topic 一致
+odom_topic: "/lidar_slam/odom"            # [改] 我们的 LIO 里程计（原 /lidar_slam/odom 同）
+# 0 = RVIZ 点击；1 = Mavros；2 = 常数时间后自动开始
+start_trigger_type: 2
+start_program_delay: 3.0                  # 给 planner 起图的时间
+# 0 = PATH；1 = waypoints
+cmd_type: 1
+# ★ 提前多少米切下一个航点 ★
+#   3.0 = SUPER 默认（顺，但航点精度低）
+#   0.5 = 接近盒半径，精度高但更容易在角点减速
+switch_dis: 1.00
+odom_timeout: 0.1
+# ★ 每个航点只发一次 ★（这是 SUPER 上游默认值 99999，我一度改成 0.1，现已改回）
+#
+# 为什么 0.1 s 重发是错的：waypoint_mission 的重发是无条件的
+# （`if (new_goal || cur_t - last_pub_time > publish_dt)`），而 fsm 的 goal 回调
+# 每收到一条就置 `gi_.new_goal = true`。于是 ReplanOnce 不停返回 NEW_TRAJ →
+# FSM 进 GENERATE_TRAJ → PlanFromRest —— 而 PlanFromRest 生成的是 **rest2rest**
+# 轨迹（两端速度都为 0）。结果参考轨迹变成一串"起步-刹车"，参考速度实测
+# 峰值只有 5.3 m/s、p90 4.4，飞机自然上不到 4 m/s 以上（实测 p90 3.67）。
+# 现场特征：ref 速度周期性归零、参考点停在半路上不动一秒，再重新加速。
+#
+# 只发一次之后，FSM 用 15 Hz 的 ReplanOnce 从**当前状态**续规划，
+# 速度才能连续。若某个 goal 规划失败，FSM 会停在 GENERATE_TRAJ 里自己重试，
+# 不需要靠消息重发来"催"。
+publish_dt: 99999.0
+waypoints_file_name: "waypoints_square15.txt"

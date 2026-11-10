@@ -1,0 +1,55 @@
+# SITL 闭环专用参数：**最后**合并，覆盖前面所有文件（默认值 → 飞行参数 → 本文件）。
+#
+# 为什么单独一份
+# --------------
+# 真实机上位置源是 LIO（外部导航，EK3_SRC1_*=6，见 apm_extnav.parm）。
+# 但 SITL 里没有 LIO：我们喂给 FCU 的外部导航又只能从 FCU 自己的
+# LOCAL_POSITION_NED 推出来 —— 那是个自环，EKF 位置等于它自己的输出，等于没有任何
+# 位置源，于是预解锁永远停在 "Need Position Estimate"。
+#
+# 所以 SITL 阶段的位置源用 SITL 自带的**仿真 GPS**（SIM_GPS1_ENABLE=1）。
+# 这不是"绕过验收"：本阶段要证的是
+#     SUPER → /plan/cmd → bridge → MAVLink → ArduPilot 位置环 → 12 盒
+# 这一段闭环；LIO 那段等 Super-LIO 接进来再换源（换源就是把下面三行改成 6/1/6，
+# 已经在 apm_extnav.parm 里写好了）。
+#
+# ★ 本文件不能有行尾注释 ★（EK3_SRC1_POSXY 曾被行尾注释整行吞掉，值停在旧值）
+
+# ---- 位置/速度/航向源：1=Baro 3=GPS 6=ExternalNav ----
+EK3_SRC1_POSXY 3
+EK3_SRC1_VELXY 3
+EK3_SRC1_POSZ 1
+EK3_SRC1_VELZ 3
+EK3_SRC1_YAW 1
+AHRS_EKF_TYPE 3
+EK3_ENABLE 1
+EK3_SRC_OPTIONS 0
+
+# ---- SITL 的仿真 GPS（10 颗星）----
+SIM_GPS1_ENABLE 1
+GPS1_TYPE 1
+
+# ---- 解锁检查 ----
+# 2097150 = bit1..bit20 全置位 = "跳过全部预解锁检查"
+# （AP_Arming.h 的 Check 枚举；get_enabled_checks()==0 才算全跳过）
+# SITL 里 IMU 一致性、气压计、磁罗盘这些经常在冷启头几秒报不一致，
+# 不跳过的话每次都要等它自己收敛，白白吃掉飞行窗口。
+# 真机**不要**这么设（apm_extnav.parm 里是 0）。
+ARMING_SKIPCHK 2097150
+ARMING_NEED_LOC 0
+GUID_OPTIONS 1
+
+# ---- GUIDED 超时：SITL 里必须关掉 ----
+# GUID_TIMEOUT 默认 3 s：收不到定点指令 3 s 就退出 GUIDED（转 LOITER）。
+# 而 bridge 只在 armed 且模式是 GUIDED 时才发指令 —— 一旦退出就是死锁，
+# 现场会看到"飞机悬停不动、bridge sent=0、mode=LOITER"。
+# 起飞完成到 SUPER 第一条指令之间正好有这个空档，所以 SITL 关掉它。
+# 真机保持 3 s：那一层的兜底由 supervisor 的 RTL 负责（WHTF 不变式"永远有 fallback"）。
+GUID_TIMEOUT 0
+
+# ---- 台架安全项：SITL 里必须关掉，否则会抢走模式 ----
+# FS_GCS_ENABLE=1 时 relay 一旦退出就 RTL；FENCE_ENABLE=1 时越界就 RTL。
+FS_GCS_ENABLE 0
+FS_THR_ENABLE 0
+FENCE_ENABLE 0
+BRD_SAFETY_DEFLT 0

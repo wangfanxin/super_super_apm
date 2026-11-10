@@ -1,0 +1,123 @@
+# EKF TRUST IN THE LIO, FOR FLIGHT (as opposed to for a parked calibration).
+#
+# WHY THIS FILE EXISTS.  `params/ekf_trust_lio_measured.parm` tightens the filter's assumed
+# measurement noise to 3 cm horizontal / 10 cm altitude (`EK3_POSNE_M_NSE 0.03`,
+# `EK3_ALT_M_NSE 0.10`).  That is defensible on a parked calibration flight and it is what makes
+# the FCU's estimate track the LIO so precisely in the hover.  It is NOT survivable in flight:
+#
+#   missionA-na-02, setpoints.csv:
+#       t=27.5  truth_U 1.964   cmd 1.359   fcu 0.154   lio 1.140
+#       t=28.5  truth_U 3.413   cmd 1.094   fcu 0.154   lio 0.346
+#   `fcu_z` freezes at 0.154 m for the whole climb and bridge.log ends with `nav_age=2.37` (the
+#   FCU stopped streaming LOCAL_POSITION_NED).  The line before is:
+#       FCU-TEXT 'EKF variance'  ->  'EKF Failsafe'  ->  'SIM Hit ground at 8.39 m/s'
+#   The LIO's z lagged and then went the wrong way during the climb -- its scan rate can drop to
+#   3-4 Hz because src/sim/raycast.cast intermittently takes 130-230 ms -- and a 0.3 m excursion
+#   against a 3 cm assumed sigma is ~10 sigma.  The filter calls that a fault and failsafes.
+#
+#   The estimator is NOT the problem: scripts/offline_lio_check.sh measures it against a replayed
+#   MOVING truth at horizontal rms 18.07 mm / vertical 15.74 mm, GATE PASS.
+#
+# SO: keep the LIO as the ONLY horizontal and vertical source (the owner's requirement -- 高度要用
+# lio), and widen the ASSUMED noise so a normal transient is corrected instead of declared a
+# fault.  Every value below is still 3-10x tighter than the ArduPilot default for the same
+# parameter: this is not "trust the LIO less, trust the IMU more", it is "stop claiming it is
+# perfect".
+#
+# ★ NAMING: THE OPPOSITE OF WHAT THIS FILE USED TO SAY ★
+#   The harness's `ekf_trust_lio_measured.parm` sets
+#       VISO_POS_M_NSE / VISO_VEL_M_NSE / VISO_YAW_M_NSE
+#   and this file used to claim those three names DO NOT EXIST in this firmware.  THAT WAS WRONG, and
+#   it was wrong in the expensive direction: the claim deleted the only three numbers that actually
+#   bound the external-nav innovation under `EK3_SRC1_* = 6` (ExternalNav).
+#
+#   MEASURED 2026-11-07 against the FLOWN binary (`build/sitl/bin/arducopter`, the one `run-mission.sh`
+#   starts), by asking it by name on a parked SITL:
+#       VISO_POS_M_NSE = 0.2000   VISO_VEL_M_NSE = 0.1000   VISO_YAW_M_NSE = 0.2000
+#   -- i.e. the firmware's defaults, and exactly the floor a message with ZERO covariance is clamped up
+#   to (`AP_VisualOdom_MAV.cpp`: `if (covariance <= 0) covariance = _pos_noise`).  The bridge sends a
+#   zero-covariance ODOMETRY, so these three, not `EK3_*_M_NSE`, were the numbers bounding the trust all
+#   along.  (Negative control: `VISO_ZZZ_NSE` gets NO reply, so "0.2000" is a real parameter, not the
+#   error path's zero.)
+#
+#   The three lines below therefore SET them, from this stack's own measurements:
+#     position 0.10 m   in-flight LIO-vs-truth is 11 cm (scripts/lio_z_vs_truth.py), offline 1.8 cm
+#                       horizontal; the firmware default 0.20 is twice the in-flight error
+#     velocity 0.25 m/s the fed velocity's measured rms is 0.2781 m/s (docs/metrics, H5 window); the
+#                       default 0.10 claims the LIO knows its velocity to 10 cm/s, which it does not
+#     yaw      0.10 rad the LIO's own yaw is the best estimate this aircraft has (there is no compass)
+#   These are NOT a loosening of `EK3_*_M_NSE` (those stay as they are, and they remain inert for
+#   ExternalNav -- which is the point of writing the trust where it is actually read).
+#
+# LOAD ORDER: after apm_lio_only.parm and after the posz file, INSTEAD OF
+# ekf_trust_lio_measured.parm.  run-mission.sh appends EKF_PARM after MISSION_PARM.
+
+# ---- the measurement sigmas that bound the innovation ------------------------------------
+# ROUND 43 CORRECTION.  These were loosened (0.03 -> 0.10, ALT 0.10 -> 0.30) to stop the EKF
+# variance failsafe.  That failsafe is now disabled properly (`FS_EKF_ACTION 0` below, which is
+# what actually controls it -- the old `FS_EKF_THRESH 30.0` was out of range and never applied), so
+# loosening them is no longer necessary AND IT WAS HARMFUL.  MEASURED missionA-nt-01:
+#
+#     t=31  truth_U 2.464   cmd 1.991   fcu_z 1.603   lio_z 2.343
+#     t=32  truth_U 3.932   cmd 1.991   fcu_z 2.182   lio_z 3.818
+#
+#   The plan asked for 1.99 m and the LIO reported 3.82 m -- both CORRECT -- but the EKF's own
+#   vertical estimate lagged the external nav by 1.6 m, so the flight controller believed it was
+#   at 2.18 m and kept climbing, to 69 m.  A loose measurement sigma is a filter that follows the
+#   measurement slowly.  With a clean tap the LIO measures the truth to 11 cm in flight
+#   (scripts/lio_z_vs_truth.py) and to 7.02 mm vertical on a replayed climb
+#   (scripts/make_climb_tap.py), so the right thing is to trust it TIGHTLY -- tighter than the
+#   harness's own calibration file, which is where these values started.
+EK3_POSNE_M_NSE     0.03      # harness calibration value; flight LIO error is 11 cm, so 3 cm
+EK3_VELNE_M_NSE     0.03      # is a conservative claim that still makes the filter track
+EK3_VELD_M_NSE      0.05
+EK3_ALT_M_NSE       0.05      # was 0.10 (calibration) and 0.30 (round 43 mistake)
+EK3_YAW_M_NSE       0.02
+#
+# ...AND THE THREE THAT ARE ACTUALLY READ WHEN THE SOURCE IS ExternalNav (see the NAMING block):
+# ★ 第 88 轮补 7（A1）：位置/速度的信任**试过退回固件默认，已回落** ★
+#   对照实验 `kw8`（VISO 0.20/0.10）vs `kw1`/`kw7`（0.10/0.25）：
+#     出界：0.20 的 3 趟里仍出现 1 次（`kw8-02-02`，真值跨度 91 m 对飞控 15 m、跑 220 s 只走 109 m），
+#           所以"收紧位置信任"**不是**出界的原因，放宽也没有换来保护；
+#     跟踪：W6 p90 从 0.395-0.40（0.10）退到 **0.542 / 0.636**（0.20），代价却是确定的。
+#   结论：回到 0.10 / 0.25（有实测依据的那一档），不再用这三个数去换出界。
+VISO_POS_M_NSE      0.10      # 0.20 -> 0.10（A1 对照否掉了放宽）
+VISO_VEL_M_NSE      0.25      # 0.10 -> 0.25（同上）
+VISO_YAW_M_NSE      0.10      # 固件默认 0.20；LIO 的 yaw 是机上唯一的航向，保持收紧
+
+# ---- state noise: how fast the filter may follow -----------------------------------------
+EK3_ACC_P_NSE       0.10
+EK3_GYRO_P_NSE      0.003
+EK3_ABIAS_P_NSE     0.002
+EK3_GBIAS_P_NSE     0.0002
+
+# ---- gates: wide, so one bad update cannot wedge the lane ---------------------------------
+EK3_POS_I_GATE      1500
+EK3_CHECK_SCALE     100
+
+# ---- do not let a variance WARNING take the aircraft out of GUIDED -------------------------
+#
+# ★ `FS_EKF_THRESH 30.0` DOES NOT DO WHAT IT LOOKS LIKE ★
+#   ArduCopter/Parameters.cpp:274-280 declares it
+#       @Values: 0:Disabled, 0.6:Strict, 0.8:Default, 1.0:Relaxed
+#       @Range: 0.0 1.0
+#   so 30.0 is OUT OF RANGE and never takes effect -- the effective threshold stays at the
+#   default 0.8.  The harness's ekf_trust_lio_measured.parm has carried `FS_EKF_THRESH 30.0`
+#   all along, i.e. it has always been flying the default and the comment there is misleading.
+#   MEASURED missionA-nd-01: relay ENABLED at 34.41 s, and at 35.65 s
+#       FCU-TEXT 'EKF variance'  ->  'EKF Failsafe: changed to Land Mode'
+#   -- 1.2 s into the flight, with 30.0 sitting in the parm file.
+#
+#   Two in-range levers, and the SECOND is the one that matters:
+#     FS_EKF_THRESH 1.0   the most permissive value the range allows ("Relaxed")
+#     FS_EKF_ACTION 0     "Report only" -- the check still RUNS and still logs 'EKF variance',
+#                         it simply no longer switches the mode underneath the mission
+#
+#   WHY REMOVING THE AUTOMATIC MODE SWITCH IS DEFENSIBLE HERE: the LIO is the only horizontal and
+#   vertical source by design ("高度要用 lio"), so if it really failed there is nothing for the
+#   FCU to fall back to anyway -- switching to LAND does not rescue the flight, it abandons it.
+#   The outer loop that CAN see the truth is the supervisor's (geofence, climb guard, plan
+#   silence, nav floor), and it aborts by name.  Keeping FS_EKF_ACTION at 0 also keeps the
+#   warning in the log, so the evidence is not hidden.
+FS_EKF_THRESH       1.0
+FS_EKF_ACTION       0

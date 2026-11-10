@@ -1,0 +1,26 @@
+{
+  "_note": [
+    "L -> W calibration for THIS stack: it is the identity, on purpose.",
+    "",
+    "Why it is not the bridge's default: `bridge_node.load_calib()` falls back to",
+    "`frames.Calib.predicted(spawn_heading_deg=0.0, world_axes='body')`, which is a",
+    "+90 deg yaw (L's x axis is taken to be the body's forward axis, pointing North,",
+    "while W is ENU). That is right for the lio_avoid construction, where the LIO",
+    "initialises its world body-aligned. It is WRONG here: our relay publishes ONE",
+    "world-aligned ENU frame on /lio/robo/odom, /lio/odom and /lidar_slam/odom, and",
+    "SUPER plans in that same frame, so L == W numerically and the only remaining",
+    "step is the W(ENU) -> NED permutation the transport applies itself.",
+    "",
+    "Getting this wrong does not look like a crash: a +90 deg yaw maps the 15 m",
+    "square onto itself, so the vehicle still visits four corners -- just mirrored,",
+    "through different trunks. The score would pass or fail on luck.",
+    "",
+    "The real-aircraft counterpart of this file is the parked-window measurement in",
+    "the supervisor (T6 in FRAMES.md); here the frame identity is a design fact, not",
+    "a measurement, so it is recorded as such."
+  ],
+  "R_WL": [[1.0, 0.0, 0.0],
+           [0.0, 1.0, 0.0],
+           [0.0, 0.0, 1.0]],
+  "t_WL": [0.0, 0.0, 0.0]
+}
