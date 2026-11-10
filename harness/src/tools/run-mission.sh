@@ -181,7 +181,9 @@ NAV_SOURCE="${NAV_SOURCE:-lio}"
 CALIB_ARG=""
 TRAJ_CALIB_ARG=""
 if [ "$NAV_SOURCE" = "lio" ]; then
-    CALIB="$ROOT/../_stage/calib.json"
+    # the calibration ships in the repo (calib/calib.json) and is overridable; the old
+    # $ROOT/../_stage/calib.json default only existed on the author's machine (round-20 packaging)
+    CALIB="${CALIB_FILE:-$ROOT/../calib/calib.json}"
     if [ ! -f "$CALIB" ]; then
         echo "no calibration file at $CALIB -- run once with NAV_SOURCE=truth first"
         exit 1
