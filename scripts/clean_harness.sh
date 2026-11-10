@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- release-tree path bootstrap (git clone anywhere) -----------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # 只清**我自己这份副本**的残留，按端口而不是按程序名匹配。
 #
 # ★ 为什么必须这样 ★ 这台机器上同时存在两份 harness 副本：

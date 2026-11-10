@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- release-tree path bootstrap (git clone anywhere) -----------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # One round-81 sortie: the HEX mission of docs/SPEC.md, flown the way the spec says.
 #
 #   fly_hex.sh TAG [ATTEMPTS]

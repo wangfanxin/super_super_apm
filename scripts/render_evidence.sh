@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- release-tree path bootstrap (git clone anywhere) -----------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Regenerate the whole evidence set (the owner's three figure families) from one sortie, in one command.
 #
 #   bash scripts/render_evidence.sh [TAG]        default TAG = kx1-02-01 (the sortie the docs cite)

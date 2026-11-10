@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- release-tree path bootstrap (git clone anywhere) -----------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Static gate before any takeoff (round 87): SPEC self-check + frozen-map check.
 # Kept as a script because passing "|" inside a grep pattern through the Windows
 # shell to bash keeps getting mangled -- see docs/INTEGRATION.md §41 note 3.

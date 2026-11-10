@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- release-tree path bootstrap (git clone anywhere) -----------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # One sortie, then the three measurements that answer "is it faster, and did it touch anything".
 #
 # The speed question has to be answered on the REFERENCE (setpoints.csv vel_*), not on the truth,
