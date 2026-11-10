@@ -115,3 +115,26 @@ KNOWN=W4 bash scripts/run_accept.sh <tag> forest_hex12.yaml 2.0 10.0 box 0.5 2
 * `docs/INTEGRATION.md` —— 9000 行、112 节的测量记录：试过什么、数字多少、为什么否掉。
 * `docs/evidence/README.md` —— 每张图是什么、怎么重画。
 * `docs/LEGACY_PATHS.md` —— 哪些分析工具仍假设作者的绝对路径（编译与飞行链不假设）。
+
+## 9. 打包时验证了什么（可复现）
+
+以下都在**从 GitHub 重新 clone 出来的副本**上跑过（路径 `/tmp/release_from_github`，不是作者的工作区）：
+
+| 检查 | 结果 |
+|---|---|
+| `git clone` 到任意目录 | 855 个文件 / 20 MB；`setup/env.sh` 把 `DSH_ROOT` 解析成克隆目录，无需任何环境变量 |
+| `bash scripts/check_static.sh` | **STATIC GATE: PASS**（含 `S1 max_vel = 1.35`、两个补丁 APPLIED、冻结地图 13 行） |
+| `python3 src/whtf/ros/planner_source_super.py --selftest` | **SELFTEST PASS** |
+| `bash harness/src/tools/run-mission.sh`（干跑） | 所有路径解析成功（"nothing started" 分支） |
+| `bash setup/build.sh --no-lio` | **编译出 `fsm_node`（21.7 MB）** —— 内置 SUPER 源码 + 打包进去的两个补丁 |
+| 全部 `.sh` / `.py` 语法 | 101 个 `.sh` + 250 个 `.py`，`bash -n` / `py_compile` **0 失败** |
+
+**尚未在本轮验证的**（都在 README 的下一步里，需要长时间下载/编译）：
+
+* `bash setup/build.sh`（完整版，含 Super-LIO + livox 编译）—— 内置源码未改，但本轮只跑过 `--no-lio`；
+* `bash setup/fetch_ardupilot.sh --build` —— 1.5 GB 下载 + SITL 编译，未在本轮执行；
+* **一次完整的飞行 + 评分**（需要上面两项）—— 因此仓库里的数字来自作者机器上同一套源码与配置的实测记录，
+  而不是本轮在克隆里重飞的。
+
+如果你要"克隆 → 编译 → 飞一趟"全部在本机复现，按第 4、5 节依次执行即可；任何一步的输出都会打印它用了哪个
+路径（`setup/env.sh` 的 `dsh_env_summary`），便于核对。
