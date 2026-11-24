@@ -38,21 +38,26 @@
 ## 2. 目录
 
 ```
+apm_thin/         【模块 1】自研薄层：把 SUPER 接到飞控（ros/planner_source_super.py、ref_lp.py）
+                  以及三个进程共享的库（common/frames.py、planner/cmd_stream.py…）
+hku_super/        【模块 2】hku-mars SUPER 规划器：super_planner/、rog_map/、mission_planner/、
+                  mars_uav_sim/，交付配置 config/super_planner_hex.yaml，以及 patches/（我们的 10/11/12）
+slam/             【模块 3】Super-LIO + livox_ros_driver2 + LIO 配置 config/livox_360.yaml
+ardupilot/        【模块 4】SITL 驱动侧：bridge/（MAVLink 桥）、supervisor/（守卫/降落）、
+                  params/（飞行参数）、msgs/quadrotor_msgs（消息定义）
+sim/              【模块 5】仿真环境：src/（lidar_imu.py、raycast.py、truth_rx.py）、pattern/
+                  （16 MB 供应商射线图案，不入库）、worlds/（冻结世界）、rviz/、frozen/（冻结清单）
+scripts/          跨模块编排：飞行臂 fly_*、评分器 accept.py、记录器、~150 个分析工具、run-mission.sh
 setup/            env.sh（唯一知道路径的地方）、build.sh、fetch_ardupilot.sh、run_hex.sh
-scripts/          起飞手臂、评分器 accept.py、以及 ~150 个分析工具
-src/whtf/ros/     薄层：把 SUPER 接到飞控（planner_source_super.py、ref_lp.py）
-config/           SUPER 规划器配置（冻结版 + §90 记录的速度变体）
-params/           飞行用的 ArduPilot 参数（外部导航信任、guided 限幅）
-worlds/           冻结世界 forest_hex12.yaml（522 柱、±12 m、边长 10.000 m）
 calib/            L→W 标定（calib.json，实测量）
-docs/             SPEC.md（需求）、INTEGRATION.md（全部测量记录）、CHAIN_DETAIL.md、evidence/
-harness/          围绕仿真的运行框架：common/planner/bridge/supervisor/sim/tools + sim/params/rviz/frozen
-third_party/      pins.env + 内置的 SUPER / Super-LIO / livox_ros_driver2 源码
+docs/             SPEC.md（需求）、DATA_PIPELINE.md（数据管线）、INTEGRATION.md（测量记录）、evidence/
+tests/            无飞行自检 run_all.sh（CI 同款）
+PINS.env          第三方源码的 commit 与补丁说明
 ```
 
 ## 3. 依赖
 
-* Ubuntu 22.04（或 WSL2）、ROS 2 Humble、C++17、Eigen、PCL、yaml-cpp（apt 一行见 `third_party/pins.env`）。
+* Ubuntu 22.04（或 WSL2）、ROS 2 Humble、C++17、Eigen、PCL、yaml-cpp（apt 一行见 `PINS.env`）。
 * 磁盘 ≥ 8 GB（ArduPilot 占大头）、≥ 4 核。**主机要安静**：验收 H1 量的是"仿真有没有跑满实时"，
   机器一忙就会失败——这是设计，不是 bug。
 
@@ -97,17 +102,17 @@ KNOWN=W4 bash scripts/run_accept.sh <tag> forest_hex12.yaml 2.0 10.0 box 0.5 2
 
 **一句必须说清的话**：记录里那些数字来自带 truth-tap 补丁的 SITL —— `tap.csv`（1.2 kHz 真值）就是它
 写的。用原版 ArduPilot 能飞完任务，但不会有 `tap.csv`，`accept.py` 也就无法评分。
-`third_party/pins.env` 里写了同一句话。
+`PINS.env` 里写了同一句话。
 
 ## 7. 第三方代码与许可
 
-* `third_party/SUPER` —— hku-mars/SUPER（保留 LGPL-3.0 头）。**已修改**：两个补丁直接烘进内置源码，
+* `hku_super` —— hku-mars/SUPER（保留 LGPL-3.0 头）。**已修改**：两个补丁直接烘进内置源码，
   随时可用 `scripts/patch_super_*.py --check/--apply/--revert` 复算；静态闸门会断言它们在位。
-* `third_party/Super-LIO` —— Liansheng-Wang/Super-LIO @ `f89f48d`。
-* `third_party/livox_ros_driver2` —— Livox-SDK/livox_ros_driver2 @ `2144554`。
-* `harness/` —— 本项目自己的运行框架（bridge / supervisor / 仿真 tap）。
+* `slam/` —— Liansheng-Wang/Super-LIO @ `f89f48d`（+ livox_ros_driver2）。
+* `slam/livox_ros_driver2` —— Livox-SDK/livox_ros_driver2 @ `2144554`。
+* `ardupilot/`、`sim/`、`apm_thin/` —— 本项目自己的三块：驱动侧、仿真侧、薄层。
 
-完整 commit 见 `third_party/pins.env`。
+完整 commit 见 `PINS.env`。
 
 ## 8. 继续读
 
@@ -124,8 +129,8 @@ KNOWN=W4 bash scripts/run_accept.sh <tag> forest_hex12.yaml 2.0 10.0 box 0.5 2
 |---|---|
 | `git clone` 到任意目录 | 855 个文件 / 20 MB；`setup/env.sh` 把 `DSH_ROOT` 解析成克隆目录，无需任何环境变量 |
 | `bash scripts/check_static.sh` | **STATIC GATE: PASS**（含 `S1 max_vel = 1.35`、两个补丁 APPLIED、冻结地图 13 行） |
-| `python3 src/whtf/ros/planner_source_super.py --selftest` | **SELFTEST PASS** |
-| `bash harness/src/tools/run-mission.sh`（干跑） | 所有路径解析成功（"nothing started" 分支） |
+| `python3 apm_thin/ros/planner_source_super.py --selftest` | **SELFTEST PASS** |
+| `bash scripts/run-mission.sh`（干跑） | 所有路径解析成功（"nothing started" 分支） |
 | `bash setup/build.sh --no-lio` | **编译出 `fsm_node`（21.7 MB）** —— 内置 SUPER 源码 + 打包进去的两个补丁 |
 | 全部 `.sh` / `.py` 语法 | 101 个 `.sh` + 250 个 `.py`，`bash -n` / `py_compile` **0 失败** |
 
@@ -146,8 +151,8 @@ KNOWN=W4 bash scripts/run_accept.sh <tag> forest_hex12.yaml 2.0 10.0 box 0.5 2
   不是迁移引入的）。
 
 **一个必须知道的依赖（不是代码问题，是数据）**：LiDAR 仿真需要真实 MID-360 射线图案
-（`harness/sim/mid360_pattern.csv`，≈16 MB，800 001 行，供应商数据，不入库）。没有它飞行脚本会**拒绝启动**。
-获取与校验见 `harness/sim/README.md` 与 `bash scripts/check_pattern.sh`。
+（`sim/pattern/mid360_pattern.csv`，≈16 MB，800 001 行，供应商数据，不入库）。没有它飞行脚本会**拒绝启动**。
+获取与校验见 `sim/pattern/README.md` 与 `bash scripts/check_pattern.sh`。
 
 如果你要"克隆 → 编译 → 飞一趟"全部在本机复现，按第 4、5 节依次执行即可；任何一步的输出都会打印它用了哪个
 路径（`setup/env.sh` 的 `dsh_env_summary`），便于核对。

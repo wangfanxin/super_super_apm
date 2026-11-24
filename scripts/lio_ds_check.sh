@@ -8,8 +8,8 @@ fi
 # -----------------------------------------------------------------------------
 # What is `ds_undistort_` (the cloud the non-dense branch transforms) and how big is the downsample?
 set -u
-S=${DSH_ROOT}/harness/src/lio-fork/super_lio_local/src/lio/super_lio.cpp
-CFG=${DSH_ROOT}/harness/src/lio/config/livox_360.yaml
+S=${DSH_ROOT}/slam-fork/super_lio_local/src/lio/super_lio.cpp
+CFG=${DSH_ROOT}/slam/config/livox_360.yaml
 echo "== ds_undistort_ uses"
 grep -n 'ds_undistort_' "$S" 2>/dev/null | head -12
 echo

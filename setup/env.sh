@@ -15,12 +15,16 @@
 DSH_ROOT="${DSH_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export DSH_ROOT
 
-# ---- what lives inside the repo -------------------------------------------------
-export SUPER_PLANNER_ROOT="${SUPER_PLANNER_ROOT:-$DSH_ROOT/third_party/SUPER}"
-export HARNESS_ROOT="${HARNESS_ROOT:-$DSH_ROOT/harness}"
-export LIO_ROOT="${LIO_ROOT:-$HARNESS_ROOT}"                  # the thin layer's --lio-root
+# ---- the five modules -----------------------------------------------------------
+export THIN_ROOT="${THIN_ROOT:-$DSH_ROOT/apm_thin}"            # our thin layer + shared libs
+export SUPER_PLANNER_ROOT="${SUPER_PLANNER_ROOT:-$DSH_ROOT/hku_super}"   # hku-mars SUPER
+export SLAM_ROOT="${SLAM_ROOT:-$DSH_ROOT/slam}"                # Super-LIO + livox + LIO config
+export SIM_ROOT="${SIM_ROOT:-$DSH_ROOT/sim}"                   # simulator, worlds, rviz, frozen
+export ARDUPILOT_DIR="${ARDUPILOT_DIR:-$DSH_ROOT/ardupilot}"   # bridge, supervisor, msgs, params
+# kept for scripts that predate the split: the thin layer's --lio-root is the shared-lib module
+export LIO_ROOT="${LIO_ROOT:-$THIN_ROOT}"
 export CALIB_FILE="${CALIB_FILE:-$DSH_ROOT/calib/calib.json}"  # L->W calibration
-export MID360_PATTERN="${MID360_PATTERN:-$HARNESS_ROOT/sim/mid360_pattern.csv}"
+export MID360_PATTERN="${MID360_PATTERN:-$SIM_ROOT/pattern/mid360_pattern.csv}"
 
 # ---- build outputs (outside git) ------------------------------------------------
 export WS_SUPER="${WS_SUPER:-$DSH_ROOT/.build/ws_super}"
@@ -45,13 +49,17 @@ if [ -f /opt/ros/humble/setup.bash ] && [ -z "${ROS_DISTRO:-}" ]; then
   set -u
 fi
 
-export PYTHONPATH="$DSH_ROOT/src/whtf/ros:$HARNESS_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$DSH_ROOT/apm_thin:$DSH_ROOT/scripts${PYTHONPATH:+:$PYTHONPATH}"
 
 # A short, human-readable line -- printed by setup/build.sh and by a flight's first line.
 dsh_env_summary() {
   echo "DSH_ROOT         = $DSH_ROOT"
   echo "SUPER (planner)  = $SUPER_PLANNER_ROOT"
-  echo "harness          = $HARNESS_ROOT"
+  echo "thin layer       = $THIN_ROOT"
+  echo "SUPER module     = $SUPER_PLANNER_ROOT"
+  echo "SLAM module      = $SLAM_ROOT"
+  echo "sim module       = $SIM_ROOT"
+  echo "ArduPilot driver = $ARDUPILOT_DIR"
   echo "ArduPilot SITL   = $ARDUPILOT_ROOT"
   echo "ws_super         = $WS_SUPER"
   echo "lio_ws           = $LIO_WS"

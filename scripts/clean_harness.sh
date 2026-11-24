@@ -17,11 +17,11 @@ fi
 set -u
 MYPORTS='14580|14581|5780|5781'
 MINE='planner_source_super\.py'
-# ★ LIO 的命令行里**没有端口**：只有 `--params-file <DSH_ROOT>/harness/src/lio/config/livox_360.yaml`。
+# ★ LIO 的命令行里**没有端口**：只有 `--params-file <DSH_ROOT>/slam/config/livox_360.yaml`。
 #   只按端口匹配会漏掉它（实测残留两个 super_lio_node 一直占着图）。按"我这副本的配置路径"匹配。
-MYLIO="${DSH_ROOT}/harness/src/lio/config"
+MYLIO="${DSH_ROOT}/slam/config"
 MYFSM='super_planner/lib/super_planner/fsm_node|super_planner/fsm_node'
-F=${DSH_ROOT}/harness/src/tools/run-mission.sh
+F=${DSH_ROOT}/scripts/run-mission.sh
 MYLOCK=$(grep -m1 '^LOCK=' "$F" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
 
 n=0

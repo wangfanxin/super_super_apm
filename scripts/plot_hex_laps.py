@@ -22,8 +22,8 @@ import sys
 import numpy as np
 import yaml
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
-from whtf.common.obstacles import surface_dist  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "apm_thin"))
+from common.obstacles import surface_dist  # noqa: E402
 
 import matplotlib                                     # noqa: E402
 matplotlib.use("Agg")
@@ -38,7 +38,7 @@ _figfont.apply()
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", required=True)
 ap.add_argument("--prep", default="", help="default logs/<tag>")
-ap.add_argument("--world", default="worlds/forest_hex12.yaml")
+ap.add_argument("--world", default="sim/worlds/forest_hex12.yaml")
 ap.add_argument("--out", default="docs/evidence")
 ap.add_argument("--prefix", default="lap")
 ap.add_argument("--pass-radius", type=float, default=1.2, help="a lap starts when the truth is this close to corner 1")

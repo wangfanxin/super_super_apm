@@ -11,17 +11,17 @@ R="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 python3 - "$R" <<'PY'
 import os, sys
 R = sys.argv[1]
-sys.path.insert(0, os.path.join(R, "harness", "src", "sim"))
+sys.path.insert(0, os.path.join(R, "sim", "src"))
 import raycast  # noqa: E402
 
 p = raycast.default_pattern_path()
 print("default_pattern_path : %s" % (p or "NONE (the simulator will refuse to run)"))
 if not p:
     # a fresh clone has no vendor data: that is the normal state, not an error.  Flights will refuse to
-    # start until it is fetched (harness/sim/README.md), and this check says so without failing CI.
+    # start until it is fetched (sim/pattern/README.md), and this check says so without failing CI.
     print("SKIP: the real MID-360 ray pattern is not present (vendor data, not in the repo).")
     print("      fetch it with:")
-    print("        curl -fsSL -o %s/harness/sim/mid360_pattern.csv \\" % R)
+    print("        curl -fsSL -o %s/sim/pattern/mid360_pattern.csv \\" % R)
     print("          https://raw.githubusercontent.com/Livox-SDK/livox_laser_simulation/main/scan_mode/mid360.csv")
     print("      then re-run this check (expect 800001 rows, elevation about -7..+52 deg).")
     sys.exit(0)
@@ -41,6 +41,6 @@ print("loader              : %s" % src)
 print("azimuth   deg       : %.2f .. %.2f (expect ~0..360)" % (az[0] * 57.2958, az[1] * 57.2958))
 print("elevation deg       : %.2f .. %.2f (expect ~-7..+52)" % (el[0] * 57.2958, el[1] * 57.2958))
 ok = (("Zenith" in head) and nrows >= 800000 and el[0] < 0 and (el[1] * 57.2958) > 1.0)
-print("RESULT              : %s" % ("OK" if ok else "SUSPECT -- see harness/sim/README.md"))
+print("RESULT              : %s" % ("OK" if ok else "SUSPECT -- see sim/pattern/README.md"))
 sys.exit(0 if ok else 1)
 PY

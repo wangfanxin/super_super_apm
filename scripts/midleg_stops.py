@@ -34,7 +34,7 @@ ap.add_argument("--tag", default="kn3-01-01")
 ap.add_argument("--root", default=_P.LOGS)
 ap.add_argument("--v-stop", type=float, default=0.25)
 ap.add_argument("--d-min", type=float, default=1.5)
-ap.add_argument("--world", default="worlds/forest_hex12.yaml")
+ap.add_argument("--world", default="sim/worlds/forest_hex12.yaml")
 a = ap.parse_args()
 R = os.path.join(a.root, "missionA-" + a.tag)
 

@@ -11,7 +11,7 @@ fi
 set -u
 T=${1:?tag}
 D=${LIO_LOGS}/missionA-$T
-[ -d "$D" ] || D=${DSH_ROOT}/harness/logs/missionA-$T
+[ -d "$D" ] || D=${LIO_LOGS}/missionA-$T
 echo "== run dir: $D =="
 [ -d "$D" ] || { echo MISSING; exit 2; }
 echo "-- 行数 --"

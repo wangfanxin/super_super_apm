@@ -218,7 +218,7 @@ def main():
     ap.add_argument("--body", choices=("circle", "box"), default="circle",
                     help="W4's body model: `circle` = the pillar's cylinder radius r at any height "
                          "(the old rule); `box` = an axis-aligned square of half-side r below "
-                         "z_split, as src/whtf/common/obstacles.py draws it -- the box is INSCRIBED "
+                         "z_split, as apm_thin/common/obstacles.py draws it -- the box is INSCRIBED "
                          "in the circle, so `box` is the stricter test on the diagonal")
     ap.add_argument("--z-split", type=float, default=2.1,
                     help="height where the pillar changes from box to cylinder, m")

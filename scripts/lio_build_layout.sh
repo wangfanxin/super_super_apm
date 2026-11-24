@@ -19,7 +19,7 @@ echo
 echo "== is it a symlink or a copy?"
 if [ -L "$WS/src/super_lio" ]; then echo "   SYMLINK -> $(readlink -f "$WS/src/super_lio")"; else echo "   REAL DIRECTORY (a copy)"; fi
 cmp -s "$WS/src/super_lio/src/lio/super_lio.cpp" \
-       ${DSH_ROOT}/harness/src/lio-fork/super_lio_local/src/lio/super_lio.cpp \
+       ${DSH_ROOT}/slam-fork/super_lio_local/src/lio/super_lio.cpp \
   && echo "   source identical to src/lio-fork/super_lio_local" || echo "   source DIFFERS from src/lio-fork/super_lio_local"
 echo
 echo "== build config"

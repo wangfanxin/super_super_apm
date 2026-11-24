@@ -4,11 +4,11 @@
 #
 #  WHY this is not in the repo: the checkout is ~1.5 GB and the build output is another few hundred MB;
 #  GitHub rejects big files and nobody wants that in a diff.  The commit below is the one the recorded
-#  flights used (see third_party/pins.env).
+#  flights used (see PINS.env).
 #
 #  It also patches nothing by itself: the truth-tap the harness reads is a small build-time patch that
 #  this project's flights used; if you start from a clean upstream ArduPilot you will need that patch to
-#  get tap.csv.  Run `harness/firmware/README.md` for what it is (kept in the harness history), or use
+#  get tap.csv.  See docs/harness-history/README.md for what it is, or use
 #  your own SITL build and pass TAP=0 to run-mission via the flight scripts.
 #
 #    bash setup/fetch_ardupilot.sh            # clone + checkout pinned commit (no build)

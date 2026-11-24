@@ -11,7 +11,7 @@ This script is the honesty check, in three layers:
     B) flat vs the per-trunk loop `cast(..., prune=False)` on ALL rays
     C) the timing of both
 
-    python3 scripts/check_raycast_flat.py [--world worlds/forest_hex12.yaml] [--points 12000]
+    python3 scripts/check_raycast_flat.py [--world sim/worlds/forest_hex12.yaml] [--points 12000]
 """
 import os as _os, sys as _sys
 # repo path authority (round 21): find the directory that holds scripts/_paths.py, then import it.
@@ -27,7 +27,7 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, _P.HARNESS_SRC + "/sim")
+sys.path.insert(0, _P.SIM_SRC)
 import raycast                                                   # noqa: E402
 
 
@@ -44,7 +44,7 @@ def hex_poses():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--world", default=_P.ROOT + "/worlds/forest_hex12.yaml")
+    ap.add_argument("--world", default=_P.ROOT + "/sim/worlds/forest_hex12.yaml")
     ap.add_argument("--points", type=int, default=12000)
     ap.add_argument("--z", type=float, default=2.0)
     ap.add_argument("--verbose", action="store_true")

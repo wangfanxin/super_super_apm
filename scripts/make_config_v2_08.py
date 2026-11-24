@@ -30,7 +30,7 @@ import shutil
 import sys
 
 SRC = _P.ROOT + "/config/super_lio_15m.yaml"
-DST = _P.ROOT + "/config/super_planner_hex.yaml"
+DST = _P.ROOT + "/hku_super/config/super_planner_hex.yaml"
 
 SET = {
     "resolution": "0.05",

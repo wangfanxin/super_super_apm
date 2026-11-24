@@ -28,7 +28,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="ke1-01-01")
 ap.add_argument("--root", default=_P.LOGS)
 ap.add_argument("--stop-v", type=float, default=0.20)
-ap.add_argument("--world", default="worlds/forest_hex12.yaml")
+ap.add_argument("--world", default="sim/worlds/forest_hex12.yaml")
 a = ap.parse_args()
 
 R = os.path.join(a.root, "missionA-" + a.tag)

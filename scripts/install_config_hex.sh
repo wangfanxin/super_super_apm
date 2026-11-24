@@ -19,16 +19,15 @@ fi
 set -eu
 ROOT=${DSH_ROOT}
 CFG=super_planner_hex.yaml
-# Two loader copies, both named by setup/env.sh so a build outside the repo (or a WSL build root) works:
-#   * SUPER_PLANNER_ROOT/super_planner/config -- what the thin layer's --super-config existence check reads
-#   * WS_SUPER/src/super_planner/config       -- what fsm_node ACTUALLY loads (it prints the path)
-# When WS_SUPER/src/super_planner is a symlink into SUPER_PLANNER_ROOT (the normal layout) these are the
-# same directory and the second cp is a no-op -- the compare below still proves both sides agree.
+# The delivered config lives in the planner MODULE (hku_super/config/).  Two loader copies must agree with it:
+#   * SUPER_PLANNER_ROOT/super_planner/config -- what fsm_node loads (the module's own source tree)
+#   * WS_SUPER/src/super_planner/config       -- the colcon workspace's copy (a symlink to the above normally)
+SRC="${SUPER_PLANNER_ROOT:?}/config/$CFG"
 DIRS="${SUPER_PLANNER_ROOT:?}/super_planner/config ${WS_SUPER:?}/src/super_planner/config"
 
 for d in $DIRS; do
   [ -d "$d" ] || { echo "MISSING config dir: $d" >&2; exit 1; }
-  cp "$ROOT/config/$CFG" "$d/$CFG"
+  cp "$SRC" "$d/$CFG"
   echo "installed -> $d/$CFG"
 done
 
@@ -39,10 +38,9 @@ for d in $DIRS; do
     '^(super_planner\.(robot_r|goal_pva_en|hot_start_en|goal_vel_en|backup_traj_en|planning_horizon)|rog_map\.(resolution|inflation_resolution|inflation_step)|traj_opt\.boundary\.(max_vel|max_acc))'
 done
 
-echo "== checksums (repo vs the two loaded copies must agree)"
-md5sum "$ROOT/config/$CFG" "${SUPER_PLANNER_ROOT:?}/super_planner/config/$CFG" \
+echo "== checksums (module config vs the two loaded copies must agree)"
+md5sum "$SRC" "${SUPER_PLANNER_ROOT:?}/super_planner/config/$CFG" \
        "${WS_SUPER:?}/src/super_planner/config/$CFG" 2>/dev/null | sed 's/^/   /' || true
 
-# audit F7: hard comparison of the copies
-cmp -s "$ROOT/config/$CFG" "${SUPER_PLANNER_ROOT:?}/super_planner/config/$CFG" || { echo "MISMATCH planner copy" >&2; exit 1; }
-cmp -s "$ROOT/config/$CFG" "${WS_SUPER:?}/src/super_planner/config/$CFG" || { echo "MISMATCH ws copy" >&2; exit 1; }
+cmp -s "$SRC" "${SUPER_PLANNER_ROOT:?}/super_planner/config/$CFG" || { echo "MISMATCH planner copy" >&2; exit 1; }
+cmp -s "$SRC" "${WS_SUPER:?}/src/super_planner/config/$CFG" || { echo "MISMATCH ws copy" >&2; exit 1; }

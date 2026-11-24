@@ -7,7 +7,7 @@ corner speed is v <= sqrt(a * R).  R here is the free radius around the waypoint
 waypoint to the nearest pillar SURFACE (the box, at the mission altitude) -- which is exactly what the
 "9 cells around a waypoint stay empty" rule buys.
 
-    python3 scripts/corner_clearance.py worlds/forest_v2_hex.yaml worlds/forest_hex12.yaml --tilt 45
+    python3 scripts/corner_clearance.py worlds/forest_v2_hex.yaml sim/worlds/forest_hex12.yaml --tilt 45
 """
 import argparse
 import math

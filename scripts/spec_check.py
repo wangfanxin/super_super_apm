@@ -26,7 +26,7 @@ def row(ok, name, detail):
 
 
 def box_surface_dist(dx, dy, r):
-    """点到方柱表面的距离（外为正，内为 0）；与 src/whtf/common/obstacles.py 同一口径。"""
+    """点到方柱表面的距离（外为正，内为 0）；与 apm_thin/common/obstacles.py 同一口径。"""
     ox = abs(dx) - r
     oy = abs(dy) - r
     if ox <= 0.0 and oy <= 0.0:
@@ -36,14 +36,14 @@ def box_surface_dist(dx, dy, r):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--world", default="worlds/forest_hex12.yaml")
+    ap.add_argument("--world", default="sim/worlds/forest_hex12.yaml")
     ap.add_argument("--pitch", type=float, default=None, help="cell size (default: read from v2.pitch)")
     ap.add_argument("--half", type=float, default=12.0)
     ap.add_argument("--radius", type=float, default=None, help="S0 corner-to-pad distance")
     ap.add_argument("--z", type=float, default=None, help="mission altitude (default: mission.takeoff_alt)")
     ap.add_argument("--r", type=float, default=0.10)
     ap.add_argument("--pad-clear", type=float, default=0.35)
-    ap.add_argument("--cfg", default="config/super_planner_hex.yaml",
+    ap.add_argument("--cfg", default="hku_super/config/super_planner_hex.yaml",
                     help="the planner config, for the S4 numbers (robot_r, inflation_step)")
     ap.add_argument("--flight", default="", help="a missionA-<tag> log directory: also check S1/S3")
     args = ap.parse_args()
@@ -329,8 +329,8 @@ def main():
             sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                             "src"))
             sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                            "src", "whtf"))
-            from whtf.ros.planner_source_super import world_tour as _world_tour
+                                            "apm_thin"))
+            from ros.planner_source_super import world_tour as _world_tour
             _c, tour_info = _world_tour(args.world, laps_arm if laps_arm else 2, 2.0, verbose=False)
             tour_n = len(_c)
         except Exception as _exc:                                # noqa: BLE001

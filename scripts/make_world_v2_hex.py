@@ -69,8 +69,8 @@ ap.add_argument("--keep-prob", type=float, default=1.0,
                      "reproducible.  This is a CHANGE OF RULE when <1 -- the owner has to approve it "
                      "and docs/SPEC.md S2 gets a modification row.")
 ap.add_argument("--template", default=_P.ROOT + "/worlds/square15_forest.yaml")
-ap.add_argument("--cfg", default=_P.ROOT + "/config/super_planner_hex.yaml")
-ap.add_argument("--out", default=_P.ROOT + "/worlds/forest_hex12.yaml",
+ap.add_argument("--cfg", default=_P.ROOT + "/hku_super/config/super_planner_hex.yaml")
+ap.add_argument("--out", default=_P.ROOT + "/sim/worlds/forest_hex12.yaml",
                 help="默认写 SPEC 冻结的新图；旧的 forest_v2_hex.yaml 已归档，不要用默认参数覆盖它")
 a = ap.parse_args()
 

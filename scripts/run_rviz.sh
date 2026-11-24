@@ -17,7 +17,7 @@ fi
 #   bash scripts/run_rviz.sh -d ...   # 换配置文件
 set -uo pipefail
 ROOT=${DSH_ROOT}
-CFG=${1:-"$ROOT/config/rviz_super.rviz"}
+CFG=${1:-"$SIM_ROOT/rviz/rviz_super.rviz"}
 
 if [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
   echo "没有 DISPLAY/WAYLAND_DISPLAY：WSL 里先用 WSLg，或在 Windows 侧起 X server 后"

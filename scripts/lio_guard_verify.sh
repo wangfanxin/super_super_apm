@@ -20,6 +20,6 @@ source /opt/ros/humble/setup.bash
 cd ${LIO_WS}
 ( export ROS_DOMAIN_ID=0
   timeout 8 ./install/super_lio/lib/super_lio/super_lio_node --ros-args \
-    --params-file ${DSH_ROOT}/harness/src/lio/config/livox_360.yaml 2>&1 | head -12 ) || true
+    --params-file ${DSH_ROOT}/slam/config/livox_360.yaml 2>&1 | head -12 ) || true
 echo
 echo "== did it die with SIGFPE?  (expect no 'Floating point' line above)"

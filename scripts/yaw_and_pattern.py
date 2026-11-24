@@ -81,7 +81,7 @@ print("     |yaw - travel dir| : p50 %.1f  p90 %.1f  max %.1f deg ; within 30 de
 # through the 120 deg corners" -- that distinction is what makes the number interpretable.
 try:
     import yaml
-    w = yaml.safe_load(open("worlds/forest_hex12.yaml", encoding="utf-8"))
+    w = yaml.safe_load(open("sim/worlds/forest_hex12.yaml", encoding="utf-8"))
     ring = np.array([[float(c[0]), float(c[1])] for c in w["mission"]["corners"]][:6])
     p_mv = pw[mv]
     dc = np.min(np.linalg.norm(p_mv[:, None, :] - ring[None, :, :], axis=2), axis=1)

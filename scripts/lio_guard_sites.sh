@@ -8,7 +8,7 @@ fi
 # -----------------------------------------------------------------------------
 # Read the four unguarded sites the LIO audit identified, in the tree that BUILT the library.
 set -u
-B=${DSH_ROOT}/harness/src/Super-LIO/src/super_lio/src
+B=${SLAM_ROOT}/super_lio/src
 echo "=== ROSWrapper.cpp 440-460 (empty-cloud check) ==="
 sed -n '440,460p' $B/ros/ROSWrapper.cpp
 echo

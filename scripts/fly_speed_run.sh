@@ -100,8 +100,8 @@ export REF_Z_HOLD=${REF_Z_HOLD:-0.0}
 export REF_Z_TOL=${REF_Z_TOL:-0.20}
 export REF_Z_LATCH_M=${REF_Z_LATCH_M:-1.60}
 export CLIMB_GUARD_M=${CLIMB_GUARD_M:-4.0}
-export EXTRA_PARMS=${EXTRA_PARMS:-$ROOT/params/guided_limits_flight.parm}
-export EKF_PARMS=${EKF_PARMS-$ROOT/params/ekf_trust_lio_flight.parm}
+export EXTRA_PARMS=${EXTRA_PARMS:-$ARDUPILOT_DIR/params/guided_limits_flight.parm}
+export EKF_PARMS=${EKF_PARMS-$ARDUPILOT_DIR/params/ekf_trust_lio_flight.parm}
 # GEOFENCE 10.5, not 9.0: docs/INTEGRATION.md row 11 of the milestone table -- the pillars sit ON the
 # ±7.5 legs, the legal avoidance needs ~0.9 m of lateral room, and the planner will route up to ~1.6 m
 # outside the waypoint box to pass a pillar.  The arena walls are at ±11.  9.0 aborted pn-01/pn-02 at

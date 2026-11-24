@@ -83,7 +83,7 @@ export PRE_GOAL_M=${PRE_GOAL_M:-0}
 export GOAL_LOOKAHEAD_M=${GOAL_LOOKAHEAD_M:-0}
 # the launch leg from a hover: no speed cap now, because the PVA goal already carries 4 m/s at c1
 export ENTRY_MAX_MPS=${ENTRY_MAX_MPS:-0}
-export EXTRA_PARMS=${EXTRA_PARMS:-${DSH_ROOT}/params/guided_limits_fast.parm}
+export EXTRA_PARMS=${EXTRA_PARMS:-${ARDUPILOT_DIR}/params/guided_limits_fast.parm}
 # THE SPEC'S PVA GOAL HAS TO REACH THE FCU, ALL THREE PARTS OF IT (user, round 85: "规划的pva都应该送到飞控").
 # `run-mission.sh` defaults `BRIDGE_FIELDS=pos` for every planner except ego, so until round 85 the bridge
 # masked SUPER's velocity AND acceleration off the wire (type_mask 2552) and the FCU chased a position STEP
@@ -109,18 +109,18 @@ export EXTRA_PARMS=${EXTRA_PARMS:-${DSH_ROOT}/params/guided_limits_fast.parm}
 # (scripts/cfg_envelope.py), so a stale clamp cannot happen, and the values are echoed into the session log.
 export BRIDGE_FIELDS=${BRIDGE_FIELDS:-posvelacc}
 _ENVDIR="$(cd "$(dirname "$0")/.." && pwd)"
-_ENVLINE="$(python3 "$_ENVDIR/scripts/cfg_envelope.py" "$_ENVDIR/config/$SUPER_CONFIG" 2>/dev/null)" || _ENVLINE=""
+_ENVLINE="$(python3 "$_ENVDIR/scripts/cfg_envelope.py" "$_ENVDIR/hku_super/config/$SUPER_CONFIG" 2>/dev/null)" || _ENVLINE=""
 FF_V=""; FF_A=""; FF_J=""
 if [ -n "${_ENVLINE:-}" ]; then read -r FF_V FF_A FF_J <<<"$_ENVLINE"; fi
 # ★ 不再有"静默回退"（第 88 轮审查 F10）★ 以前 cfg_envelope 一失败就退回 3.0/8.0/40.0，
 #   而配置是 1.5/6.0/15.0 —— 桥会把加速度放宽 33 %、把 jerk 放宽 2.7 倍，且没有任何报错。
 #   现在读不到就直接拒绝起飞。
 if [ -z "${FF_V:-}" ] || [ -z "${FF_A:-}" ] || [ -z "${FF_J:-}" ]; then
-  echo "[fly_hex] FATAL: scripts/cfg_envelope.py 没能从 config/$SUPER_CONFIG 读出 (v,a,j)。"
+  echo "[fly_hex] FATAL: scripts/cfg_envelope.py 没能从 hku_super/config/$SUPER_CONFIG 读出 (v,a,j)。"
   echo "          拒绝用猜测的钳位起飞（以前会静默用 3.0/8.0/40.0）。"
   exit 4
 fi
-echo "[fly_hex] feed-forward envelope from config/$SUPER_CONFIG: vel<=$FF_V acc<=$FF_A slew<=$FF_J"
+echo "[fly_hex] feed-forward envelope from hku_super/config/$SUPER_CONFIG: vel<=$FF_V acc<=$FF_A slew<=$FF_J"
 # `--fcu-odom-topic` makes the bridge publish the FCU's OWN estimate on /fcu/odom.  The supervisor reads
 # it as a second opinion for the geofence (round 85: the tap is emitted in "the simulator origin, i.e. the
 # EKF origin", so when the EKF re-seats, the tap reports hundreds of metres that the aircraft never flew --

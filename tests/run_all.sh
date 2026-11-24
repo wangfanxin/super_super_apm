@@ -14,14 +14,14 @@ step "bash -n (every .sh)"
 n=0
 while IFS= read -r f; do
   n=$((n + 1)); bash -n "$f" || note_fail "bash -n $f"
-done < <(find . -name '*.sh' -not -path './.git/*' -not -path './.build/*' -not -path './.runs/*' -not -path './third_party/*')
+done < <(find . -name '*.sh' -not -path './.git/*' -not -path './.build/*' -not -path './.runs/*' -not -path './hku_super/*' -not -path './slam/*')
 echo "   $n file(s)"
 
 step "py_compile (every .py)"
 m=0
 while IFS= read -r f; do
   m=$((m + 1)); python3 -m py_compile "$f" || note_fail "py_compile $f"
-done < <(find . -name '*.py' -not -path './.git/*' -not -path './.build/*' -not -path './.runs/*' -not -path './third_party/*')
+done < <(find . -name '*.py' -not -path './.git/*' -not -path './.build/*' -not -path './.runs/*' -not -path './hku_super/*' -not -path './slam/*')
 echo "   $m file(s)"
 
 if [ "$ONLY_SYNTAX" -eq 1 ]; then
@@ -32,12 +32,12 @@ fi
 step "static gate"
 bash scripts/check_static.sh || note_fail "check_static.sh"
 
-step "sensor ray pattern (harness/sim/mid360_pattern.csv)"
-bash scripts/check_pattern.sh || note_fail "check_pattern.sh (see harness/sim/README.md)"
+step "sensor ray pattern (sim/pattern/mid360_pattern.csv)"
+bash scripts/check_pattern.sh || note_fail "check_pattern.sh (see sim/pattern/README.md)"
 
 step "unit tests"
 python3 scripts/test_ref_lp.py || note_fail "test_ref_lp.py"
-python3 harness/src/tools/test-stall-gate.py || note_fail "test-stall-gate.py"
+python3 scripts/harness/test-stall-gate.py || note_fail "test-stall-gate.py"
 
 step "path policy"
 bash tests/no_abs_paths.sh || note_fail "no_abs_paths.sh"

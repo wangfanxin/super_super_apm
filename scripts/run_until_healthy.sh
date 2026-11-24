@@ -63,10 +63,10 @@ PROFILE=${PROFILE:-mission}
 # NOTE: ROOT/CODE/WS/SUP must exist BEFORE the profile block, because the mission profile names
 # a parm file by absolute path inside this repo (and `set -u` makes an unbound $ROOT fatal:
 # MEASURED, "line 74: ROOT: unbound variable", which is a clean abort but a wasted sortie slot).
-CODE=${DSH_ROOT}/harness
+CODE=${DSH_ROOT}/scripts   # the launcher + recorders live here now (round 22 module split)
 ROOT=${DSH_ROOT}
 WS=${LIO_WS}
-SUP=$ROOT/src/whtf/ros/planner_source_super.py
+SUP=$ROOT/apm_thin/ros/planner_source_super.py
 case "$PROFILE" in
   repro)
     WORLD_NAME=pillars.yaml
@@ -97,7 +97,7 @@ case "$PROFILE" in
     # MY OWN flight-trust file, not the harness's calibration one: the calibration file assumes
     # the LIO is accurate to 3 cm, which turns a normal in-flight LIO transient into an
     # 'EKF variance' -> 'EKF Failsafe' (measured on missionA-na-02, see params/ekf_trust_lio_flight.parm)
-    EKF_PARMS=${EKF_PARMS-$ROOT/params/ekf_trust_lio_flight.parm}
+    EKF_PARMS=${EKF_PARMS-$ARDUPILOT_DIR/params/ekf_trust_lio_flight.parm}
     EXTRA_PARMS=${EXTRA_PARMS-params/guided_limits_fast.parm}
     ;;
   *) echo "PROFILE must be repro or mission, not '$PROFILE'" >&2; exit 2 ;;
@@ -145,7 +145,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
   if [ -n "${EKF_PARMS:-}" ]; then
     case "$EKF_PARMS" in
       /*) EKF="$EKF_PARMS" ;;                      # absolute: a file in MY repo
-      *)  EKF="$CODE/$EKF_PARMS" ;;               # relative: a file in the harness's params/
+      *)  EKF="$ARDUPILOT_DIR/$EKF_PARMS" ;;         # relative: a file in the driver module's params/
     esac
     [ -f "$EKF" ] || { echo "  ABORT: no EKF parm at $EKF" >&2; exit 2; }
   fi
@@ -197,7 +197,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-lead-turn-rad-s ${REF_LEAD_TURN_RAD_S:-1.5} \
 --ref-ff-gain ${REF_FF_GAIN:-1.0} \
 --super-odom /lio/robo/odom --super-cloud /lio/cloud_world \
---world "$ROOT/worlds/${WORLD_NAME:-square15_forest.yaml}" $CALIB_ARG"
+--world "$SIM_ROOT/worlds/${WORLD_NAME:-square15_forest.yaml}" $CALIB_ARG"
   else
     PLANNER=rectangle
     CMD_ARGS="$CALIB_ARG"
@@ -207,7 +207,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
   if [ -n "${EXTRA_PARMS:-}" ]; then
     case "$EXTRA_PARMS" in
       /*) EXTRA_ARG="$EXTRA_PARMS" ;;              # absolute: a file in MY repo
-      *)  EXTRA_ARG="$CODE/$EXTRA_PARMS" ;;       # relative: a file in the harness's params/
+      *)  EXTRA_ARG="$ARDUPILOT_DIR/$EXTRA_PARMS" ;;  # relative: a file in the driver module's params/
     esac
     [ -f "$EXTRA_ARG" ] || { echo "  ABORT: no EXTRA parm at $EXTRA_ARG" >&2; exit 2; }
   fi
@@ -239,7 +239,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
     # ★ NO COMMENT MAY SIT INSIDE THE CONTINUATION BELOW ★
     #   MEASURED (round 89, tag `kxF`): a `#` line placed between two backslash-continued lines ENDS the
     #   command, so `timeout ... env ...` ran with no command of its own (printing the whole environment
-    #   on the console) and `bash src/tools/run-mission.sh` ran as a SEPARATE command WITHOUT `PLANNER`,
+    #   on the console) and `bash scripts/run-mission.sh` ran as a SEPARATE command WITHOUT `PLANNER`,
     #   so the harness fell back to `PLANNER=ego` and started `ego_contract_shim.py`, which rejected the
     #   plan box's argv.  Six attempts died as "THE PLAN BOX IS NOT TALKING" with `super_ref=0`.
     #   `bash -n` does not catch it.  Keep this block comment BEFORE this line, never inside it.
@@ -258,19 +258,19 @@ for i in $(seq 1 "$ATTEMPTS"); do
     echo "  launch         : PLANNER=$PLANNER LIDAR_POINTS=${LIDAR_POINTS:-12000} tag=$TAG"
     timeout "$TIMEOUT_S" env NAV_SOURCE="$NAV" ALT_MODE="$ALT" PLANNER="$PLANNER" \
       TAP="$TAP" FAN="$FAN" PORT0="$PORT0" PORT1="$PORT1" PORT2="$PORT2" PORT3="$PORT3" LOCK="$LOCK" \
-      WORLD="$ROOT/worlds/$WORLD_NAME" \
-      MISSION_PARM="$CODE/$MISSION_PARMS" \
+      WORLD="$SIM_ROOT/worlds/$WORLD_NAME" \
+      MISSION_PARM="$ARDUPILOT_DIR/$MISSION_PARMS" \
       ${EXTRA_ARG:+EXTRA_PARM="$EXTRA_ARG"} \
       ${EKF:+EKF_PARM="$EKF"} \
       GEOFENCE_M="$GEOFENCE_M" TAKEOFF_COMMAND_M="$TAKEOFF_M" VERTICAL_FIRST=1 VERTICAL_HOLD_S=3.0 \
       LIDAR_POINTS="${LIDAR_POINTS:-12000}" \
       SUP_ARGS="--climb-guard-m ${CLIMB_GUARD_M:-2.5}" \
       CMD_ARGS="$CMD_ARGS" \
-      bash src/tools/run-mission.sh "$TAG" > "/tmp/$TAG.log" 2>&1 )
+      bash "$CODE/run-mission.sh" "$TAG" > "/tmp/$TAG.log" 2>&1 )
   echo "  RUN_EXIT=$?"
 
   D=${LIO_LOGS}/missionA-$TAG
-  [ -d "$D" ] || D=${DSH_ROOT}/harness/logs/missionA-$TAG
+  [ -d "$D" ] || D=${LIO_LOGS}/missionA-$TAG
 
   LIO=$(wc -l < "$D/lio.csv" 2>/dev/null || echo 0)
   SET=$(wc -l < "$D/setpoints.csv" 2>/dev/null || echo 0)

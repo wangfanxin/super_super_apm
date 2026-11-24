@@ -88,7 +88,7 @@ print("   correlation(truth speed, cmd-position speed)  %+.2f   <- (a) reference
 # (c) are the bursts at the corners?
 try:
     import yaml
-    w = yaml.safe_load(open("worlds/forest_hex12.yaml", encoding="utf-8"))
+    w = yaml.safe_load(open("sim/worlds/forest_hex12.yaml", encoding="utf-8"))
     ring = np.array([[float(cc[0]), float(cc[1])] for cc in w["mission"]["corners"]][:6])
     dc = np.min(np.linalg.norm(cmd[1:][:, None, :] - ring[None, :, :], axis=2), axis=1)
     print("\n   truth speed > 2.0 m/s, binned by distance to the nearest corner:")

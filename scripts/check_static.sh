@@ -30,8 +30,9 @@ echo "frozen rc=$rc_frozen"
 echo
 echo "===== patches 10/11 (they live in the BUILT source, so check them, not the docs)"
 rc_patch=0
+PATCHES=hku_super/patches
 for p in patch_super_replan_time_limit patch_super_no_backward_head; do
-  out=$(python3 "scripts/$p.py" --check 2>&1)
+  out=$(python3 "$PATCHES/$p.py" --check 2>&1)
   case "$out" in
     *"is APPLIED"*) echo "  $(printf '%-34s' "$p") APPLIED" ;;
     *) echo "  $(printf '%-34s' "$p") NOT APPLIED -- the flight binary would not have it"; rc_patch=1 ;;
@@ -41,7 +42,7 @@ echo "patch rc=$rc_patch"
 
 echo
 echo "===== patch 12 (sfc_margin) -- OPTIONAL, and REJECTED on evidence (§94/§95)"
-out=$(python3 scripts/patch_super_sfc_margin.py --check 2>&1 | tail -1)
+out=$(python3 $PATCHES/patch_super_sfc_margin.py --check 2>&1 | tail -1)
 rc_sfc=0
 case "$out" in
   *"is APPLIED"*)

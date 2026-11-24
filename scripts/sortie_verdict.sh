@@ -17,5 +17,5 @@ grep -E 'phase ->' "$R/supervisor.log" 2>/dev/null | tail -3
 echo "waypoints   : $(grep -o 'waypoints=[0-9]*' "$R/supervisor.log" 2>/dev/null | tail -1)"
 echo
 echo "=== per-lap numbers (re-render, text only) ==="
-python3 scripts/plot_hex_laps.py --tag "$T" --laps 2 --world worlds/forest_hex12.yaml \
+python3 scripts/plot_hex_laps.py --tag "$T" --laps 2 --world sim/worlds/forest_hex12.yaml \
         --out /tmp/evidence_stage --prefix lap 2>&1 | grep -E '^  lap|^lap starts'

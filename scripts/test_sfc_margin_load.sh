@@ -15,7 +15,7 @@ fi
 # the value.
 #
 #   bash scripts/test_sfc_margin_load.sh
-#   bash scripts/test_sfc_margin_load.sh config/super_planner_hex_sfc12.yaml
+#   bash scripts/test_sfc_margin_load.sh hku_super/config/super_planner_hex_sfc12.yaml
 set -u
 cd "$(dirname "$0")/.." || exit 1
 ROOT=$(pwd)
@@ -59,7 +59,7 @@ check() {  # check <config> <expected>
 }
 
 echo "== the key is read by the same header the flight links ($INC)"
-check "$ROOT/config/super_planner_hex.yaml" "0"
+check "$ROOT/hku_super/config/super_planner_hex.yaml" "0"
 for f in "$@"; do
   # the variant's expected value is whatever its own line says
   want=$(python3 - "$f" <<'PY'

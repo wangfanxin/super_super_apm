@@ -14,7 +14,7 @@ argue about the planner's internals but to measure the free space the planner ha
 
     统一口径：柱面距离用「到 0.2 m 方柱表面的欧氏距离」，网格 0.05 m（与 rog_map.resolution 一致）。
 
-    python3 scripts/inflation_sweep.py [--world worlds/forest_hex12.yaml]
+    python3 scripts/inflation_sweep.py [--world sim/worlds/forest_hex12.yaml]
 """
 import argparse
 
@@ -23,7 +23,7 @@ import yaml
 from scipy.ndimage import distance_transform_edt, label
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--world", default="worlds/forest_hex12.yaml")
+ap.add_argument("--world", default="sim/worlds/forest_hex12.yaml")
 ap.add_argument("--res", type=float, default=0.05)
 ap.add_argument("--robot-r", type=float, default=0.10)
 ap.add_argument("--steps", default="1,2,3,4", help="inflation_step values to evaluate")

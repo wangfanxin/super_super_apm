@@ -33,10 +33,10 @@ python3 scripts/prep_run.py --run "$RUN" --out "logs/$TAG" 2>&1 | tail -1
 
 rm -rf "$STAGE"; mkdir -p "$STAGE"
 echo "== per-lap top views"
-python3 scripts/plot_hex_laps.py --tag "$TAG" --laps 2 --world worlds/forest_hex12.yaml \
+python3 scripts/plot_hex_laps.py --tag "$TAG" --laps 2 --world sim/worlds/forest_hex12.yaml \
         --out "$STAGE" --prefix lap 2>&1 | grep -E '^  lap|^wrote'
 echo "== vxyz against time"
-python3 scripts/plot_hex_vxyz_t.py --tag "$TAG" --world worlds/forest_hex12.yaml \
+python3 scripts/plot_hex_vxyz_t.py --tag "$TAG" --world sim/worlds/forest_hex12.yaml \
         --out "$STAGE/vxyz-t.png" 2>&1 | grep -E '^wrote|^   v_xy'
 echo "== estimator error against time"
 python3 scripts/plot_hex_lio_err_t.py --tag "$TAG" --out "$STAGE/lio-err-t.png" 2>&1 | grep -E '^wrote|clock'

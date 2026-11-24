@@ -7,7 +7,7 @@ if [ -z "${DSH_ROOT:-}" ]; then
 fi
 # -----------------------------------------------------------------------------
 set -u
-S=${DSH_ROOT}/harness/src/lio-fork/super_lio_local/src/lio/super_lio.cpp
+S=${DSH_ROOT}/slam-fork/super_lio_local/src/lio/super_lio.cpp
 echo "== where Output() transforms a cloud"
 grep -n 'Output\|transformPointCloud' "$S" | head -20
 echo

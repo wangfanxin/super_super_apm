@@ -4,10 +4,10 @@
 #
 #  What it does (idempotent):
 #    1. .build/ws_super/src/{super_planner,rog_map,mission_planner,mars_quadrotor_msgs}
-#         -> symlinks into third_party/SUPER/...      (the planner we integrate)
-#    2. .build/upstream/SUPER -> third_party/SUPER   (the layout scripts/install_config_hex.sh expects)
+#         -> symlinks into hku_super/...              (the planner we integrate)
+#    2. .build/upstream/SUPER -> hku_super           (the layout scripts/install_config_hex.sh expects)
 #    3. .build/lio_ws/src/{super_lio,basic,livox_ros_driver2,quadrotor_msgs}
-#         -> symlinks into third_party/... + harness/src/quadrotor_msgs
+#         -> symlinks into slam/... + ardupilot/msgs/quadrotor_msgs
 #    4. colcon build (Release) in both workspaces
 #
 #  ArduPilot SITL is NOT built here -- it is a 1.5 GB checkout.  Run setup/fetch_ardupilot.sh first
@@ -66,10 +66,10 @@ if [ "$BUILD_LIO" -eq 1 ]; then
   echo "== linking Super-LIO into $LIO_WS"
   mkdir -p "$LIO_WS/src"
   for p in super_lio basic; do
-    ln -sfn "$DSH_ROOT/third_party/Super-LIO/src/$p" "$LIO_WS/src/$p"
+    ln -sfn "$SLAM_ROOT/$p" "$LIO_WS/src/$p"
   done
-  ln -sfn "$DSH_ROOT/third_party/livox_ros_driver2" "$LIO_WS/src/livox_ros_driver2"
-  ln -sfn "$HARNESS_ROOT/src/quadrotor_msgs" "$LIO_WS/src/quadrotor_msgs"
+  ln -sfn "$SLAM_ROOT/livox_ros_driver2" "$LIO_WS/src/livox_ros_driver2"
+  ln -sfn "$ARDUPILOT_DIR/msgs/quadrotor_msgs" "$LIO_WS/src/quadrotor_msgs"
   ls -l "$LIO_WS/src" | sed 's/^/   /'
 
   echo "== colcon build (lio: super_lio + livox driver + msgs)"

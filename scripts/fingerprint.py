@@ -5,7 +5,7 @@ Round 88: the SPEC map changed from `forest_v2_hex.yaml` (250 pillars, 5 m hexag
 `forest_hex12.yaml` (522 pillars, 10 m hexagon, [-12,12]^2, 3x3 waypoint keep-out).  Rather than
 hand-copy numbers into check_frozen.py, this prints them in the exact shape the gate uses.
 
-    python3 scripts/fingerprint.py worlds/forest_hex12.yaml
+    python3 scripts/fingerprint.py sim/worlds/forest_hex12.yaml
 """
 import hashlib
 import io

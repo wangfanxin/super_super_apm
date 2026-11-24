@@ -12,7 +12,7 @@ fi
 # (c) the LIO error against time.  Everything else is archived outside the repo, and every later round
 # that produced a new set deleted the previous one ("旧图记得一定要删除").
 #
-# ROUND 88 (workspace clean + new map): the map was redesigned (worlds/forest_hex12.yaml), the flight
+# ROUND 88 (workspace clean + new map): the map was redesigned (sim/worlds/forest_hex12.yaml), the flight
 # figures of the OLD map were removed on purpose, and the new campaign then landed its three families on
 # the new map -- so this file now REQUIRES them:
 #     lap1-paths.png / lap2-paths.png   the per-lap path-vs-trajectory top views (owner's round-83 ask)

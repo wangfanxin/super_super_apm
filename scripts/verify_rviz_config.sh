@@ -18,7 +18,7 @@ source /opt/ros/humble/setup.bash
 set -u
 
 echo "== 起 rviz2（12 s）=="
-ros2 run rviz2 rviz2 -d "$ROOT/config/rviz_super.rviz" > "$LOG" 2>&1 &
+ros2 run rviz2 rviz2 -d "$SIM_ROOT/rviz/rviz_super.rviz" > "$LOG" 2>&1 &
 RVIZ=$!
 sleep 12
 

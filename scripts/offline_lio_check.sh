@@ -23,7 +23,7 @@ set -u
 ROOT=${DSH_ROOT}
 LIO=${DSH_ROOT}/harness
 CSV=${1:-${LIO_LOGS}/missionA-supertest-01/tap.csv}
-WORLD=${2:-$ROOT/worlds/pillars.yaml}
+WORLD=${2:-$SIM_ROOT/worlds/pillars.yaml}
 SECS=${3:-55}
 SCAN_HZ=${4:-10}
 IMU_HZ=${5:-200}
@@ -89,7 +89,7 @@ for i in $(seq 1 90); do
 done
 [ "$ready" = 1 ] || { echo "  the LIO never became ready"; tail -15 "$OUT/lio.log"; exit 1; }
 
-python3 "$LIO/src/tools/record-odom.py" --topic /lio/robo/odom \
+python3 "$LIO/scripts/record-odom.py" --topic /lio/robo/odom \
     --csv "$OUT/lio.csv" --seconds "$SECS" > "$OUT/rec.log" 2>&1 &
 REC=$!
 wait $REC 2>/dev/null
@@ -109,6 +109,6 @@ else
 fi
 echo
 echo "--- LIO vs the truth it was fed ---"
-python3 "$LIO/src/tools/lio-vs-truth.py" --tap "$CSV" --odom "$OUT/lio.csv" 2>&1 | tail -25
+python3 "$LIO/scripts/lio-vs-truth.py" --tap "$CSV" --odom "$OUT/lio.csv" 2>&1 | tail -25
 echo
 echo "(artefacts in $OUT)"

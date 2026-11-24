@@ -14,7 +14,7 @@ grep -n 'weightJer > 0' "$U/super_planner/src/traj_opt/exp_traj_optimizer_s4.cpp
 grep -n 'weightOmg > 0\|weightAccThr > 0\|weightVel > 0\|weightAcc > 0\|weightPos > 0' \
   "$U/super_planner/src/traj_opt/exp_traj_optimizer_s4.cpp" | head -6
 echo "   our weights:"
-grep -nE 'penna_(pos|vel|acc|jerk|omg|thr):' "${DSH_ROOT}/config/super_planner_hex.yaml" | head -8
+grep -nE 'penna_(pos|vel|acc|jerk|omg|thr):' "${DSH_ROOT}/hku_super/config/super_planner_hex.yaml" | head -8
 echo
 echo "== 2) the hard-reject gates in the optimizer"
 grep -n -B2 -A8 'violation\|max_pena(POS_IDX)\|reject' "$U/super_planner/src/traj_opt/exp_traj_optimizer_s4.cpp" | sed -n '1,24p'

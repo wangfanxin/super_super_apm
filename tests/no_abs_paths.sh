@@ -10,10 +10,10 @@ PAT='/mnt/d/distill_self\|/home/fanxin'
 REQUIRED="
 setup
 tests
-src
-harness/src/bridge
-harness/src/supervisor
-harness/src/sim
+apm_thin
+ardupilot/bridge
+ardupilot/supervisor
+sim/src
 scripts/fly_hex.sh
 scripts/fly_hex2.sh
 scripts/fly_speed_run.sh
@@ -25,7 +25,7 @@ scripts/check_frozen.py
 scripts/spec_check.py
 scripts/install_config_hex.sh
 scripts/render_evidence.sh
-harness/src/tools/run-mission.sh
+scripts/run-mission.sh
 "
 
 echo "== must be path-free"
@@ -44,7 +44,7 @@ done
 echo
 echo "== historical analysis tools still carrying author paths (informational)"
 n=0
-for f in scripts/*.py scripts/*.sh harness/src/*/*.py harness/src/*/*.sh; do
+for f in scripts/*.py scripts/*.sh scripts/harness/*.py ardupilot/bridge/*.py ardupilot/supervisor/*.py sim/src/*.py; do
   [ "$f" = "tests/no_abs_paths.sh" ] && continue
   [ -f "$f" ] || continue
   if grep -q "$PAT" "$f" 2>/dev/null; then n=$((n + 1)); fi

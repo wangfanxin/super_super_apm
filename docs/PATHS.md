@@ -6,9 +6,10 @@
 |---|---|---|---|
 | **仓库**（源码/配置/世界/参数/标定/文档） | 本目录（clone 到哪都行） | 是 | `setup/env.sh` 从脚本位置推出 `DSH_ROOT` |
 | **运行根**（编译产物、飞行记录） | `.build/`、`.runs/`（默认在仓库内；本机在 WSL 的 `/home/fanxin/super_super_apm`） | 否 | `setup/runtime.env`（不入库）或环境变量 |
-| **第三方** | 仓库内 `third_party/`；ArduPilot 在 `.build/ardupilot`（`setup/fetch_ardupilot.sh`） | SUPER/Super-LIO/livox 是；ArduPilot 否 | `third_party/pins.env` |
+| **模块** | `apm_thin/`（薄层）、`hku_super/`（SUPER）、`slam/`（Super-LIO+livox）、`ardupilot/`（桥/监督器/参数/消息）、`sim/`（仿真/世界/rviz/冻结） | 是 | 本文件 §1.1 |
+| **ArduPilot** | `.build/ardupilot`（`setup/fetch_ardupilot.sh`） | 否 | `PINS.env` |
 
-`setup/env.sh` 是**唯一**的路径权威：`DSH_ROOT` / `HARNESS_ROOT` / `SUPER_PLANNER_ROOT` /
+`setup/env.sh` 是**唯一**的路径权威：`DSH_ROOT` / `THIN_ROOT` / `SUPER_PLANNER_ROOT` / `SLAM_ROOT` / `SIM_ROOT` / `ARDUPILOT_DIR` /
 `WS_SUPER` / `LIO_WS` / `ARDUPILOT_ROOT` / `LIO_LOGS` / `CALIB_FILE` / `MID360_PATTERN`。
 每个入口脚本都会自己向上找 `setup/env.sh` 并 source 它（不需要先 export 任何东西）。
 
@@ -19,10 +20,10 @@
 | 记录里的路径 | 现在的等价物 |
 |---|---|
 | `/home/fanxin/lio_avoid/logs/missionA-<tag>` | `<LIO_LOGS>/missionA-<tag>`（本机 `/home/fanxin/super_super_apm/.runs/`） |
-| `/home/fanxin/lio_avoid/src/...` | `harness/src/...`（仿真/桥/监督器）或 `.build/ardupilot`（SITL） |
+| `/home/fanxin/lio_avoid/src/...` | `sim/src`（仿真）、`ardupilot/{bridge,supervisor}`（驱动侧）或 `.build/ardupilot`（SITL） |
 | `/home/fanxin/lio_avoid/lio_ws` | `.build/lio_ws`（本机 `/home/fanxin/super_super_apm/.build/lio_ws`） |
-| `/home/fanxin/super_super_apm/upstream/SUPER` | `third_party/SUPER`（本机的构建仍用 WSL 里那份上游副本） |
-| `/mnt/d/distill_self/lio_avoid` | `harness/` |
+| `/home/fanxin/super_super_apm/upstream/SUPER` | `hku_super`（本机的构建仍用 WSL 里那份上游副本） |
+| `/mnt/d/distill_self/lio_avoid` | 拆分后的 `sim/` + `ardupilot/` + `apm_thin/` |
 | `/mnt/d/distill_self/_stage/calib.json` | `calib/calib.json` |
 | `/mnt/d/distill_self/release` | 已并入本仓库（`release` 是发布前的暂存名） |
 
@@ -33,7 +34,7 @@
 
 1. 新脚本一律用 `setup/env.sh` 的变量或 `scripts/_paths.py`，**不写作者的绝对路径**。
 2. 飞行/评分链（`setup/`、`scripts/fly_*`、`scripts/run_*`、`scripts/accept.py`、`scripts/check_*`、
-   `harness/src/{bridge,supervisor,sim}`、`tests/`）必须路径无关，CI 会检查。
+   `ardupilot/{bridge,supervisor}`、`sim/src`、`tests/`）必须路径无关，CI 会检查。
 3. 历史分析工具（`scripts/` 下的一次性诊断）如果仍含旧路径，登记在下表，不再扩大。
 
 ## 4. 仍含历史路径的文件（有意保留）

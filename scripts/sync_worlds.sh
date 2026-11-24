@@ -10,7 +10,7 @@ fi
 # same path every other world uses.  A copy, not a move: the reference worlds stay where the
 # harness's own tools and the other session expect them.
 set -eu
-SRC=${DSH_ROOT}/harness/worlds
+SRC=${DSH_ROOT}/sim/worlds
 DST=${DSH_ROOT}/worlds
 for w in pillars.yaml pillars_fast.yaml forest6x4.yaml rect68.yaml forest_north.yaml; do
   [ -f "$SRC/$w" ] || { echo "missing in the harness: $w" >&2; continue; }

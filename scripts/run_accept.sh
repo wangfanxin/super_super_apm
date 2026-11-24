@@ -59,12 +59,12 @@ fi
 
 echo "tag   : $TAG"
 echo "run   : $RUN"
-echo "world : $ROOT/worlds/$WORLD"
+echo "world : $SIM_ROOT/worlds/$WORLD"
 echo "alt   : $ALT m"
 echo "half  : ${HALF:-15 m default}   body: $BODY"
 echo
 
-python3 "$ROOT/scripts/accept.py" --run "$RUN" --world "$ROOT/worlds/$WORLD" --alt "$ALT" \
+python3 "$ROOT/scripts/accept.py" --run "$RUN" --world "$SIM_ROOT/worlds/$WORLD" --alt "$ALT" \
     $EXTRA --json "$RUN/accept.json"
 RC=$?
 

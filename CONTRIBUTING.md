@@ -10,8 +10,8 @@ bash tests/run_all.sh          # 无飞行自检：语法、静态闸门、单�
 
 ## 2. 记录的纪律
 
-* 一次只改**一个变量**；配置改动走**变体文件**（`config/super_planner_hex_*.yaml`），
-  交付配置（`config/super_planner_hex.yaml`）只在测量支持时改，并在 `docs/SPEC.md` 的修改记录表留一行。
+* 一次只改**一个变量**；配置改动走**变体文件**（`hku_super/config/super_planner_hex_*.yaml`），
+  交付配置（`hku_super/config/super_planner_hex.yaml`）只在测量支持时改，并在 `docs/SPEC.md` 的修改记录表留一行。
 * 飞控参数改动走 `EXTRA_PARMS=<文件>`，不改交付参数文件。
 * 每个手臂**至少 3 趟**（本仓库的跑动方差：同一配置 W6 p90 0.32–0.42），用
   `scripts/accept.py` + `scripts/reversal_table.py` + `scripts/dip_context.py` 量。

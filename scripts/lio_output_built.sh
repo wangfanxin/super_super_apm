@@ -8,7 +8,7 @@ fi
 # -----------------------------------------------------------------------------
 # Read Output() in the source tree the build actually compiles (Super-LIO/src/super_lio).
 set -u
-S=${DSH_ROOT}/harness/src/Super-LIO/src/super_lio/src/lio/super_lio.cpp
+S=${SLAM_ROOT}/super_lio/src/lio/super_lio.cpp
 echo "== $S"
 ls -la "$S"
 echo

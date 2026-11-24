@@ -13,9 +13,9 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
-sys.path.insert(0, os.path.join(ROOT, "src", "whtf"))
+sys.path.insert(0, os.path.join(ROOT, "apm_thin"))
 
-from whtf.ros.planner_source_super import world_tour  # noqa: E402
+from ros.planner_source_super import world_tour  # noqa: E402
 
 WORLD = os.path.join(ROOT, "worlds", "forest_hex12.yaml")
 

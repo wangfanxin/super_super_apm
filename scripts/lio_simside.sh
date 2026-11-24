@@ -21,15 +21,15 @@ echo "    is above -- the simulator does not emit empty scans in these logs)"
 echo
 echo "== b) the params file the RUNNING node loads"
 ps -eo args | grep '[s]uper_lio_node' | head -1 | tr ' ' '\n' | grep -A1 'params-file' | head -4
-for f in ${DSH_ROOT}/harness/src/lio/config/livox_360.yaml \
-         ${DSH_ROOT}/harness/src/lio-fork-local/config/livox_360.yaml; do
+for f in ${DSH_ROOT}/slam/config/livox_360.yaml \
+         ${DSH_ROOT}/slam-fork-local/config/livox_360.yaml; do
   [ -f "$f" ] || continue
   echo "   -- $f"
   grep -nE 'pub_step|visual_map|visual_dense|filter_size|output' "$f" | head -10
 done
 echo
 echo "== c) the downsample the node runs (ds_undistort_ comes from here)"
-for f in ${DSH_ROOT}/harness/src/lio/config/livox_360.yaml; do
+for f in ${DSH_ROOT}/slam/config/livox_360.yaml; do
   [ -f "$f" ] || continue
   sed -n '/lio:/,/^[a-z]/p' "$f" | grep -nE 'filter|ds_|downsample|pub_step|visual' | head -12
 done

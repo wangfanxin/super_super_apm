@@ -18,9 +18,9 @@
 ## 常用
 
 ```bash
-python3 scripts/accept.py --run /path/to/missionA-<tag> --world worlds/forest_hex12.yaml \
+python3 scripts/accept.py --run /path/to/missionA-<tag> --world sim/worlds/forest_hex12.yaml \
         --alt 2.0 --body box
 python3 scripts/reversal_table.py <tag> [<tag> ...]     # REV / dips
-python3 scripts/plan_clearance.py <tag> --world worlds/forest_hex12.yaml
+python3 scripts/plan_clearance.py <tag> --world sim/worlds/forest_hex12.yaml
 bash scripts/render_evidence.sh <tag>                    # 四张证据图
 ```

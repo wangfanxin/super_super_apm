@@ -26,7 +26,7 @@ and `scripts/spec_check.py` re-runs this script and compares its output with the
 config values it already asserts (row "S1 前馈钳位 = 规划器上界").
 
 USAGE
-    python3 scripts/cfg_envelope.py config/super_planner_hex.yaml
+    python3 scripts/cfg_envelope.py hku_super/config/super_planner_hex.yaml
     -> "3.0 8.0 40.0"
 
 Exits 1 with a message on stderr if a key is missing, so the arm can fall back

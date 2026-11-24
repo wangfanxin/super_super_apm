@@ -30,7 +30,7 @@ from matplotlib.patches import Rectangle             # noqa: E402
 ap = argparse.ArgumentParser()
 ap.add_argument("--world", default="worlds/forest_v2_hex.yaml")
 ap.add_argument("--out", default="docs/evidence/world-v2-hex.png")
-ap.add_argument("--cfg", default="config/super_planner_hex.yaml")
+ap.add_argument("--cfg", default="hku_super/config/super_planner_hex.yaml")
 ap.add_argument("--z", type=float, default=None)
 a = ap.parse_args()
 
