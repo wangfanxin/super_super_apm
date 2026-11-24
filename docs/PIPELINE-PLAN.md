@@ -15,17 +15,17 @@
 
 | 项 | 现状 | 目标 |
 |---|---|---|
-| 真值 | 改 ArduPilot 固件插 1.2 kHz UDP tap + 自建 fanout | **SIM_STATE**（MAVROS `sim_state` 插件，官方已对 ArduCopter SITL 验证） |
+| 真值 | 改 ArduPilot 固件插 1.2 kHz UDP tap + 自建 fanout | **SIM_STATE**（标准 MAVLink msg 108，由**我们自己的客户端**订阅；不用 mavros） |
 | 录制 | 每个 topic 一个 `record-*.py` → CSV（不可回放、会丢尾、无 gap 计数） | **rosbag2 全量录制**（含 tf、/clock、/sim/state），CSV 由 bag 派生 |
 | 时钟 | 三套戳（sim µs / host monotonic / Unix wall）混在 CSV | bag 接收时间 + 源戳齐全；**时钟映射显式记录**（`/clock`、t_wall↔t_sim 对） |
-| 控制接口 | 两个自建 MAVLink 客户端（bridge 84/331 + supervisor 76） | **单一标准接口**：MAVROS（`setpoint_raw/local`、`vision_pose`、`state`）或 ArduPilot DDS |
+| 控制接口 | 两个自建 MAVLink 客户端（bridge 84/331 + supervisor 76） | **一个自建 MAVLink 客户端**（单连接/单进程），消息契约与标准对齐（见 D1：不用 mavros） |
 | LIO→FCU | 冻结位姿无限转发、无质量/协方差/reset | 年龄门 + quality/covariance + reset_counter；停发即记名 |
-| 仿真器 | 自建 UDP tap + 自建 raycast；图案只加载一次、12k 点=60ms 突发 | 标准 Gazebo（`ardupilot_gz` + 传感器插件）**为主**，轻量自建 sim 保留为 CI/快速回归 |
+| 仿真器 | 自建 UDP tap + 自建 raycast；图案只加载一次、12k 点=60ms 突发 | **保留当前轻量 sim + rviz 场景**（不用 Gazebo），修两个传感器 bug 并加每帧 CSV |
 | 可复现 | sortie 目录缺 world/calib/parm/banner，accept.json 只哈希 9 个输入 | 每趟 **manifest**（git/二进制/配置 hash、argv、世界、标定、parm、时钟图）＋ bag 可回放复算 |
 | 自包含 | 7.1 GB 运行根在仓库外（ArduPilot、upstream/SUPER 副本、编译产物、记录） | `.build/`、`.runs/` 收进仓库（gitignore），无 `runtime.env`、无外部运行根 |
 
 **推荐节奏**：Phase 0（自包含，1–2 天）→ Phase 1（真值+时钟，2–3 天）→ Phase 2（bag 录制+派生，2–3 天）
-→ 到此为止可获得 **90% 的收益**；Phase 3（控制接口标准化）与 Phase 4（Gazebo）按需推进。
+→ 到此为止可获得 **90% 的收益**；Phase 3（单客户端合并）与 Phase 4（仿真器修正）按需推进。
 
 ---
 
@@ -48,8 +48,8 @@
 
 ```
                  ┌──────────────────────────── 仿真侧（可替换） ────────────────────────────┐
- worlds/ ───────▶│ ArduPilot SITL（不修改，--defaults 外置参数）  +  Gazebo / 轻量 sim       │
-                 │   MAVLink / DDS                              SIM_STATE(108) 真值         │
+ worlds/ ───────▶│ ArduPilot SITL（不修改，--defaults 外置参数）  +  轻量 sim（rviz 场景）   │
+                 │   MAVLink                                    SIM_STATE(108) 真值         │
                  └───────────────┬──────────────────────────────────────┬────────────────┘
                                  │ setpoint_raw/local + vision_pose      │ /sim/state, /clock
                                  ▼                                       ▼
@@ -58,7 +58,7 @@
   │            └──/lio/cloud_world(10Hz)──▶ hku_super fsm_node ──/planning/pos_cmd──┘        │
   │                      ▲                      │                                            │
   │                      │ goals: PoseStamped/PVA（W→L 一次转换）                          │
-  │  bridge_nodes/supervisor（守卫/命名中止/一个 MAVLink 或 MAVROS 连接）                    │
+  │  bridge_nodes/supervisor（守卫/命名中止/同一个自建 MAVLink 连接）                    │
   └──────────────────────────────┬──────────────────────────────────────────────────────────┘
                                  │ 所有 topic（含 tf、/clock、/sim/state、status）
                                  ▼
@@ -72,12 +72,12 @@
 
 | 层 | 组件 | 输入 | 输出 | 备注 |
 |---|---|---|---|---|
-| 仿真 | ArduPilot SITL（**不修改**） | `--defaults` 外置 parm | MAVLink / DDS；`SIM_STATE` | 真值不再靠固件补丁 |
-| 仿真 | Gazebo（`ardupilot_gz`）或轻量 sim | world、pattern | `/livox/lidar`、`/livox/imu` | 二选一，接口一致 |
+| 仿真 | ArduPilot SITL（**不修改**） | `--defaults` 外置 parm | MAVLink；`SIM_STATE` | 真值不再靠固件补丁 |
+| 仿真 | 轻量 sim（`sim/src`，rviz 场景） | world、pattern | `/livox/lidar`、`/livox/imu` | 唯一仿真后端（D2） |
 | 估计 | `slam/` Super-LIO | 点云/IMU | `/lio/robo/odom`、`/lio/cloud_world`、`/lio/status`（新增：速率、扫描消费数、reset 计数） | 状态必须可被判活 |
 | 规划 | `hku_super/` fsm_node | odom、世界系点云、goal | `/planning/pos_cmd`、`poly_traj` | 上游代码尽量不改 |
 | 规划适配 | `bridge_nodes/thin/` | pos_cmd、goal、world | `/plan/cmd`（**L 系**，yaw=罗盘） | 保留调速器/fallback，但 fallback 必须指向当前腿 |
-| 桥 | `bridge_nodes/mavlink/`（或 MAVROS 客户端） | `/plan/cmd` | setpoint_raw/local；vision/odom 给 EKF | **一个连接**；年龄门、质量、`/bridge/status` 命名降级 |
+| 桥 | `bridge_nodes/mavlink/`（自建，单连接） | `/plan/cmd` | setpoint 84 + extnav 331；真值由同一客户端订阅 SIM_STATE | **一个连接**；年龄门、质量、`/bridge/status` 命名降级 |
 | 守卫 | `bridge_nodes/supervisor/` | FCU 状态、truth/FCU 对比 | arm/takeoff/land；命名 abort | 不再需要 tap 也能工作（仿真用 SIM_STATE，实机用 FCU） |
 | 录制 | `rosbag2` 节点 | 全部 topic | bag | 唯一录制底座 |
 | 派生 | `scripts/bag_to_csv.py`（新增） | bag | CSV（与旧格式兼容） | 分析脚本不改也能读 |
@@ -102,10 +102,10 @@
 |---|---|---|
 | 规划器接口（`PositionCommand`、世界系点云） | **保留** | 与 EGO/px4ctrl/SUPER 生态一致，是本仓库最对的地方 |
 | 薄层调速器/限速器（policy） | **保留**，但拆成独立节点 `bridge_nodes/thin/governor` | 策略与传输解耦；`ref_lp` 修子步后再启用 |
-| 两个自建 MAVLink 客户端 | **替换**为单连接（MAVROS 或 DDS） | 标准化、有 SIM_STATE/vision 插件、可被生态工具观察 |
+| 两个自建 MAVLink 客户端 | **合并为一个自建单连接客户端** | D1：mavros 太慢；合并后只有一个协议栈、一个状态机，契约仍按标准消息填 |
 | ArduPilot 固件 tap 补丁 | **从飞行路径移除**（保留在旧分支供对比一年） | 真机不存在；SIM_STATE 已官方验证 |
 | 每 topic 手写 CSV 录制器 | **替换**为 rosbag2 + 派生工具 | 回放/可复现/不丢尾 |
-| 自建 lidar 仿真 | **降级为轻量 sim**（CI/快速回归）；发布路径用 Gazebo | 传感器模型标准化；图案窗口 bug 一并修 |
+| 自建 lidar 仿真 | **保留为主**（D2：Gazebo 太卡），修图案/点数两个 bug，加每帧 CSV | 当前 rviz 场景与 world 都是调好的，换 Gazebo 收益不抵成本 |
 | 自建 `truth_rx` fanout | **删除** | SIM_STATE 直接是 ROS 话题 |
 | `setup/runtime.env` + WSL 运行根 | **删除** → `.build/`、`.runs/` 进仓库 | 自包含 |
 | 旧评分器判据 | **暂不动**（按所有者意见延后） | 与管线正交 |
@@ -133,7 +133,7 @@
 ### Phase 1 — 真值与时钟（2–3 天）
 
 **做什么**
-1. 安装并接 MAVROS（或 `ardupilot_ros` DDS，二选一，见决策 D1）的 `sim_state` 插件；订阅 `/sim/state/*`。
+1. 在自建客户端里请求并订阅 **SIM_STATE（MAVLink 108）**（`SET_MESSAGE_INTERVAL`），发布 `/sim/state` 话题；不引入 mavros/DDS（D1）。
 2. 新增 `scripts/compare_truth.py`：同一趟里旧 tap.csv 与 SIM_STATE 的位置/速度/时间差（目标：位置差 < 1 cm、时间差 < 2 ms 的映射可拟合）。
 3. 三条腿并行跑 3 趟（tap / SIM_STATE / 双录），出对比报告；确认 SIM_STATE 的更新时间与频率（SITL 每步）后，**把 tap 从飞行路径移除**。
 4. 时钟：录制 `/clock`；每个录制行都带 `(recv_stamp, src_stamp)`；`bag→CSV` 时同时写两列（替代当前 t_wall/t_sim_us 的歧义）。
@@ -147,7 +147,7 @@
 ### Phase 2 — 录制与派生（2–3 天）
 
 **做什么**
-1. `scripts/record_bag.sh`：rosbag2 录 `/lio/*`、`/plan/cmd`、`/planning/*`、`/mavros/*`、`/sim/state/*`、`/bridge/status`、`/tf`、`/clock`、`/rosout`；QoS 显式（BEST_EFFORT 的 topic 用 `--qos-profile-overrides-file`）。
+1. `scripts/record_bag.sh`：rosbag2 录 `/lio/*`、`/plan/cmd`、`/planning/*`、`/fcu/*`、`/sim/state/*`、`/bridge/status`、`/tf`、`/clock`、`/rosout`；QoS 显式（BEST_EFFORT 的 topic 用 `--qos-profile-overrides-file`）。
 2. `scripts/bag_to_csv.py`：从 bag 生成与旧格式**同列名**的 CSV（tap/setpoints/wire/lio/traj），再跑 `accept.py`；先对比同一趟新旧 CSV 的 accept 数字**完全一致**，作为无缝迁移的证明。
 3. 保留手写录制器一个版本（feature flag）作为兜底；两趟后删除。
 4. `bag` 每小时约几百 MB：`--max-bag-size` 分卷，`--compression-mode file zstd`。
@@ -157,30 +157,31 @@
 **回滚**：派生脚本只读 bag，旧录制器保留一个 release。
 **风险**：ROS 2 的消息时间与现有 CSV 语义差异 → 全部留在派生层解决，不动分析/评分代码。
 
-### Phase 3 — 控制接口标准化（3–5 天）
+### Phase 3 — 单个自建 MAVLink 客户端（2–3 天；D1：不用 mavros）
 
 **做什么**
-1. `bridge_nodes/mavlink/` 改为 MAVROS 客户端（订阅 `/plan/cmd`，发 `/mavros/setpoint_raw/local`；`vision_pose`/`vision_speed` 发估计器）；或改 ArduPilot DDS（AP_DDS）。**单一连接**。
+1. bridge 与 supervisor 的**两个连接合并为一条**（一个进程或一个连接对象分派），消息按段分派：84/331/setpoint、76/mode、511 流控、SIM_STATE 108 真值；状态机统一（armed/mode/relay/方案）。不做多进程多连接。
 2. LIO→FCU：`/lio/status` 年龄门（>200 ms 停发 + 命名降级）；quality/covariance/reset_counter 映射；`VISO_*` 参数与 status 一致。
 3. `nav gate`、`wire liveness`（relay==1、`sent` 递增、模式离开 GUIDED 即命名中止）、完成超时。
-4. yaw 转换只保留**一处**（生产者），bridge 对 `frame_id` 校验；ego 臂补上转换。
-5. supervisor 与 bridge 共享同一连接或两个 MAVROS 命名空间；truth 相关守卫在仿真用 SIM_STATE、实机用 FCU 日志。
+4. yaw 转换只保留**一处**（生产者），客户端对 `frame_id` 校验；ego 臂补上转换。
+5. truth 相关守卫：仿真用 SIM_STATE（同一客户端），实机用 FCU 日志。
 
-**交付物**：新 bridge（feature flag `BRIDGE_IMPL=mavros|legacy`）；3 趟 A/B（legacy vs mavros）：8 行核心验收 + W6 对比，要求差异在跑动方差内。
+**交付物**：新 bridge（feature flag `BRIDGE_IMPL=merged|legacy`）；3 趟 A/B（两条连接 vs 一条连接）：8 行核心验收 + W6 对比，要求差异在跑动方差内。
 **验证**：`LIO` 停发实验（`pkill` LIO）→ 200 ms 内 extnav 停发、supervisor 命名 abort、产物可查；模式切 RTL → 命名 abort；断电/断链 → 可见失败。
-**回滚**：环境变量切回 legacy 实现；MAVROS 与自建实现并存一个 release。
-**风险**：MAVROS 引入依赖与延迟（DAEMON）；`setpoint_raw` 的 yaw 语义要与现有转换对齐 → 用同一趟回放做单元级对比。
+**回滚**：环境变量切回 legacy 双连接；两种实现并存一个 release。
+**风险**：合并后状态机/流控边界增多；yaw 只有一条转换路径后要回归 ego 臂 → 用同一趟回放做单元级对比。
 
-### Phase 4 — 仿真标准化（3–5 天，可选）
+### Phase 4 — 轻量仿真与 rviz 完善（1–2 天；D2：不引入 Gazebo）
 
 **做什么**
-1. Gazebo（`ardupilot_gz` + livox/MID360 模型）跑同一 world；确认 SUPER 的 ROG-Map 仍要世界系点云（保持）。
-2. 轻量 sim 保留为 `sim-lite`：修 **图案窗口只在启动时加载一次**、**12000 点=60 ms 突发**两个问题；新增每帧 CSV（cast_ms/原因/点数）。
-3. 世界与 rviz 作为唯一「环境」来源，Gazebo/SITL/轻量 sim 读同一份 YAML。
+1. 修 **图案窗口只在启动时加载一次**（`start` 随扫描推进）与 **12000 点=60 ms 突发**（按整窗均匀抽点或默认 20000）两个问题。
+2. `lidar_imu` 新增**每帧 CSV**（t_start、cast_ms、原因、点数），H6 从"最后 2 s 聚合"改为读它。
+3. rviz 场景：把 world、真值、LIO、参考、slam 点云做成一个可直接回放的 rviz2 配置（含 bag 回放时间轴），作为可视化与 debug 的单一入口。
+4. 世界与 rviz 仍作为唯一「环境」来源（D2 不变）。
 
-**验证**：同一 world 在 Gazebo/轻量 sim 下各飞一趟，H1/W2/W6 差异可解释；H6 改为读每帧 CSV。
-**回滚**：`SIM_BACKEND=gazebo|lite` 环境变量。
-**风险**：Gazebo 传感器模型与自建 raycast 不同 → 需要一次"传感器等价"对比（同一 world 的柱面距离分布）。
+**验证**：同一 world 飞一趟，H6 的 per-scan CSV 与旧聚合一致；rviz 回放 bag 能看到整条链路。
+**回滚**：`SIM_LIDAR_LEGACY=1` 切回旧调度与旧日志。
+**风险**：改点数/插值会改变传感器可见性 → 先做 3 趟 A/B（旧 vs 新）再切换默认。
 
 ### Phase 5 — 评估与产物（1–2 天，判据类改动仍在延后）
 
@@ -196,13 +197,13 @@
 
 ## 5. 关键决策点（需要你拍板）
 
-| # | 决策 | 选项 | 推荐 |
+| # | 决策 | 选项 | 结论（2026-11-24 所有者） |
 |---|---|---|---|
-| D1 | 控制接口 | (a) MAVROS 2；(b) ArduPilot DDS（`ardupilot_ros`/AP_DDS）；(c) 自建单连接 | **(a)** 生态最成熟 + `sim_state` 插件 + 与 EGO/px4ctrl 同构；DDS 作为后续选项 |
-| D2 | 仿真器 | (a) 轻量自建为主；(b) Gazebo 为主 + 轻量做 CI；(c) 只留 Gazebo | **(b)**，Gazebo 负责"传感器模型可信"，轻量 sim 负责"快" |
-| D3 | 真值 | (a) SIM_STATE；(b) 保留 tap | **(a)**，tap 只保留在旧分支 |
-| D4 | 时钟 | (a) ROS sim time（`use_sim_time`）；(b) wall + bag 记录 + 显式映射 | **(b)**：改动小、实机同构；映射写进 manifest |
-| D5 | 自包含 | (a) `.build`/`.runs` 进仓库；(b) 外部运行根 + manifest | **(a)**（你的要求）；若 rtf 受影响，`.runs` 单独由 manifest 声明位置 |
+| D1 | 控制接口 | (a) MAVROS 2；(b) ArduPilot DDS；(c) 自建单连接 | **(c) 自建单连接**——所有者实测 mavros "速度特别慢、非常卡"，否决 mavros；不做 DDS 迁移 |
+| D2 | 仿真器 | (a) 轻量 sim + rviz；(b) Gazebo 为主 | **(a) 轻量 sim + rviz**——所有者实测 Gazebo "太卡"，否决 Gazebo；改为修当前仿真器的两个 bug |
+| D3 | 真值 | (a) SIM_STATE；(b) 保留 tap | **(a) SIM_STATE**：由我们的自建客户端订阅 MAVLink msg 108（不需要 mavros），tap 只留旧分支 |
+| D4 | 时钟 | (a) ROS sim time；(b) wall + bag 记录 + 显式映射 | **(b)**：bag 记录 + 显式映射写进 manifest |
+| D5 | 自包含 | (a) `.build`/`.runs` 进仓库；(b) 外部运行根 | **(a) 全部进仓库**；`.runs` 仍在 gitignore 内 |
 
 ---
 
@@ -233,11 +234,11 @@ bash tests/pipeline_check.sh <tag>
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| MAVROS 引入额外延迟/依赖 | 跟踪指标短期波动 | A/B 3 趟；legacy 保留一个 release |
+| 单客户端合并引入回归 | 跟踪指标短期波动 | 3 趟 A/B；两条连接并存一个 release |
 | `/mnt/d` 上编译/记录慢 | rtf 掉出 0.98–1.02 → 不可评级 | Phase 0 先测；必要时 .runs 留 ext4 由 manifest 声明 |
 | SIM_STATE 字段/频率与文档不符 | 真值频率不足 | Phase 1 先做 `compare_truth`，不通过不切换 |
 | bag 体积（每小时） | 磁盘 | zstd + 分卷 + 只保留有分析的趟次 |
-| 两套 sim 并存 | 维护成本 | 轻量 sim 只做 CI，功能冻结 |
+| 仿真器自建（无 Gazebo 对照） | 传感器模型无法与标准工具对比 | 保留 `compare_truth`/柱面距离分布作为自证；文档写清假设 |
 
 ---
 
