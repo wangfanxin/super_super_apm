@@ -336,11 +336,13 @@ class RosOut:
         self._imu_by_stamp = {}
         if truth_topic:
             from nav_msgs.msg import Odometry
-            tq = QoSProfile(depth=500, history=HistoryPolicy.KEEP_LAST,
+            tq = QoSProfile(depth=2000, history=HistoryPolicy.KEEP_LAST,
                             reliability=ReliabilityPolicy.BEST_EFFORT)
             self.node.create_subscription(Odometry, truth_topic, self._on_truth_odom, tq)
+            self._truth_single = True
             if truth_imu_topic:
                 self.node.create_subscription(Imu, truth_imu_topic, self._on_truth_imu, tq)
+                self._truth_single = False
             # A DEDICATED SPIN THREAD.  MEASURED 2026-11-25: one `spin_once()` per main-loop pass (5 ms)
             # processes ONE callback, so a 200 Hz truth (odom + imu = 400 callbacks/s) was delivered at
             # ~100 pairs/s, the IMU fell to 15-20 Hz and every scan window had holes (75/80 scans skipped).
@@ -359,8 +361,9 @@ class RosOut:
 
             self._spin_thread = threading.Thread(target=_spin, daemon=True)
             self._spin_thread.start()
-            print("  truth <- %s + %s (ROS, subscriptions on a spin thread)"
-                  % (truth_topic, truth_imu_topic), flush=True)
+            print("  truth <- %s (ROS%s, subscriptions on a spin thread)"
+                  % (truth_topic, " + " + truth_imu_topic if truth_imu_topic else ", single message"),
+                  flush=True)
         self.PointCloud2 = PointCloud2
         self.PointField = PointField
         self.Imu = Imu
@@ -447,6 +450,17 @@ class RosOut:
                       [w.x, w.y, w.z], [a.x, a.y, a.z])
 
     def _on_truth_odom(self, msg):
+        if getattr(self, "_truth_single", False):
+            # ONE MESSAGE PER SAMPLE: position/velocity/attitude/rates + specific force in covariance[0:3]
+            t_us = int(msg.header.stamp.sec) * 1_000_000 + int(msg.header.stamp.nanosec) // 1000
+            p = msg.pose.pose.position
+            q = msg.pose.pose.orientation
+            v = msg.twist.twist.linear
+            w = msg.twist.twist.angular
+            cv = msg.pose.covariance
+            self.truth_cb(t_us, [p.x, p.y, p.z], [v.x, v.y, v.z], [q.w, q.x, q.y, q.z],
+                          [w.x, w.y, w.z], [cv[0], cv[1], cv[2]])
+            return
         k = self._key(msg.header.stamp)
         self._odom_by_stamp[k] = msg
         if os.environ.get("TRUTH_DEBUG") and not getattr(self, "_dbg_odom", False):
@@ -483,8 +497,9 @@ def main() -> int:
     # PHASE 1b: consume the reconstructed SIM_STATE truth from our own MAVLink client instead of the tap.
     ap.add_argument("--truth-topic", default="",
                     help="nav_msgs/Odometry truth topic (e.g. /sim/state); '' = use the UDP tap fan-out")
-    ap.add_argument("--truth-imu-topic", default="/sim/state/imu",
-                    help="sensor_msgs/Imu with the matching gyro/accel (paired by header stamp)")
+    ap.add_argument("--truth-imu-topic", default="",
+                    help="OPTIONAL sensor_msgs/Imu paired by header stamp; empty = the odometry message "
+                         "carries the specific force in pose.covariance[0:3] (one message per sample)")
     ap.add_argument("--world", default=os.path.join(PROJ, "worlds", "pillars.yaml"))
     ap.add_argument("--pattern", default=None,
                     help="the real MID-360 pattern csv; by default it is looked up (see "

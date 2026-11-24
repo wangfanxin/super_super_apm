@@ -261,6 +261,28 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 06:40（第 11 条，Phase 1b 收敛：单消息真值 + sim-t0 锚定 + 桥独占核 -> 干净整趟）
+
+**本轮修复**
+- 时间基：用"SITL 打印 tap banner 的 wall 时刻"当仿真 t=0（20 ms 轮询），客户端时间基与其对齐；此前用进程启动
+  时刻，真值比 tap 早 0.600 s（W6 实测恒定 +0.600）。
+- 单消息真值：`/sim/state` 用一条 Odometry（specific force 放 pose.covariance[0:3]），回调 400/s→200/s；
+  LiDAR skipped 从 68–154 降到 20–23。
+- 桥独占核：`ESTIMATOR FEED IS STALE` 的根因不是 LIO 丢数据（lio.csv 200.0 Hz、0 空洞），而是 bridge 的 LIO
+  回调被 supervisor 的 1 ms 循环同物理核饿死。拆核：planner 12–13、**bridge 14**、AUX 16–17、truth 18–19。
+
+**`missionA-phase1w-01-01`（TRUTH_SRC=simstate+LEGACY_TAP+LIGHT）**
+- 飞完两圈、正常 LAND+disarm；H1 0.9998、H3/H4、**H5 10.79 vs 10.79 m**、W0b、W1 13/13、W1b、W2/W3/W5 全过。
+- 余：H2（200 Hz vs tap 时代 380 门槛，P0 延后）、H6 skipped 23（门槛 20）、W4（已知缺陷）、
+  W6（p50 0.238、spread 0.220 > 0.15，时间基仍有 ±0.1 s 慢摆）。
+
+**下一步**
+1. W6 慢摆：时间基从"到达时刻回归"改为"对齐系统时间（TIMESYNC/SYSTEM_TIME）+ 斜率拟合"，或每 1 s 重新锚定；
+2. H6 skipped 23 -> 压到 20 以下（DDS 深队列/QoS 或 lidar 扫描调度）；
+3. 然后删固件 tap 补丁/truth_rx/fanout，Phase 1 收尾，Phase 2 同趟 bag↔CSV 一致。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

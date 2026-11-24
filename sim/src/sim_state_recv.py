@@ -157,7 +157,7 @@ class TruthOut:
         qos = QoSProfile(depth=500, history=HistoryPolicy.KEEP_LAST,
                          reliability=ReliabilityPolicy.BEST_EFFORT)
         self.pub_odom = self.node.create_publisher(Odometry, "/sim/state", qos)
-        self.pub_imu = self.node.create_publisher(Imu, "/sim/state/imu", qos)
+        self.pub_imu = None
         self.Odometry, self.Imu = Odometry, Imu
         if self.truth_odom:
             from rosgraph_msgs.msg import Clock
@@ -199,14 +199,22 @@ class TruthOut:
         o.pose.pose.orientation = Quaternion(w=float(q[0]), x=float(q[1]), y=float(q[2]), z=float(q[3]))
         o.twist.twist.linear = Vector3(x=float(v[0]), y=float(v[1]), z=float(v[2]))
         o.twist.twist.angular = Vector3(x=float(w[0]), y=float(w[1]), z=float(w[2]))
+        # SPECIFIC FORCE IN pose.covariance[0:3] (FRD like the tap): nav_msgs/Odometry has no acceleration
+        # field, and publishing a SECOND message per sample doubled the callback load on the LiDAR node
+        # (MEASURED 2026-11-25: 400 callbacks/s, the LiDAR loop fell behind on scan scheduling and skipped
+        # 68 scans).  One message per sample keeps the truth on one topic and halves that overhead.
+        o.pose.covariance[0] = float(a[0])
+        o.pose.covariance[1] = float(a[1])
+        o.pose.covariance[2] = float(a[2])
         self.pub_odom.publish(o)
-        m = self.Imu()
-        m.header.stamp = stamp
-        m.header.frame_id = "sim_body_frd"
-        m.orientation = o.pose.pose.orientation
-        m.angular_velocity = o.twist.twist.angular
-        m.linear_acceleration = Vector3(x=float(a[0]), y=float(a[1]), z=float(a[2]))
-        self.pub_imu.publish(m)
+        if self.pub_imu is not None:
+            m = self.Imu()
+            m.header.stamp = stamp
+            m.header.frame_id = "sim_body_frd"
+            m.orientation = o.pose.pose.orientation
+            m.angular_velocity = o.twist.twist.angular
+            m.linear_acceleration = Vector3(x=float(a[0]), y=float(a[1]), z=float(a[2]))
+            self.pub_imu.publish(m)
         if self.truth_odom:
             if t_us >= self.next_clock_us:
                 self.next_clock_us = t_us + self.clock_period_us

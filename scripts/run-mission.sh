@@ -678,17 +678,32 @@ SETSID_PREFIX=$(pin_cmd "$SIM_CORES")
 # ... AND THE ROSBAG2 RECORDER GETS ITS OWN CORES, BECAUSE IT IS THE NEW HEAVIEST RECORDER (round 25): with
 # BAG=1 the CSV recorders + bridge + supervisor are squeezed to 16-17 and the bag writes on 18-19, so the
 # recording base never fights the flight stack.
-if [ "${BAG:-0}" = "1" ]; then
+if [ "${TRUTH_SRC:-tap}" = "simstate" ]; then
+    # MEASURED 2026-11-25 (phase1p): with the truth client + the legacy tap recorder sharing the AUX
+    # cores, the BRIDGE stalled for 1.7 s and the FCU aborted "ESTIMATOR FEED IS STALE"; the LIO's own
+    # odometry had no gap (rate 200.0, 0 gaps > 50 ms), so the stall was the bridge being starved.
+    AUX_CORES=${AUX_CORES:-16-17}
+    TRUTH_CORES=${TRUTH_CORES:-18-19}
+elif [ "${BAG:-0}" = "1" ]; then
     AUX_CORES=${AUX_CORES:-16-19}
-    BAG_CORES=${BAG_CORES:-off}
+    TRUTH_CORES=${TRUTH_CORES:-off}
 else
     AUX_CORES=${AUX_CORES:-16-19}
-    BAG_CORES=${BAG_CORES:-off}
+    TRUTH_CORES=${TRUTH_CORES:-off}
 fi
+BAG_CORES=${BAG_CORES:-off}
 PLANNER_CORES=${PLANNER_CORES:-12-15}
+# THE BRIDGE GETS A CORE THAT THE SUPERVISOR CANNOT HOG.  MEASURED 2026-11-25: the supervisor's 1 ms
+# guard loop holds a whole vCPU; with the bridge on the sibling vCPU of the SAME physical core the bridge's
+# LIO callback starved for ~1.7 s and the FCU aborted "ESTIMATOR FEED IS STALE" (phase1p/phase1t), while
+# the LIO's own odometry had no gap.  vCPU 3 shares a physical core with the (13 %-busy) SITL, which is the
+# one place with real headroom.
+BRIDGE_CORES=${BRIDGE_CORES:-3}
+BRIDGE_PREFIX=$(pin_cmd "$BRIDGE_CORES")
 AUX_PREFIX=$(pin_cmd "$AUX_CORES")
 PLANNER_PREFIX=$(pin_cmd "$PLANNER_CORES")
 BAG_PREFIX=$(pin_cmd "$BAG_CORES")
+TRUTH_PREFIX=$(pin_cmd "${TRUTH_CORES:-off}")
 SITL_T0_US=$(date +%s%6N)     # truth time base: the client's t=0 must be the simulator's t=0
 setsid nohup $SETSID_PREFIX env LIO_TRUTH_TAP=$TAP "$BIN" --model "$SITL_MODEL" --speedup 1 -I0 \
     --home -35.363261,149.165230,584,0 --serial0 tcp:${PORT0:-5780} --serial1 tcp:${PORT1:-5781} --serial2 tcp:${PORT2:-5782} --serial3 tcp:${PORT3:-5783} \
@@ -807,21 +822,30 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for i in $(seq 1 24); do
-    grep -q TruthTap "$OUT/sitl.log" 2>/dev/null && break
+# THE SIMULATOR'S OWN t=0 INSTANT, WALL-CLOCKED (D4).  The patched SITL prints its truth-tap banner from
+# `SIM_Aircraft::init`, i.e. at simulator t~0; timestamping that print is how the SIM_STATE truth client can
+# put its samples on the SAME time base as the old tap (MEASURED 2026-11-25: using the process start instead
+# put the truth 0.600 s ahead, and W6 between the two truths read a constant +0.600 s offset).
+SITL_SIMT0_US=""
+for i in $(seq 1 1200); do
+    if grep -q TruthTap "$OUT/sitl.log" 2>/dev/null; then
+        SITL_SIMT0_US=$(date +%s%6N)
+        break
+    fi
     kill -0 "$SITL" 2>/dev/null || { echo "SITL died:"; tail -12 "$OUT/sitl.log"; exit 1; }
-    sleep 0.5
+    sleep 0.02
 done
-grep -q TruthTap "$OUT/sitl.log" || { echo "tap never reported"; exit 1; }
-echo "SITL stepping"
+[ -n "$SITL_SIMT0_US" ] || { echo "tap never reported"; exit 1; }
+echo "SITL stepping (sim t=0 at wall $SITL_SIMT0_US)"
 
 if [ "$TRUTH_SRC" = "simstate" ]; then
     # THE CLIENT IS THE TRUTH (Phase 1b).  --tap-csv writes the SAME 19-column format truth_rx wrote, so
     # scripts/accept.py and every offline tool keep working unchanged.
     CLIENT_T0_US=$(date +%s%6N)
-    TRUTH_OFFSET_US=$((CLIENT_T0_US - SITL_T0_US))
-    echo "   truth    : SIM_STATE time base offset +${TRUTH_OFFSET_US} us (client start - SITL start)"
-    $AUX_PREFIX python3 "$SIM/src/sim_state_recv.py" --mav "tcp:127.0.0.1:${PORT2:-5782}" \
+    TRUTH_OFFSET_US=$((CLIENT_T0_US - SITL_SIMT0_US))
+    echo "   truth    : SIM_STATE time-base offset +${TRUTH_OFFSET_US} us" \
+         "(client start - SITL sim t=0)"
+    $TRUTH_PREFIX python3 "$SIM/src/sim_state_recv.py" --mav "tcp:127.0.0.1:${PORT2:-5782}" \
         --hz "${SIM_STATE_HZ:-1000}" --home="${SIM_STATE_HOME:--35.363261,149.165230,584.0}" \
         --csv "$OUT/sim_state.csv" --ros --publish-hz 200 --tap-csv "$OUT/tap.csv" --truth-odom \
         --stamp-offset-us "$TRUTH_OFFSET_US" --clock-hz 100 --odom-hz 100 --rtf-hz 10 \
@@ -830,7 +854,7 @@ if [ "$TRUTH_SRC" = "simstate" ]; then
     SS_PID=""
     echo "   truth    : SIM_STATE via our own MAVLink client (TRUTH_SRC=simstate; no tap in the flight path)"
     if [ "${LEGACY_TAP:-0}" = "1" ]; then
-        python3 "$SIM/src/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout $FAN \
+        $TRUTH_PREFIX python3 "$SIM/src/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout $FAN \
             --fanout-decimate 6 --csv "$OUT/tap_legacy.csv" --save "$OUT/truth_report.txt" \
             > "$OUT/truth_rx_legacy.log" 2>&1 &
         LEGACY_PID=$!
@@ -1056,7 +1080,7 @@ if [ "$PLANNER" = "rectangle" ]; then
 else
     YAW_ARG=""
 fi
-$AUX_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
+$BRIDGE_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
     --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
     --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" \
     > "$OUT/bridge.log" 2>&1 &

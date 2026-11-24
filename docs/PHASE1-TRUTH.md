@@ -217,3 +217,22 @@ full run        : pos rms 9.4 mm (p99 51 mm), vel 2.8 mm/s, att 0.592°, gaps 1(
   H6 skipped 21（门槛 20）——都指向 SIM_STATE → ROS 的**偶发丢包/停顿**。候选修法：单条组合消息（回调减半）、
   提高 DDS 资源上限、客户端停顿时的 hold 时长/重发。H2 的 rate 200 vs 380 是 tap 时代门槛，等 P0 一并重定义。
 
+## Phase 1b 收敛（2026-11-25 06:40）：单消息真值 + sim-t0 锚定 + 桥独占核 → 完整干净飞行
+
+三个仍是"真值切 SIM_STATE 之后才暴露"的问题，本轮都定位并修掉：
+
+1. **时间基**：patched SITL 在 `SIM_Aircraft::init` 打印 tap banner 的时刻就是仿真 t≈0；`run-mission.sh` 用
+   20 ms 轮询把它 wall-clock 下来（`SITL_SIMT0_US`），客户端 `--stamp-offset-us = client_start − SITL_sim_t0`。
+   此前用"进程启动时刻"，真值比 tap 早 0.600 s，W6 读出恒定 +0.600 s（phase1q）。
+2. **回调减半**：真值改成**每样本一条消息**——`nav_msgs/Odometry`，specific force 放 `pose.covariance[0:3]`
+   （nav_msgs/Odometry 没有加速度字段；此前 `/sim/state` + `/sim/state/imu` 两条 200 Hz = 400 回调/s，
+   LiDAR 的扫描调度会落后，实测 skipped 44–154）。单条后 H6 skipped 21→20、且不再 68/154。
+3. **桥被饿死**：`ESTIMATOR FEED IS STALE`（1.5 s 限）不是 LIO 丢数据（lio.csv 实测 200.0 Hz、0 个 >50 ms 空洞），
+   而是 bridge 的 LIO 回调被 supervisor 的 1 ms 循环同物理核抢死。拆核：planner 12–13、bridge **独占 14**、
+   AUX(含 supervisor) 16–17、truth client 18–19、SITL 0–3、传感器 4–7、LIO 8–11。
+
+**`missionA-phase1w-01-01`（TRUTH_SRC=simstate + LEGACY_TAP + LIGHT）**：飞完两圈、正常 LAND+disarm；
+H1 0.9998、H3/H4、**H5（tap 10.79 m vs FCU 10.79 m）**、W0b、W1 13/13、W1b、W2/W3/W5 全过；
+余下 H2（rate 200 vs tap 时代 380 门槛，P0 延后重定义）、H6（skipped 23，门槛 20）、W4（已知缺陷）、
+W6（p50 0.238 / spread 0.220 s > 0.15，时间基仍有 ±0.1 s 慢摆，下一轮把"到达时刻回归"换成"对齐系统时间+斜率拟合"消掉）。
+
