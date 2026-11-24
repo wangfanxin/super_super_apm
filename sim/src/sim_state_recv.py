@@ -95,8 +95,8 @@ def main() -> int:
 
     m = mavutil.mavlink_connection(args.mav, source_system=251)
     m.wait_heartbeat(timeout=20)
-    print("sim_state_recv: heartbeat from system %d component %d" % (m.target_system, m.target_component),
-          file=sys.stderr)
+    print("sim_state_recv: endpoint %s, heartbeat from system %d component %d"
+          % (args.mav, m.target_system, m.target_component), file=sys.stderr)
 
     interval_us = int(round(1e6 / max(1.0, args.hz)))
     m.mav.command_long_send(m.target_system, m.target_component,
@@ -121,25 +121,45 @@ def main() -> int:
     last_request = 0.0
     n = 0
     got_hb = False
+    acks = []
+    warned = False
     try:
         while not GLOBAL_STOP:
             now = time.monotonic()
             if args.seconds and now - t_start >= args.seconds:
                 break
+            if n == 0 and not warned and now - t_start >= 15.0:
+                warned = True
+                print("sim_state_recv: 15 s with no SIM_STATE (heartbeat=%s, acks=%s)"
+                      % (got_hb, acks[:4]), file=sys.stderr)
             if n == 0 and now - last_request > 1.0:
                 last_request = now
                 m.mav.command_long_send(m.target_system, m.target_component,
                                         mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
                                         mavutil.mavlink.MAVLINK_MSG_ID_SIM_STATE, interval_us,
                                         0, 0, 0, 0, 0)
-            msg = m.recv_match(type=["SIM_STATE", "HEARTBEAT"], blocking=True, timeout=1.0)
+            # FAST DRAIN, NOT recv_match(type=[...]): recv_match filters the whole queue per call and the
+            # timestamp used to be taken BEFORE the blocking receive, so the recorded wall time lagged the
+            # real arrival by up to one loop period (MEASURED: 87-91 Hz over a 100 Hz request, a ~1 % clock
+            # fit bias and 2 gaps > 20 ms).  Take one raw message per iteration and stamp it right after.
+            msg = m.recv_msg()
             if msg is None:
+                time.sleep(0.0005)
                 continue
             mtype = msg.get_type()
+            if mtype == "COMMAND_ACK":
+                acks.append((int(msg.command), int(msg.result)))
+                if len(acks) <= 4:
+                    print("sim_state_recv: ACK command=%d result=%d" % (int(msg.command), int(msg.result)),
+                          file=sys.stderr)
+                continue
             if mtype == "HEARTBEAT":
                 got_hb = True
                 continue
-            t_wall_us = int((now - t_start) * 1e6)
+            if mtype != "SIM_STATE":
+                continue                      # recv_msg() hands back every MAVLink message on the link
+            t_recv = time.monotonic()
+            t_wall_us = int((t_recv - t_start) * 1e6)
             lat_deg = msg.lat * 1e-7 if abs(msg.lat) > 1000 else float(msg.lat)   # dialect may give deg or 1e-7
             lon_deg = msg.lon * 1e-7 if abs(msg.lon) > 1000 else float(msg.lon)
             lat_i = int(round(lat_deg * 1e7))
@@ -156,9 +176,9 @@ def main() -> int:
                         "%.5f" % p[0], "%.5f" % p[1], "%.5f" % p[2],
                         lat_i, lon_i, "%.4f" % msg.std_dev_horz, "%.4f" % msg.std_dev_vert])
             n += 1
-            if now - last_report >= 1.0 / max(0.1, args.report_hz):
-                last_report = now
-                hz = n / max(1e-6, now - t_start)
+            if t_recv - last_report >= 1.0 / max(0.1, args.report_hz):
+                last_report = t_recv
+                hz = n / max(1e-6, t_recv - t_start)
                 print("sim_state_recv: %d samples, %.1f Hz (requested %.0f), heartbeat %s"
                       % (n, hz, args.hz, "yes" if got_hb else "no"), file=sys.stderr)
     finally:

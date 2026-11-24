@@ -131,6 +131,83 @@ def fit_clock(tap, sim):
             "note": "t_sim = a * t_wall + b; a is the measured real-time factor"}
 
 
+
+def fit_clock_position(tap, sim, verbose=False):
+    """Estimate t_sim = a*t_wall + b by MINIMISING THE POSITION RESIDUAL, not by correlating an event signal.
+
+    The tap carries local NED and SIM_STATE carries geodetic position; both describe the same model state,
+    so for the right (a, b) an affine lat/lon/alt -> NED fit leaves a residual of millimetres.  The old
+    FFT/event fit was biased by ~2 % because the event signal is weak in cruise and the pressure of one
+    recorded flight (its own take-off/landing peaks) dominates; the position fit has no such failure mode.
+    The offset b is the recorder's start offset (SIM_STATE recording begins a little after the tap's t=0),
+    which is exactly the "explicit clock mapping" Phase 1 must state.
+    """
+    t_tap = np.asarray(tap["t_us"], float) * 1e-6
+    t_sim = np.asarray(sim["t_wall_us"], float) * 1e-6
+    P = np.column_stack([np.asarray(tap["pn"], float), np.asarray(tap["pe"], float),
+                         np.asarray(tap["pd"], float)])
+    G = np.column_stack([np.asarray(sim["lat"], float), np.asarray(sim["lon"], float),
+                         np.asarray(sim["alt"], float)])
+    ok_t = np.all(np.isfinite(P), axis=1) & np.isfinite(t_tap)
+    ok_s = np.all(np.isfinite(G), axis=1) & np.isfinite(t_sim)
+    t_tap, P = t_tap[ok_t], P[ok_t]
+    t_sim, G = t_sim[ok_s], G[ok_s]
+    # centre the geodetic columns so the affine fit is well conditioned
+    G = G - np.median(G, axis=0)
+    stride = max(1, t_sim.size // 600)
+    ts_s = t_sim[::stride]
+    X = np.column_stack([G[::stride], np.ones(ts_s.size)])
+
+    def residual(a, b, ts, Xm):
+        tq = a * ts + b
+        m = (tq >= t_tap[0]) & (tq <= t_tap[-1])
+        if m.sum() < 200:
+            return float("inf")
+        Pq = np.column_stack([np.interp(tq[m], t_tap, P[:, k]) for k in range(3)])
+        coef, *_ = np.linalg.lstsq(Xm[m], Pq, rcond=None)
+        return float(np.sqrt(np.mean((Pq - Xm[m] @ coef) ** 2)))
+
+    best = (float("inf"), 1.0, 0.0)
+    for a in np.arange(0.98, 1.0201, 0.001):
+        for b in np.arange(-10.0, 10.01, 0.1):
+            r = residual(a, b, ts_s, X)
+            if r < best[0]:
+                best = (r, a, b)
+    r0, a0, b0 = best
+    # TWO refinement rounds around the coarse winner: +-3 coarse steps wide, then +-3 fine steps.  A single
+    # narrow round is not enough -- the true optimum can sit between coarse grid points (MEASURED in the
+    # selftest: coarse 1.0010/3.20, true 0.9995/3.25, and a +-0.001 window never contained it).
+    for a_span, a_step, b_span, b_step in ((0.003, 0.0002, 0.3, 0.01), (0.0006, 0.00002, 0.06, 0.002)):
+        for a in np.arange(a0 - a_span, a0 + a_span + a_step * 0.5, a_step):
+            for b in np.arange(b0 - b_span, b0 + b_span + b_step * 0.5, b_step):
+                r = residual(a, b, ts_s, X)
+                if r < best[0]:
+                    best = (r, a, b)
+        r0, a0, b0 = best
+    # residual over EVERY sample at the winning map (the subsampled value can be optimistic)
+    r_all = residual(best[1], best[2], t_sim, np.column_stack([G, np.ones(t_sim.size)]))
+    if verbose:
+        print("clock search: coarse a=%.4f b=%.2f rms=%.4f -> refined a=%.5f b=%.3f rms=%.4f"
+              % (a0, b0, r0, best[1], best[2], best[0]))
+    return {"a": float(best[1]), "b": float(best[2]), "corr": float("nan"),
+            "pos_rms_clock": float(r_all),
+            "note": "t_sim = a*t_wall + b, fitted by minimising the affine geodetic-position residual"}
+
+
+def window_arrays(tap, sim, clock, window):
+    """Restrict both streams to the tap-time window [from, to] (seconds).  The clock map is kept."""
+    f, t = window
+    a, b = clock["a"], clock["b"]
+    t_tap = np.asarray(tap["t_us"], float) * 1e-6
+    t_sim = np.asarray(sim["t_wall_us"], float) * 1e-6
+    mt = (t_tap >= f) & (t_tap <= t)
+    msim = ((a * t_sim + b) >= f) & ((a * t_sim + b) <= t)
+    # tap/sim come from np.genfromtxt: structured arrays, not dicts
+    tw = {n: np.asarray(tap[n])[mt] for n in tap.dtype.names}
+    sw = {n: np.asarray(sim[n])[msim] for n in sim.dtype.names}
+    return tw, sw
+
+
 def fit_geodetic(tap, sim, clock):
     """Affine (lat,lon,alt) -> local NED against the tap, at matched times."""
     a, b = clock["a"], clock["b"]
@@ -239,9 +316,9 @@ def selftest():
            "vn": tap["vn"], "ve": tap["ve"], "vd": tap["vd"],
            "ax": tap["ax"], "ay": tap["ay"], "az": tap["az"],
            "wx": tap["wx"], "wy": tap["wy"], "wz": tap["wz"]}
-    clock = fit_clock(tap, sim)
-    print("selftest: recovered a=%.6f (expect %.6f), b=%.3f (expect %.3f), corr=%.3f"
-          % (clock["a"], a_true, clock["b"], b_true, clock["corr"]))
+    clock = fit_clock_position(tap, sim)
+    print("selftest: recovered a=%.6f (expect %.6f), b=%.3f (expect %.3f), clock pos rms=%.4f m"
+          % (clock["a"], a_true, clock["b"], b_true, clock["pos_rms_clock"]))
     ok = abs(clock["a"] - a_true) < 2e-4 and abs(clock["b"] - b_true) < 0.05
     geo = fit_geodetic(tap, sim, clock)
     print("selftest: geodetic pos_rms=%.4f m (expect < 0.01)" % geo["pos_rms_m"])
@@ -263,6 +340,7 @@ def main():
     ap.add_argument("--max-vel-rms", type=float, default=0.02, help="m/s")
     ap.add_argument("--max-pos-rms", type=float, default=0.02, help="m")
     ap.add_argument("--max-att-rms", type=float, default=0.5, help="deg")
+    ap.add_argument("--window", default="", help="evaluate on this TAP-time window, seconds: FROM:TO")
     args = ap.parse_args()
     if args.selftest:
         return selftest()
@@ -271,26 +349,38 @@ def main():
 
     tap = load_csv(args.tap, TAP_COLS)
     sim = load_csv(args.sim_state, SIM_COLS)
-    clock = fit_clock(tap, sim)
-    geo = fit_geodetic(tap, sim, clock)
-    st = state_compare(tap, sim, clock)
-    rates = {"tap": rate_profile(np.asarray(tap["t_us"], float) * 1e-6, "tap"),
-             "sim_state": rate_profile(np.asarray(sim["t_wall_us"], float) * 1e-6, "sim_state")}
+    clock = fit_clock_position(tap, sim, verbose=True)
+    clock_fft = fit_clock(tap, sim)          # kept as an independent cross-check, not as the estimator
+    window = None
+    if args.window:
+        window = tuple(float(v) for v in args.window.split(":"))
+        tap_w, sim_w = window_arrays(tap, sim, clock, window)
+    else:
+        tap_w, sim_w = tap, sim
+    geo = fit_geodetic(tap_w, sim_w, clock)
+    st = state_compare(tap_w, sim_w, clock)
+    rates = {"tap": rate_profile(np.asarray(tap_w["t_us"], float) * 1e-6, "tap"),
+             "sim_state": rate_profile(np.asarray(sim_w["t_wall_us"], float) * 1e-6, "sim_state")}
 
     ok_rate = rates["sim_state"].get("rate_hz", 0) >= args.min_rate_hz
     ok_gap = rates["sim_state"].get("gaps_gt_20ms", 9) == 0
-    ok_clock = 0.97 <= clock["a"] <= 1.03 and clock["corr"] > 0.9
+    ok_clock = 0.97 <= clock["a"] <= 1.03
     ok_vel = st.get("vn_rms", 9e9) <= args.max_vel_rms and st.get("ve_rms", 9e9) <= args.max_vel_rms
     ok_pos = geo["pos_rms_m"] <= args.max_pos_rms
     ok_att = st.get("att_rms_deg", 9e9) <= args.max_att_rms
     ok = ok_rate and ok_gap and ok_clock and ok_vel and ok_pos and ok_att
 
-    res = {"tap": args.tap, "sim_state": args.sim_state, "clock": clock, "geodetic": geo,
+    res = {"tap": args.tap, "sim_state": args.sim_state, "clock": clock,
+           "clock_fft_crosscheck": clock_fft, "window": list(window) if window else None,
+           "geodetic": geo,
            "state": st, "rates": rates,
            "verdict": {"rate": ok_rate, "gaps": ok_gap, "clock": ok_clock, "velocity": ok_vel,
                        "geodetic": ok_pos, "attitude": ok_att, "ok": ok}}
-    print("== clock map: t_sim = %.6f * t_wall + %.4f  (corr %.3f, measured rtf %.6f)"
-          % (clock["a"], clock["b"], clock["corr"], clock["a"]))
+    print("== clock map: t_sim = %.6f * t_wall + %.4f  (position-fit rms %.4f m; FFT cross-check a=%.4f corr %.3f)"
+          % (clock["a"], clock["b"], clock["pos_rms_clock"], clock_fft["a"], clock_fft["corr"]))
+    if window:
+        print("== window: tap %.1f .. %.1f s (the same window is applied to SIM_STATE through the clock map)"
+              % window)
     print("== geodetic fit: pos rms %.4f m, p99 %.4f m, max %.3f m; lat0/lon0 %.7f/%.7f"
           % (geo["pos_rms_m"], geo["pos_p99_m"], geo["pos_max_m"], geo["lat0"], geo["lon0"]))
     print("== state: samples %d, vel rms %.4f m/s (n/e/d), att rms %.3f deg, acc rms %.3f"
