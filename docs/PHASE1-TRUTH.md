@@ -262,3 +262,18 @@ W6 的 p50 差 0.003 m，满足计划"W6 两种真值差 < 0.01 m"的要求（p9
 - H2 的 380 Hz 速率门槛是 tap 时代判据（SIM_STATE 200 Hz），P0 延后重定义。
 - H6 skipped（20–23）仍略高于 20 门槛，待 Phase 4 的 sim 调度改造。
 
+## Phase 1b 验收飞行（2026-11-25）：`missionA-phase1y-01-01`
+
+目标态（**UNPATCHED SITL + 自建客户端真值 + 无 tap 记录器**）的完整两圈：
+
+```
+H1  rtf 0.9998（pass）        H5  tap 10.22 m vs FCU 10.22 m（pass）
+H6  cast p50 18.1 ms / MAX 27.8 ms / skipped 8（pass）
+H2  rate 200.0 Hz / max gap 5.0 ms / 0 gaps >10ms  -- 仅"rate>=380"是 tap 时代门槛（FAIL，P0 延后）
+W0b 100%；W1 13/13；W1b 13/13；W2/W3/W5 pass；W6 spread 0.147 s（pass）；W4 -0.05 m 已知缺陷
+```
+
+* 没有任何 tap：SITL 以 `LIO_TRUTH_TAP=-1` 启动，`tap_legacy.csv` 不存在，`sim/legacy/truth_rx.py` 未运行。
+* 真值时间基偏移 +0.1918 s（client start − SITL sim t=0，锚点是 `Smoothing reset at ...`）。
+* 结论：**Phase 1 的目标态可飞**；H2 的速率门槛与 W4 的已知缺陷属于验收判据类改动（P0），按所有者要求延后。
+

@@ -306,6 +306,17 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 07:10（第 13 条，Phase 1 目标态验收飞行通过）
+
+**`missionA-phase1y-01-01`（UNPATCHED SITL + 自建客户端 SIM_STATE 真值，无 tap）**
+- 完整两圈、正常 LAND+disarm（13.85 s 布防 → 146.62 s 落地）：**H1/H3/H4/H5/H6 + W0b/W1(13/13)/W1b/W2/W3/W5/W6 全过**；
+  H5 水平跨度 10.22 vs 10.22 m；H6 cast p50 18.1 ms、skipped 8；W6 spread 0.147 s。
+- 仅 H2（rate 200 Hz vs tap 时代 380 门槛，P0 延后）与 W4（-0.05 m 已知缺陷）不绿。
+- 全程无 tap：SITL `LIO_TRUTH_TAP=-1`、无 tap_legacy.csv、`sim/legacy/truth_rx.py` 未运行；时间基偏移 +0.1918 s。
+- 结论：Phase 1 完成（判据类 H2 重定义留给 P0 批次）。下一步 Phase 2：bag 抓取率 + 同趟 bag 派生 CSV 的 accept 逐行一致。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。
