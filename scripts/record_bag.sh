@@ -39,6 +39,21 @@ if [ "${BAG_TOPICS:-core}" = "full" ]; then
 else
   TOPICS=(/lio/robo/odom /plan/cmd /sim/truth/odom /clock /fcu/odom)
 fi
+# SPLIT WRITERS (MEASURED 2026-11-25): a single rosbag2 recorder on this WSL/ext4 box sustains only
+# ~350-450 messages/s end-to-end; the flight's core topics offer ~600/s (200 Hz odometry + 4 x 100 Hz),
+# so a single recorder captured ~35 Hz per 200 Hz topic.  Two recorders with DISJOINT topic lists halve
+# the load per writer and both stay under the cap.
+if [ "${BAG_SPLIT:-0}" = "1" ]; then
+  # BALANCED BY RATE, NOT BY TOPIC COUNT: /lio/robo/odom is 200 Hz alone, so it gets its own writer;
+  # the three 100 Hz topics share the other.  /clock is dropped from the bag on purpose -- D4's time base
+  # is the truth client's own stamps, and /clock adds 100 msg/s for a derivable quantity.
+  case "${BAG_GROUP:-a}" in
+    a) TOPICS=(/lio/robo/odom) ;;
+    b) TOPICS=(/sim/truth/odom /plan/cmd /fcu/odom) ;;
+    *) echo "BAG_GROUP must be a or b" >&2; exit 2 ;;
+  esac
+  OUT="$OUT/bag_${BAG_GROUP}"
+fi
 # NOTE: do NOT create the bag directory yourself -- `ros2 bag record -o DIR` refuses to start when DIR
 # already exists (MEASURED: "[ERROR] [ros2bag]: Output folder ... already exists"), so the parent only.
 mkdir -p "$OUT"

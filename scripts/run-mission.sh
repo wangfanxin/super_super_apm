@@ -694,6 +694,11 @@ if [ "$TRUTH_SRC" = "simstate" ]; then
     # odometry had no gap (rate 200.0, 0 gaps > 50 ms), so the stall was the bridge being starved.
     AUX_CORES=${AUX_CORES:-16-17}
     TRUTH_CORES=${TRUTH_CORES:-18-19}
+    # the bag recorders (Phase 2) get the free sibling of the bridge's vCPU and the truth client's sibling
+    if [ "${BAG:-0}" = "1" ]; then
+        BAG_CORES=${BAG_CORES:-15}
+        BAG_CORES2=${BAG_CORES2:-19}
+    fi
 elif [ "${BAG:-0}" = "1" ]; then
     AUX_CORES=${AUX_CORES:-16-19}
     TRUTH_CORES=${TRUTH_CORES:-off}
@@ -713,6 +718,7 @@ BRIDGE_PREFIX=$(pin_cmd "$BRIDGE_CORES")
 AUX_PREFIX=$(pin_cmd "$AUX_CORES")
 PLANNER_PREFIX=$(pin_cmd "$PLANNER_CORES")
 BAG_PREFIX=$(pin_cmd "$BAG_CORES")
+BAG_PREFIX2=$(pin_cmd "${BAG_CORES2:-$BAG_CORES}")
 TRUTH_PREFIX=$(pin_cmd "${TRUTH_CORES:-off}")
 SITL_T0_US=$(date +%s%6N)     # truth time base: the client's t=0 must be the simulator's t=0
 if [ "$TRUTH_SRC" = "tap" ] || [ "${LEGACY_TAP:-0}" = "1" ]; then
@@ -757,17 +763,22 @@ stop_stack() {
     kill "${RECC_PID:-}" 2>/dev/null
     # the SIM_STATE recorder closes its CSV on SIGTERM (it installs a handler); wait for it so the file
     # is complete, and say so if it is not
-    if [ -n "${BAG_PID:-}" ]; then
+    if [ -n "${BAG_PID:-}" ] || [ -n "${BAG_PID2:-}" ]; then
         # ros2 bag flushes on SIGINT; give it time to close the storage, then insist
-        kill -INT "$BAG_PID" 2>/dev/null
+        for _b in "${BAG_PID:-}" "${BAG_PID2:-}"; do
+            [ -n "$_b" ] && kill -INT "$_b" 2>/dev/null
+        done
         for _ in $(seq 1 100); do
-            kill -0 "$BAG_PID" 2>/dev/null || break
+            _alive=0
+            for _b in "${BAG_PID:-}" "${BAG_PID2:-}"; do
+                [ -n "$_b" ] && kill -0 "$_b" 2>/dev/null && _alive=1
+            done
+            [ "$_alive" = "0" ] && break
             sleep 0.1
         done
-        if kill -0 "$BAG_PID" 2>/dev/null; then
-            kill -9 "$BAG_PID" 2>/dev/null
-            echo "WARNING: rosbag2 recorder did not stop within 10 s -- the bag may be truncated"
-        fi
+        for _b in "${BAG_PID:-}" "${BAG_PID2:-}"; do
+            [ -n "$_b" ] && kill -0 "$_b" 2>/dev/null && { kill -9 "$_b" 2>/dev/null; echo "WARNING: rosbag2 recorder did not stop within 10 s -- the bag may be truncated"; }
+        done
     fi
     if [ -n "${SS_PID:-}" ]; then
         kill "$SS_PID" 2>/dev/null
@@ -1004,11 +1015,21 @@ fi
 # (QoS-aware, see scripts/bag_qos.yaml); scripts/bag_to_csv.py derives the CSV layer from it, so the
 # analysis/acceptance code keeps reading the same files.  Both are recorded during the transition.
 if [ "${BAG:-0}" = "1" ]; then
-    $BAG_PREFIX bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag.log" 2>&1 &
-    BAG_PID=$!
-    echo "   recording : rosbag2 -> $OUT/bag (BAG=1, topics ${BAG_TOPICS:-core}, cores ${BAG_CORES})"
+    if [ "${BAG_SPLIT:-0}" = "1" ]; then
+        BAG_GROUP=a $BAG_PREFIX bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag_a.log" 2>&1 &
+        BAG_PID=$!
+        BAG_GROUP=b $BAG_PREFIX2 bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag_b.log" 2>&1 &
+        BAG_PID2=$!
+        echo "   recording : rosbag2 SPLIT -> $OUT/bag_a + $OUT/bag_b (BAG_SPLIT=1, cores ${BAG_CORES})"
+    else
+        $BAG_PREFIX bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag.log" 2>&1 &
+        BAG_PID=$!
+        BAG_PID2=""
+        echo "   recording : rosbag2 -> $OUT/bag (BAG=1, topics ${BAG_TOPICS:-core}, cores ${BAG_CORES})"
+    fi
 else
     BAG_PID=""
+    BAG_PID2=""
 fi
 sleep 3
 

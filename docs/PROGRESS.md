@@ -317,6 +317,31 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 07:25（第 14 条，Phase 2：split-bag 写入与多 bag 派生；飞行仍受主机 2 s 卡顿影响）
+
+**Phase 2 进展（代码）**
+- `record_bag.sh` 支持 `BAG_SPLIT=1`：**两个 recorder 各写一半 topic**（A 组 /lio/robo/odom 200 Hz；
+  B 组 /sim/truth/odom + /plan/cmd + /fcu/odom 各 100 Hz；/clock 故意不进 bag，D4 时间基来自真值客户端 stamps）。
+  原因是实测单 writer 在飞行负载下只跑到 ~35 Hz/200 Hz topic。
+- 两个 recorder 分核：`BAG_CORES=15`（bridge 的 sibling）、`BAG_CORES2=19`（truth client 的 sibling）。
+- `bag_to_csv.py --bag` 改为可重复（`action="append"`），`--derive-all` 可跨多个 bag 派生同一套 CSV。
+
+**实测（phase2h/2i，BAG_SPLIT=1）**
+- 抓取率从单 bag 的 ~35 Hz/200 Hz topic 提升到：bag_a 128 Hz（/lio/robo/odom）、bag_b 66 Hz（100 Hz topics）。
+  **仍未全量**；两趟都在飞行中段出现 LiDAR 进程 1.9–2.2 s 卡顿（raycast 2249 ms）→ LIO 失锁 → abort，
+  属于主机侧偶发停顿（与 tap/真值改造无关，之前 bench 也复现过 1861–2014 ms）。
+- 单 recorder 能力基准（隔离、无飞行负载）：写入 /dev/shm 与磁盘都稳定 **438 Hz**，所以瓶颈不是磁盘/rosbag2 本身，
+  而是整栈运行时的调度/停顿。
+
+**下一步**
+1. 主机停顿：给 LiDAR 进程更高优先级/独立核（当前 4-7 两物理核，但 cast 仍会突然变 2 s）；或先做 Phase 4 的
+   sim 慢扫描诊断（cast 2 s 时到底阻塞在哪）；
+2. bag 抓取率：减少 bag recorder 的对手（BAG 模式下停 record-odom，从 bag 派生 lio.csv；run-mission 在飞行结束后
+   自动派生），或把 bag 写 /dev/shm 再拷回；
+3. 全量抓取后用 bag 派生 CSV 与现采 CSV 做同趟 accept 逐行对比（Phase 2 验收）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

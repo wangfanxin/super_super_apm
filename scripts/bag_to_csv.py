@@ -47,7 +47,8 @@ def t_us(header):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bag", required=True, help="rosbag2 directory (the one holding metadata.yaml)")
+    ap.add_argument("--bag", required=True, action="append",
+                    help="rosbag2 directory (metadata.yaml holder); repeat to merge a SPLIT recording")
     ap.add_argument("--topic", default="")
     ap.add_argument("--kind", default="", choices=["", "odom", "poscmd", "any"])
     ap.add_argument("--csv", default="")
@@ -58,6 +59,16 @@ def main():
 
     from rclpy.serialization import deserialize_message
 
+    bags = args.bag if isinstance(args.bag, list) else [args.bag]
+
+    def derive_any(topic, kind, out):
+        for bag in bags:
+            types = topic_types(open_reader(bag))
+            if topic in types:
+                return derive([bag], topic, kind, out, deserialize_message)
+        print("bag_to_csv: topic %s not found in any bag (%s)" % (topic, ", ".join(bags)), file=sys.stderr)
+        return 2
+
     if args.derive_all:
         if not args.outdir:
             ap.error("--derive-all needs --outdir")
@@ -66,32 +77,41 @@ def main():
                 ("/plan/cmd", "poscmd", os.path.join(args.outdir, "traj.csv.cmd.csv"))]
         rc = 0
         for topic, kind, out in jobs:
-            rc |= derive(args.bag, topic, kind, out, deserialize_message)
+            rc |= derive_any(topic, kind, out)
         return rc
 
     if not args.topic:
-        # discovery mode: print the bag's topics and counts
-        reader = open_reader(args.bag)
-        types = topic_types(reader)
-        counts = {}
-        while reader.has_next():
-            topic, _data, _stamp = reader.read_next()
-            counts[topic] = counts.get(topic, 0) + 1
+        # discovery mode: print every bag's topics and counts
         print("%-34s %-52s %s" % ("topic", "type", "messages"))
-        for name, typ in sorted(types.items()):
-            print("%-34s %-52s %d" % (name, typ, counts.get(name, 0)))
+        for bag in bags:
+            reader = open_reader(bag)
+            types = topic_types(reader)
+            counts = {}
+            while reader.has_next():
+                topic, _data, _stamp = reader.read_next()
+                counts[topic] = counts.get(topic, 0) + 1
+            print("-- %s" % bag)
+            for name, typ in sorted(types.items()):
+                print("%-34s %-52s %d" % (name, typ, counts.get(name, 0)))
         return 0
 
     if not args.csv or not args.kind:
         ap.error("give --kind and --csv (or --derive-all/--outdir)")
-    sys.exit(derive(args.bag, args.topic, args.kind, args.csv, deserialize_message))
+    sys.exit(derive_any(args.topic, args.kind, args.csv))
 
 
-def derive(bag_dir, topic, kind, csv_path, deserialize):
-    reader = open_reader(bag_dir)
-    types = topic_types(reader)
-    if topic not in types:
-        print("bag_to_csv: topic %s not in bag (%s)" % (topic, ", ".join(sorted(types))), file=sys.stderr)
+def derive(bag_dirs, topic, kind, csv_path, deserialize):
+    if isinstance(bag_dirs, str):
+        bag_dirs = [bag_dirs]
+    reader = None
+    for bag_dir in bag_dirs:
+        r = open_reader(bag_dir)
+        types = topic_types(r)
+        if topic in types:
+            reader = r
+            break
+    if reader is None:
+        print("bag_to_csv: topic %s not in any of %s" % (topic, bag_dirs), file=sys.stderr)
         return 2
     msg_type = types[topic]
     if kind == "odom":
