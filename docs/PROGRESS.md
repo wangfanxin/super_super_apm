@@ -192,6 +192,30 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 04:55（第 8 条，预热后拿到干净整趟；Phase 1 位置通道定位到 SITL 平滑/移动原点）
+
+**干净整趟（关键进展）**
+- `LIGHT=1`（跳过 cloud/traj CSV 记录器）+ 预热 + SIM_STATE=1：`missionA-phase1h-01-01`
+  **H1–H6 全过**（H1 rtf 0.9998、H6 cast p50 15 ms / skipped 0）、W1 13/13、W1b 13/13、W2/W3/W5/W6 过；
+  只有 W4 已知缺陷（-0.05 m 接触）。=> 预热 + 减负是把飞行从"不可复现"拉回来的正确做法。
+- 启动器新增 `LIGHT=1`：BAG=1 或 LIGHT=1 时跳过 record-cloud / record-traj（accept 不需要，减少订阅者负载）。
+
+**Phase 1 双录对比（同一趟）**
+- window 0–20 s（地面）：rate 197 Hz、gaps 0、clock/位置/速度/姿态 **全 PASS**（pos rms 0.000）。
+- window 30–50 s（巡航）：rate 211 Hz、gaps 0、clock PASS、vel 8.6 mm/s、att 0.42°，但 **pos rms 0.346 m FAIL**。
+- 源码定位：`SIM_Aircraft::fill_fdm` 在 `use_smoothing` 时把经纬高/速度/姿态换成 `smoothing.*`（一阶平滑，
+  τ=0.1 s），且 `smoothing.location = origin + smoothing.position` 而 SITL 的 origin **1 Hz 移动**；tap 用
+  `get_position_relhome()` 规避了这一点。位置滞后假设（τ 扫描）被否（最优 τ=0）。
+  => **速度/姿态/速率可用于真值；位置通道还不能替代 tap**，Phase 1b 前要解决（积分重建 / 混合源 / 继续深挖）。
+
+**下一步**
+1. 用 SIM_STATE 速度积分重建位置并评估 150 s 内漂移（候选 a）；
+2. 查 `use_smoothing` 在腾空后是否会复位（若不复位，unpatched SITL 的 SIM_STATE 位置天生是平滑派生量）；
+3. 预热 + LIGHT + BAG=1 复飞，做 Phase 2 的 accept(bag 派生) vs accept(现采) 逐行对比（带 WBOX=0.5/BODY=box/LAPS=2）；
+4. bag 抓取率低（~40 Hz vs 200 Hz）的问题仍未解决——优先给它单独诊断/换策略。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

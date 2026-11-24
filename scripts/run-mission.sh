@@ -875,7 +875,7 @@ REC_PID=$!
 # WITH BAG=1 THE CLOUD CSV IS SKIPPED: it is not read by scripts/accept.py (which uses tap/phase/lio/
 # setpoints/traj), and it was the heaviest per-topic recorder on the AUX cores.  The bag takes the cloud in
 # BAG_TOPICS=full instead; keeping both at once was MEASURED (2026-11-25) to starve the LiDAR simulator.
-if [ "${BAG:-0}" = "1" ]; then
+if [ "${BAG:-0}" = "1" ] || [ "${LIGHT:-0}" = "1" ]; then
     RECC_PID=""
 else
     $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-cloud.py" --topic /lio/cloud_world --csv "$OUT/cloud.csv" \
@@ -905,7 +905,7 @@ fi
 # WITH BAG=1 THE TRAJ CSV IS SKIPPED TOO: scripts/accept.py reads the plan from setpoints.csv (the wire) and
 # traj.log (the planner's own log) -- both still produced -- and MEASURED 2026-11-25 the second CSV subscriber
 # on the same topics was part of what starved the flight stack.  The bag takes /plan/cmd instead.
-if [ "${BAG:-0}" = "1" ]; then
+if [ "${BAG:-0}" = "1" ] || [ "${LIGHT:-0}" = "1" ]; then
     RECT_PID=""
 else
     $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-traj.py" --topic /plan/cmd --msg position_cmd --csv "$OUT/traj.csv" \

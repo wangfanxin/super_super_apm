@@ -101,3 +101,31 @@ bash scripts/compare_truth.py --tap  .runs/missionA-<tag>/tap.csv \
 - 1 s 采样空洞（每趟约一次，发生在起飞前后）：查 SITL 侧还是记录器侧；
 - 高速段残差：候选方案是给 SIM_STATE 配独立时间戳（TIMESYNC/系统时间对齐），或在记录器里按批次重建。
 
+## 干净整趟（2026-11-25 / `missionA-phase1h-01-01`，预热 + LIGHT 模式 + SIM_STATE=1）
+
+先机 20 vCPU 预热 45 s（`scripts/warmup.sh`）后飞出的完整两圈：H1 rtf 0.9998、H6 cast p50 15 ms、W1 13/13 全过，
+只剩 W4（已知缺陷）。同一趟的双录对比：
+
+```
+window 0..20 s (停在地面)   rate 197.2 Hz, gaps 0, clock PASS, pos rms 0.000 m, vel 0.000 m/s, att 0.000 deg -> PASS
+window 30..50 s (巡航)      rate 211.4 Hz, gaps 0, clock PASS, vel rms 0.0086 m/s, att rms 0.42 deg,
+                            pos rms 0.346 m (p99 0.677) -> geodetic FAIL
+```
+
+**定位**：SIM_STATE 的经纬高在飞行段与 tap 的 NED 位置有 ~0.2–0.35 m 的横向差，而速度/姿态通道都对得很好
+（8.6 mm/s、0.42°）。查 ArduPilot 源码（`libraries/SITL/SIM_Aircraft.cpp`）：
+
+* `fill_fdm()` 在 `use_smoothing` 为真时，把 fdm 的 `latitude/longitude/altitude/velocity/accel/gyro` 换成
+  **`smoothing.*`（一阶平滑滤波器，time_constant 0.1 s）** 的值；平滑滤波器自己的 `smoothing.location =
+  origin + smoothing.position`，而 SITL 的 `origin` 会 **1 Hz 移动**（`SIM_Aircraft.cpp:205`，tap 那边专门用
+  `get_position_relhome()` 规避了它）。
+* 也就是说：**SIM_STATE 的经纬高不是模型的原始真值，而是"平滑态 + 移动原点"的派生量**；速度/姿态在平滑里也
+  被同样处理，但它们的误差要小一个量级。用"位置滞后"模型做过拟合（τ 网格 ±0.5 s），最优 τ=0，排除纯滞后。
+
+**结论（Phase 1 的诚实状态）**
+- 速率（197–211 Hz 实测，> 90 Hz 门槛）、时钟映射（`t_sim = 0.9999·t_wall + 1.018`）、速度、姿态：达标；
+- **位置通道还不能替代 tap**：0.2–0.35 m 的系统性差异需要在 Phase 1b 之前解决。三条候选：
+  (a) 用 SIM_STATE 的 `vn/ve/vd` 积分重建位置（速度通道 8.6 mm/s，150 s 内漂移可评估）；
+  (b) 继续用 tap 的位置（真值源混合）直到找到 unpatched SITL 里更可靠的几何量；
+  (c) 深挖 `fill_fdm` 的平滑/原点路径（需要确认 `use_smoothing` 在腾空后是否复位——本轮代码里只见置真，未见清假）。
+
