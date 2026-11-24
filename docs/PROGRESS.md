@@ -167,6 +167,31 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 04:35（第 7 条，找到飞行不稳的主因：主机空闲低功耗态；bag 抓取率仍是 Phase 2 的卡点）
+
+**主因（实飞证据）**
+- 同一套臂、同一世界：空闲主机上飞 → H6 失败（LiDAR cast p50 100+ ms、丢扫描）、EKF/高度守卫中止；
+  **先让 20 个 vCPU 忙 45 s 再飞**（`scripts/warmup.sh`，已接进 `fly_hex2.sh`，`WARMUP=0` 可关）→
+  `missionA-warm1-01-01`：H1 rtf 0.9998、H6 cast p50 15.0 ms / MAX 23.5 ms / skipped 0、W1 13/13、W1b 13/13、
+  H2/H3/H4/H5/W2/W3/W5 全过（只有 W4 已知缺陷、W6 max 1.543 m 略超）。
+- 结论：傍晚那些"好飞行"都紧跟在长时间编译之后（主机高 p-state）；空闲时 SITL/sensor 线程唤醒延迟把 10 Hz
+  扫描的 100 ms 预算打穿。**这解释了整轮反复失败的根因。**
+
+**Phase 2 bag 抓取率（新卡点，已有数据）**
+- `phase2f`（预热 + 只有 bag 在录、SIM_STATE=0）：飞行中 `/lio/robo/odom` 现采 200 Hz，而 bag 只抓到
+  **~40 Hz**（7240/178 s）；`phase2b/2c/2d` 同样 ~16–45 Hz。隔离环境（无飞行负载）bag 能满速抓 185 Hz，
+  所以不是脚本/QoS 配置错误，而是**整栈运行时 bag 记录器被饿/丢包**。
+- 已得到的正面结论：bag→CSV 派生**忠实**——`phase2b` 中 bag 派生的 3163 条 lio.csv 行与现采记录器**逐字节相同**；
+  12/15 条 accept 行与现采一致（H3 因 bag 抓取少而不同，W1b/W4 因我手动跑 accept 时没带 WBOX/BODY/LAPS 参数）。
+
+**下一步（下轮优先）**
+1. 定位 bag ~40 Hz 的丢包：给 bag 记录器单独写计数/诊断（发布侧计数对比），试 `nice`/独占核/换 RMW 或
+   `--storage-config-file` 提高 sqlite 批量；必要时改用"只在起飞后录制"或分 topic 两个 bag。
+2. bag 抓取恢复后：预热 + `BAG=1 SIM_STATE=0` 复飞 → accept(bag 派生) vs accept(现采) 逐行对比（带正确 WBOX/BODY/LAPS）；
+3. Phase 1 的飞行中段时戳抖动仍待解决（SIM_STATE 无时间戳 + TCP 成批到达）；预热后应能拿到更干净的整趟数据。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

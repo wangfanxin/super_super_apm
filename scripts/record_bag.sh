@@ -24,13 +24,21 @@ set +u
 [ -f "${WS_SUPER:-}/install/setup.bash" ] && . "$WS_SUPER/install/setup.bash"
 set -u
 
-TOPICS=(
-  /lio/robo/odom /lio/odom /lio/cloud_world
-  /livox/lidar /livox/imu
-  /plan/cmd /planning/pos_cmd /planning_cmd/poly_traj
-  /sim/truth/odom /clock /sim/rtf
-  /fcu/odom /rosout
-)
+# TWO TOPIC SETS.  `core` is what scripts/bag_to_csv.py needs for the CSV layer and is small enough to run
+# while the CSV recorders are still on (MEASURED 2026-11-25: the full set plus 4 CSV recorders on 4 shared
+# cores starved the LiDAR simulator -- cast 106 ms instead of 10 -- and the flight aborted).  `full` is the
+# target state, when the CSVs are derived and the per-topic recorders are gone.
+if [ "${BAG_TOPICS:-core}" = "full" ]; then
+  TOPICS=(
+    /lio/robo/odom /lio/odom /lio/cloud_world
+    /livox/lidar /livox/imu
+    /plan/cmd /planning/pos_cmd /planning_cmd/poly_traj
+    /sim/truth/odom /clock /sim/rtf
+    /fcu/odom /rosout
+  )
+else
+  TOPICS=(/lio/robo/odom /plan/cmd /sim/truth/odom /clock /fcu/odom)
+fi
 # NOTE: do NOT create the bag directory yourself -- `ros2 bag record -o DIR` refuses to start when DIR
 # already exists (MEASURED: "[ERROR] [ros2bag]: Output folder ... already exists"), so the parent only.
 mkdir -p "$OUT"

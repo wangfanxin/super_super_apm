@@ -4,27 +4,27 @@
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 200
+  depth: 1000
 /lio/odom:
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 50
+  depth: 500
 /lio/cloud_world:
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 10
+  depth: 100
 /livox/lidar:
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 10
+  depth: 100
 /livox/imu:
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 50
+  depth: 500
 /plan/cmd:
   reliability: reliable
   durability: transient_local
@@ -34,29 +34,29 @@
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 10
+  depth: 100
 /planning_cmd/poly_traj:
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 10
+  depth: 100
 /sim/truth/odom:
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 50
+  depth: 500
 /clock:
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 10
+  depth: 100
 /sim/rtf:
   reliability: reliable
   durability: volatile
   history: keep_last
-  depth: 10
+  depth: 100
 /fcu/odom:
   reliability: best_effort
   durability: volatile
   history: keep_last
-  depth: 50
+  depth: 500

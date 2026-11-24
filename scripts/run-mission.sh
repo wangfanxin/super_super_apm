@@ -670,10 +670,20 @@ SETSID_PREFIX=$(pin_cmd "$SIM_CORES")
 # starvation (cloud 9.7 Hz / IMU 194 Hz / H6 PASS) but starved the MAVLink BRIDGE, which starved the EKF's
 # external-nav feed -> "EKF Failsafe" -> the FCU's estimate diverged and the geofence aborted.  So the
 # planner gets its own cores and the I/O nodes get theirs:
-AUX_CORES=${AUX_CORES:-16-19}
+# ... AND THE ROSBAG2 RECORDER GETS ITS OWN CORES, BECAUSE IT IS THE NEW HEAVIEST RECORDER (round 25): with
+# BAG=1 the CSV recorders + bridge + supervisor are squeezed to 16-17 and the bag writes on 18-19, so the
+# recording base never fights the flight stack.
+if [ "${BAG:-0}" = "1" ]; then
+    AUX_CORES=${AUX_CORES:-16-19}
+    BAG_CORES=${BAG_CORES:-off}
+else
+    AUX_CORES=${AUX_CORES:-16-19}
+    BAG_CORES=${BAG_CORES:-off}
+fi
 PLANNER_CORES=${PLANNER_CORES:-12-15}
 AUX_PREFIX=$(pin_cmd "$AUX_CORES")
 PLANNER_PREFIX=$(pin_cmd "$PLANNER_CORES")
+BAG_PREFIX=$(pin_cmd "$BAG_CORES")
 setsid nohup $SETSID_PREFIX env LIO_TRUTH_TAP=$TAP "$BIN" --model "$SITL_MODEL" --speedup 1 -I0 \
     --home -35.363261,149.165230,584,0 --serial0 tcp:${PORT0:-5780} --serial1 tcp:${PORT1:-5781} --serial2 tcp:${PORT2:-5782} --serial3 tcp:${PORT3:-5783} \
     --defaults "$ARD/params/apm_lio_only.parm,$ARD/params/sitl_basics.parm,$ALT_PARM,$MISSION_PARM$EKF_ARG$EXTRA_ARG" \
@@ -862,9 +872,16 @@ $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-odom.py" --topic /lio/robo/odom --
 REC_PID=$!
 # The LIO's own registered map is recorded next to the odometry, so a flight's clearance number can be
 # checked against the map the trajectory was built from rather than taken on trust.
-$AUX_PREFIX python3 "$DSH_ROOT/scripts/record-cloud.py" --topic /lio/cloud_world --csv "$OUT/cloud.csv" \
-    --decimate 40 --scans 3 > "$OUT/reccloud.log" 2>&1 &
-RECC_PID=$!
+# WITH BAG=1 THE CLOUD CSV IS SKIPPED: it is not read by scripts/accept.py (which uses tap/phase/lio/
+# setpoints/traj), and it was the heaviest per-topic recorder on the AUX cores.  The bag takes the cloud in
+# BAG_TOPICS=full instead; keeping both at once was MEASURED (2026-11-25) to starve the LiDAR simulator.
+if [ "${BAG:-0}" = "1" ]; then
+    RECC_PID=""
+else
+    $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-cloud.py" --topic /lio/cloud_world --csv "$OUT/cloud.csv" \
+        --decimate 40 --scans 3 > "$OUT/reccloud.log" 2>&1 &
+    RECC_PID=$!
+fi
 # WHICH NAVIGATION SOURCE, AND THEREFORE WHICH CALIBRATION -- MOVED.  `NAV_SOURCE`, `CALIB`,
 # `CALIB_ARG` and `TRAJ_CALIB_ARG` are decided in the parameter block near the top of this script, before
 # anything is started or locked, because the planner's own argv is built there and needs the same
@@ -885,16 +902,23 @@ RECC_PID=$!
 # smoothness is measurable at the rate it is published (the de-duplicated points file holds one
 # point per distinct command, which is what the Path-era readers need and is NOT enough to answer
 # "is the reference wobbling, or is the aircraft not tracking it?").
-$AUX_PREFIX python3 "$DSH_ROOT/scripts/record-traj.py" --topic /plan/cmd --msg position_cmd --csv "$OUT/traj.csv" \
-    --world "$WORLD" $TRAJ_CALIB_ARG > "$OUT/rectraj.log" 2>&1 &
-RECT_PID=$!
+# WITH BAG=1 THE TRAJ CSV IS SKIPPED TOO: scripts/accept.py reads the plan from setpoints.csv (the wire) and
+# traj.log (the planner's own log) -- both still produced -- and MEASURED 2026-11-25 the second CSV subscriber
+# on the same topics was part of what starved the flight stack.  The bag takes /plan/cmd instead.
+if [ "${BAG:-0}" = "1" ]; then
+    RECT_PID=""
+else
+    $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-traj.py" --topic /plan/cmd --msg position_cmd --csv "$OUT/traj.csv" \
+        --world "$WORLD" $TRAJ_CALIB_ARG > "$OUT/rectraj.log" 2>&1 &
+    RECT_PID=$!
+fi
 # PHASE 2 (round 24): the recording BASE.  With BAG=1 the whole sortie is also recorded as one rosbag2
 # (QoS-aware, see scripts/bag_qos.yaml); scripts/bag_to_csv.py derives the CSV layer from it, so the
 # analysis/acceptance code keeps reading the same files.  Both are recorded during the transition.
 if [ "${BAG:-0}" = "1" ]; then
-    bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag.log" 2>&1 &
+    $BAG_PREFIX bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag.log" 2>&1 &
     BAG_PID=$!
-    echo "   recording : rosbag2 -> $OUT/bag (BAG=1)"
+    echo "   recording : rosbag2 -> $OUT/bag (BAG=1, topics ${BAG_TOPICS:-core}, cores ${BAG_CORES})"
 else
     BAG_PID=""
 fi

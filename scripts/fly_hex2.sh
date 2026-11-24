@@ -54,6 +54,13 @@ if pgrep -fa 'build/sitl/bin/arducopter|bin/arducopter|fsm_node|super_lio_node|l
   exit 4
 fi
 
+# HOST WARM-UP BEFORE THE FIRST SORTIE (see scripts/warmup.sh): measured 2026-11-25, an idle host starves
+# the LiDAR simulator (cast p50 100+ ms) and the same arm flies clean after a one-minute CPU load.  WARMUP=0
+# disables it (for a machine already busy, e.g. right after a build).
+if [ "${WARMUP:-1}" != "0" ]; then
+  bash "$ROOT/scripts/warmup.sh" "${WARMUP_SECS:-45}"
+fi
+
 RC_ALL=0
 for i in $(seq 1 "$N"); do
   T=$(printf "%s-%02d" "$TAG" "$i")
