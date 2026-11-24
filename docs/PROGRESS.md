@@ -143,6 +143,30 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 04:00（第 6 条，Phase 2 bag 底座已能在真实 sortie 落盘；飞行稳定性仍是最外层阻塞）
+
+**Phase 2（真实 sortie 验证的进展）**
+- 用 `BAG=1` 飞了一趟 `missionA-phase2a-01-01`：bag 成功落盘（13 topics、5390 条消息、74 MB sqlite3、99 s，
+  `/rosout` 也录到），`scripts/bag_to_csv.py --derive-all` 能从这个**真实 bag** 反演出 `lio.csv` /
+  `traj.csv.cmd.csv`（表头与旧记录器一致）。
+- 但这趟飞行本身崩了：`raycast p50 106 ms`（正常 10 ms）、cloud 3 Hz、LIO 只出 5.8 Hz、EKF/高度守卫中止。
+  bag 记录器与 4 个 CSV 记录器 + bridge + supervisor 共 8 个进程挤在 AUX 的 4 个核上，写作 74 MB 的同时把
+  仿真饿死。**结论：bag 作为"录制底座"可行，但必须给它独立的核/或改用 CSV+bags 二选一的负载策略**；
+  下轮在 BAG=1 时把 CSV 记录器停掉（派生层可以从 bag 生成），这本来也是 Phase 2 的目标态。
+
+**当前阻塞（诚实记录）**
+- 主机/调度仍不稳：同一套臂在 03:00–04:00 之间 8 趟只有 1 趟完整飞完（phase0l）；其余在 40–150 s 因
+  estimator lost / altitude guard 中止，且 LiDAR cast p50 在 10 ms 与 100–150 ms 之间跳变。
+- 因此 Phase 1 的"全窗口 mm 级一致"与 Phase 2 的"同趟 bag↔CSV 逐行一致"都还缺一趟**完整 2 圈**的飞行。
+
+**下一步（第 25 轮）**
+1. BAG=1 时停掉 CSV 记录器（bag 成为唯一底座），bag 记录器独占一核；再复飞；
+2. 若飞行仍 flaky：把 `SIM_STATE` 记录器与 bag 同理降载，并做一次"只飞必要节点"的验收模式
+   （bridge+supervisor+planner+sensor+LIO，不跑任何记录器）先证明飞行本身能稳定 2 圈；
+3. 之后再做 Phase 1 全窗口 compare 与 Phase 2 bag↔CSV 一致性。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。
