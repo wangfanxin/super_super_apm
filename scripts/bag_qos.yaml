@@ -1,0 +1,62 @@
+# QoS overrides for rosbag2: several topics in this stack are published BEST_EFFORT, and a
+# default (reliable) bag subscriber silently gets NOTHING from them.  Keep this file next to the recorder.
+/lio/robo/odom:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 200
+/lio/odom:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 50
+/lio/cloud_world:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 10
+/livox/lidar:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 10
+/livox/imu:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 50
+/plan/cmd:
+  reliability: reliable
+  durability: transient_local
+  history: keep_last
+  depth: 5
+/planning/pos_cmd:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 10
+/planning_cmd/poly_traj:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 10
+/sim/truth/odom:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 50
+/clock:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 10
+/sim/rtf:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 10
+/fcu/odom:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 50

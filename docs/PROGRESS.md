@@ -52,6 +52,33 @@ SIM_STATE 在飞行中收不到样本的问题（独立测试 200 Hz 正常，�
 
 ---
 
+## 2026-11-25 02:45（第 3 条，Phase 2 录制底座完成；飞行稳定性仍是唯一阻塞）
+
+**已完成（本轮）**
+- **Phase 2 录制底座**：`scripts/record_bag.sh`（rosbag2，13 个 topic，QoS 覆盖 YAML 解决 BEST_EFFORT 收不到的问题）
+  + `scripts/bag_to_csv.py`（从 bag 派生与旧记录器**逐列一致**的 lio.csv / traj.csv.cmd.csv）
+  + 启动器 `BAG=1` 开关注入与优雅停止（SIGINT + 10 s 等待）。
+- **合成端到端测试 PASS**（`_scratch/test_bag_pipeline.py`）：发布 242 条 Odometry + 247 条 PositionCommand →
+  录制 → 派生，两个 CSV 表头与旧记录器完全一致、数值关系（y=2x、qw=1、vx=1、yaw_dot=0.1）逐行核对通过。
+- 实测坑：rosbag2 的 zstd 压缩包用 `rosbag2_py.SequentialReader` 打不开（"file is not a database"，CLI 能读）；
+  录制器因此默认**不压缩**，待 reader 路径验证后再加开关。
+
+**飞行稳定性（仍未解决，已排除的假设）**
+- SITL 本身**不慢**：失败趟的 tap 实测 `span/wall = 1.000`；H1 的 "rtf 0.39–0.64" 是 **accept 的窗口混入着陆后死时间**
+  （FCU 在 LAND 后 45 s 不 disarm，supervisor 等到超时才写 done，窗口里 sim 时间冻结）——属判据/窗口问题（P0，延后）。
+- 真实失败链：LiDAR 仿真吞吐下降（cloud 6.7 Hz、IMU 134 Hz 而名义 10/200）→ LIO 在 leg 8–12 发散 → EKF failsafe/abort；
+  旧运行根对照组同样复现（3 趟 1 过 2 败），因此**不是自包含改造引入**。
+- 已加"辅助节点固定 12–19 核"（SITL 0–3 / 传感器 4–7 / LIO 8–11），未根本解决。
+
+**下一步**
+1. 传感器吞吐：查 `lidar_imu` 为何只有 6.7 Hz / 134 Hz（cast 本身 19 ms、flat 路径独立实测 8–13 ms，说明是**调度/内存带宽**
+   下的退化）；试单核隔离（`SENSOR_CORES=4`）+ 提高 `chrt` 优先级 + 关闭非必要 recorder 做 A/B。
+2. SIM_STATE 飞行中 0 样本：独立 SITL + 参数复现为 128.7 Hz 正常，说明是**飞行启动时序/连接**问题；下一趟加 ACK 与
+   连接日志后定位（或改为在 LIO 起后延迟 10 s 再启动 recorder）。
+3. 拿到一趟 15/15 后完成 Phase 0 收尾（删旧运行根/runtime.env/壳），再做 Phase 1 双录 `compare_truth`。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

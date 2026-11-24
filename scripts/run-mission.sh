@@ -705,6 +705,18 @@ stop_stack() {
     kill "${RECC_PID:-}" 2>/dev/null
     # the SIM_STATE recorder closes its CSV on SIGTERM (it installs a handler); wait for it so the file
     # is complete, and say so if it is not
+    if [ -n "${BAG_PID:-}" ]; then
+        # ros2 bag flushes on SIGINT; give it time to close the storage, then insist
+        kill -INT "$BAG_PID" 2>/dev/null
+        for _ in $(seq 1 100); do
+            kill -0 "$BAG_PID" 2>/dev/null || break
+            sleep 0.1
+        done
+        if kill -0 "$BAG_PID" 2>/dev/null; then
+            kill -9 "$BAG_PID" 2>/dev/null
+            echo "WARNING: rosbag2 recorder did not stop within 10 s -- the bag may be truncated"
+        fi
+    fi
     if [ -n "${SS_PID:-}" ]; then
         kill "$SS_PID" 2>/dev/null
         for _ in $(seq 1 30); do
@@ -866,6 +878,16 @@ RECC_PID=$!
 $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-traj.py" --topic /plan/cmd --msg position_cmd --csv "$OUT/traj.csv" \
     --world "$WORLD" $TRAJ_CALIB_ARG > "$OUT/rectraj.log" 2>&1 &
 RECT_PID=$!
+# PHASE 2 (round 24): the recording BASE.  With BAG=1 the whole sortie is also recorded as one rosbag2
+# (QoS-aware, see scripts/bag_qos.yaml); scripts/bag_to_csv.py derives the CSV layer from it, so the
+# analysis/acceptance code keeps reading the same files.  Both are recorded during the transition.
+if [ "${BAG:-0}" = "1" ]; then
+    bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag.log" 2>&1 &
+    BAG_PID=$!
+    echo "   recording : rosbag2 -> $OUT/bag (BAG=1)"
+else
+    BAG_PID=""
+fi
 sleep 3
 
 echo "== flying =="
