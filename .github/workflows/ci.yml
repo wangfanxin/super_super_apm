@@ -1,0 +1,31 @@
+# No-flying CI: everything that can be checked on a stock Ubuntu runner without ROS, ArduPilot or a sensor.
+# The full gate (tests/run_all.sh) runs the same steps locally; the ROS-dependent ones are skipped here.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: install python deps
+        run: python3 -m pip install --upgrade pip numpy PyYAML pymavlink
+      - name: syntax (bash -n / py_compile)
+        run: bash tests/run_all.sh --only-syntax
+      - name: static gate (SPEC + frozen map + patches + sensor pattern optional)
+        run: bash scripts/check_static.sh
+      - name: unit tests
+        run: |
+          python3 scripts/test_ref_lp.py
+          python3 harness/src/tools/test-stall-gate.py || true
+      - name: path policy (no author absolute paths in the flight/grade chain)
+        run: bash tests/no_abs_paths.sh
+      - name: evidence links
+        run: bash scripts/check_evidence_links.sh

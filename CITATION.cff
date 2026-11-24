@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite it and the two upstream projects it builds on."
+title: "super_super_apm: SUPER + Super-LIO mission on ArduPilot SITL"
+abstract: >-
+  Two laps of a 10 m-radius hexagon through a 522-pillar forest, planned by SUPER, tracked by Super-LIO as
+  the only state source, flown by ArduPilot SITL and graded offline from the recordings by a fixed
+  acceptance table.
+version: 0.1.0
+date-released: "2026-11-24"
+license: MIT            # TODO(owner): confirm the license you want to release this under
+repository-code: "https://github.com/wangfanxin/super_super_apm"
+authors:
+  - family-names: "wang"
+    given-names: "fanxin"
+    alias: "wangfanxin"
+references:
+  - type: software
+    title: "SUPER: A Robust and Efficient Trajectory Planner"
+    repository-code: "https://github.com/hku-mars/SUPER"
+    authors:
+      - family-names: "Ren"
+        given-names: "Yunfan"
+      - family-names: "Cai"
+        given-names: "Yixi"
+      - family-names: "Zhu"
+        given-names: "Fangcheng"
+      - family-names: "Fu"
+        given-names: "Zhang"
+  - type: software
+    title: "Super-LIO: LiDAR-Inertial Odometry"
+    repository-code: "https://github.com/Liansheng-Wang/Super-LIO"

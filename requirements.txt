@@ -1,0 +1,6 @@
+# Python dependencies of the ANALYSIS / GRADING tools (scripts/, harness/src/tools/).
+# The flying nodes need ROS 2 Humble instead -- see third_party/pins.env for the apt line.
+numpy>=1.24
+PyYAML>=6.0
+pymavlink>=2.4
+matplotlib>=3.6
