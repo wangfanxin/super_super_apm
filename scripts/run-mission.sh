@@ -666,8 +666,14 @@ SETSID_PREFIX=$(pin_cmd "$SIM_CORES")
 # one evening: when they did, SITL fell to rtf 0.67, the LiDAR casts spiked to 190-260 ms, scans were
 # skipped, Super-LIO diverged at leg 8 and the FCU declared EKF failsafe -- while a sortie where they did
 # not land there flew 15/15.  So: SITL 0-3, sensor 4-7, LIO 8-11, everything else 12-19.
-AUX_CORES=${AUX_CORES:-12-19}
+# ROUND 24 BISECT RESULT (measured): putting planner+bridge+recorders all on two cores fixed the LiDAR
+# starvation (cloud 9.7 Hz / IMU 194 Hz / H6 PASS) but starved the MAVLink BRIDGE, which starved the EKF's
+# external-nav feed -> "EKF Failsafe" -> the FCU's estimate diverged and the geofence aborted.  So the
+# planner gets its own cores and the I/O nodes get theirs:
+AUX_CORES=${AUX_CORES:-16-19}
+PLANNER_CORES=${PLANNER_CORES:-12-15}
 AUX_PREFIX=$(pin_cmd "$AUX_CORES")
+PLANNER_PREFIX=$(pin_cmd "$PLANNER_CORES")
 setsid nohup $SETSID_PREFIX env LIO_TRUTH_TAP=$TAP "$BIN" --model "$SITL_MODEL" --speedup 1 -I0 \
     --home -35.363261,149.165230,584,0 --serial0 tcp:${PORT0:-5780} --serial1 tcp:${PORT1:-5781} --serial2 tcp:${PORT2:-5782} --serial3 tcp:${PORT3:-5783} \
     --defaults "$ARD/params/apm_lio_only.parm,$ARD/params/sitl_basics.parm,$ALT_PARM,$MISSION_PARM$EKF_ARG$EXTRA_ARG" \
@@ -958,7 +964,7 @@ fi
 # `trajectory_flag = COMPLETED`.  With PLANNER=ego this process is `planner/ego_source.py`: it asks the ego
 # node for one goal at a time and samples the B-spline it gets back.
 # PLANNER=$PLANNER (see the knob block): the file is chosen there and named in the banner above.
-$AUX_PREFIX python3 "$PLANNER_FILE" $PLANNER_ARGS > "$OUT/traj.log" 2>&1 &
+$PLANNER_PREFIX python3 "$PLANNER_FILE" $PLANNER_ARGS > "$OUT/traj.log" 2>&1 &
 TRAJ_PID=$!
 
 # THE BRIDGE, ITS OWN PROCESS AND ITS OWN ENDPOINT (serial0).  It carries the estimator feed (331) from the

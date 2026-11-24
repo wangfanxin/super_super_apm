@@ -79,6 +79,35 @@ SIM_STATE 在飞行中收不到样本的问题（独立测试 200 Hz 正常，�
 
 ---
 
+## 2026-11-25 03:10（第 4 条，**Phase 0 完成**；调度隔离找到）
+
+**Phase 0 完成（实飞证据）**
+- 仓库内源码构建的工作区飞出**完整两圈六边形**：`/home/fanxin/sp_runs/missionA-phase0l-01-01`。
+- accept 实测：H2/H3/H4/H5/H6 + W1（13/13）/W1b（13/13，worst 0.15 m）/W2/W3/W5/W6 全过；
+  H1 rtf 0.9781（窗口把着陆后等待算进去的判据假象，P0 延后）；W4 -0.047 m 接触（已知缺陷）。
+- manifest 记录：repo HEAD `c722bac`、fsm_node sha256 `82593a54…`、`liblio.so` `b49aa6a1…`、
+  world/calib/parm 哈希、ArduPilot `dbe7921`；路径全部解析到 `.build/*`、`.runs`。
+- **删除外部运行根**：`/home/fanxin/super_super_apm`（7.5 GB）与 `/home/fanxin/lio_avoid` 壳已删；86 趟历史记录
+  归档到 `/home/fanxin/sp_archive/oldroot_runs`（同盘 mv，未丢）；`setup/runtime.env` 已不存在。
+  删除后 `tests/run_all.sh` 仍 PASS，`env -u DSH_ROOT` 下所有路径解析正常。
+- 文档：[docs/PHASE0-VERIFY.md](PHASE0-VERIFY.md)（证据 + D5 符号链接边界 + 调度依据）；PIPELINE-PLAN Phase 0 标记完成。
+
+**调度隔离（本轮真正的修复）**
+- 症状：飞行中 LiDAR 仿真掉到 cloud 6.7 Hz / IMU 134 Hz（名义 10/200），LIO 在 leg 8–12 发散。
+- 最小栈实测（SITL+truth_rx+传感器+LIO，无规划器/桥/记录器）：cloud 9.95 Hz / IMU 198.5 Hz / cast 10.6 ms → 主机与
+  仿真代码本身没问题。
+- 分阶段加负载：fsm 空跑、bridge+supervisor、记录器分别都不掉速；**规划器真正规划时**才掉速。
+  把规划器与 I/O 节点拆到各自核（`PLANNER_CORES=12-15`、`AUX_CORES=16-19`，SITL 0-3、传感器 4-7、LIO 8-11）后，
+  验证趟 H6 恢复（cast p50 16.4 ms、skipped 5）。
+- 另发现：`SIM_STATE=1`（200 Hz 记录器）那几趟更容易失败；Phase 1 需要把它放到独立核/降速率验证（见下一步）。
+
+**下一步（Phase 1）**
+1. 用 `SIM_STATE_HZ=100` 并把它挪到单独核跑一趟双录，确认 `sim_state.csv` 有数据且飞行不受影响；
+2. 跑 `compare_truth.py --tap … --sim-state …`，得到 `t_sim=a·t_wall+b` 与位置/速度/姿态一致性判据；
+3. 达标后按计划把 tap 从飞行路径移除（Phase 1b），再进 Phase 2 的同趟 bag 逐行一致验证。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

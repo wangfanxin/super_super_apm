@@ -211,15 +211,16 @@ def rate_profile(t, label):
 def selftest():
     """Build a synthetic pair from one kept tap.csv and check the fits recover the known mapping."""
     tap_path = None
-    for root in ("/home/fanxin/super_super_apm/.runs", "/mnt/d/distill_self/super_super_apm/.runs"):
-        if os.path.isdir(root):
-            for name in sorted(os.listdir(root)):
-                p = os.path.join(root, name, "tap.csv")
-                if os.path.isfile(p) and os.path.getsize(p) > 1_000_000:
-                    tap_path = p
-                    break
-        if tap_path:
-            break
+    # The repo's own recordings; DSH_ROOT comes from setup/env.sh, the file location is the fallback so the
+    # tool works from a bare clone with no environment.
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root = os.path.join(os.environ.get("DSH_ROOT") or repo, ".runs")
+    if os.path.isdir(root):
+        for name in sorted(os.listdir(root)):
+            p = os.path.join(root, name, "tap.csv")
+            if os.path.isfile(p) and os.path.getsize(p) > 1_000_000:
+                tap_path = p
+                break
     if not tap_path:
         print("selftest: no tap.csv found"); return 2
     tap = load_csv(tap_path, TAP_COLS)

@@ -117,6 +117,11 @@
 每个 Phase 都有：做什么 / 交付物 / 验证 / 回滚 / 工时 / 风险。**任一 Phase 完成后系统都可飞**。
 
 ### Phase 0 — 自包含与可追溯（1–2 天，需编译）
+> **状态：[完成] 2026-11-25。** 证据见 [PHASE0-VERIFY.md](PHASE0-VERIFY.md)：仓库内源码构建的工作区飞了两圈六边形、
+> 13/13 航点、正常 LAND+disarm；H2–H6、W1/W1b/W2/W3/W5/W6 实测通过（H1 0.9781 是窗口夹了着陆后等待的判据假象，
+> W4 为已知缺陷）。旧运行根 `/home/fanxin/super_super_apm`（7.5 GB）与 `/home/fanxin/lio_avoid` 已删除，86 趟历史记录
+> 归档到 `/home/fanxin/sp_archive/oldroot_runs`；`setup/runtime.env` 已不存在。构建产物/记录目录物理在 ext4、由仓库内
+> 符号链接指过去（原因与边界见 PHASE0-VERIFY.md）。
 
 **做什么**
 1. `.build/`、`.runs/` 移进仓库（gitignore 已覆盖）；删除 `setup/runtime.env` 与 `/home/fanxin/super_super_apm` 运行根、`/home/fanxin/lio_avoid` 兼容壳。
