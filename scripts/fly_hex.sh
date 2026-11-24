@@ -178,6 +178,10 @@ export REF_GOV_KP=${REF_GOV_KP:-12.0}
 #   实测见 §89（规划器 2.5 + 这里 1.5 = 完全没有提速）。依据：18 趟前沿，1.35 是唯一
 #   "W2 过 1.40 且 W4 自己转正"的点（W6 0.298、W4 2/3 CLEAR、2/3 趟 14/0）。详见 §106/§107/§110/§112。
 export REF_MAX_MPS=${REF_MAX_MPS:-1.35}
+# PHASE 1 (round 24): record the UNPATCHED truth stream (MAVLink SIM_STATE, msg 108) next to the tap,
+# so scripts/compare_truth.py can measure the clock map before the tap leaves the flight path.
+export SIM_STATE=${SIM_STATE:-1}
+export SIM_STATE_HZ=${SIM_STATE_HZ:-1000}
 export REF_GOV_ACC=${REF_GOV_ACC:-8.0}
 # 试过 2.0：**更差**（真值后退 7.5 → 16.4 m、W6 p90 0.433 → 1.007）⇒ 关（0 = 与加速同限 8.0）。
 #   连同对称 2.5（后退 9.1 m）一起看：**给参考的下降沿加阻尼两次都让飞机更荡**，

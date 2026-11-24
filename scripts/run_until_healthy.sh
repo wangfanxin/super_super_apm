@@ -129,7 +129,12 @@ for i in $(seq 1 "$ATTEMPTS"); do
   echo "=========== attempt $i/$ATTEMPTS  tag=$TAG  what=$WHAT  arm=$ARM  world=$WORLD_NAME  geofence=${GEOFENCE_M}m"
   if [ -f "$LOCK" ]; then
     p=$(cut -d: -f1 "$LOCK" 2>/dev/null || echo "")
-    if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then echo "  ABORT: my own sortie is still flying ($p)"; exit 3; fi
+    # the pid must still BE the sortie: a killed run can leave a lock whose pid the kernel has recycled
+    # (measured 2026-11-25: the pid existed as an unrelated process and the arm refused to fly).
+    if [ -n "$p" ] && kill -0 "$p" 2>/dev/null && grep -qa "run-mission" "/proc/$p/cmdline" 2>/dev/null; then
+      echo "  ABORT: my own sortie is still flying ($p)"; exit 3
+    fi
+    echo "  stale sortie lock (pid ${p:-?} not a run-mission) removed"
     rm -f "$LOCK"
   fi
   bash "$ROOT/scripts/clean_harness.sh" | sed 's/^/  /'

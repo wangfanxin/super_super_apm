@@ -22,3 +22,7 @@ setup/runtime.env
 harness/sim/*.csv
 harness/sim/*.csv.part
 harness/sim/scan_mode/
+.runs_on_d_backup/
+.runs
+.runs_on_d_backup/
+.build/ardupilot_on_d_backup/

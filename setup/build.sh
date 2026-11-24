@@ -74,7 +74,7 @@ if [ "$BUILD_LIO" -eq 1 ]; then
 
   echo "== colcon build (lio: super_lio + livox driver + msgs)"
   set +u
-  ( cd "$LIO_WS" && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release ) 2>&1 | tail -8
+  ( cd "$LIO_WS" && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DDISTRO_ROS=humble -DROS_EDITION=ROS2 ) 2>&1 | tail -8
   set -u
 fi
 

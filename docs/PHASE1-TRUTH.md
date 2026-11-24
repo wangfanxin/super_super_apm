@@ -1,0 +1,70 @@
+# Phase 1 记录：不修改固件能否拿到真值（2026-11-24 实测）
+
+> 结论先行：**能，但只能拿到"状态"，拿不到"仿真时钟"。** SIM_STATE（MAVLink 108）由未打补丁的
+> SITL 直接发出；它没有 `time_usec`、也没有局部 NED 位置（只有 lat/lon/alt 与 NED 速度/加速度/角速度）。
+> 因此 Phase 1 的迁移必须同时做两件事：**真值换 SIM_STATE**、**时钟语义换成 wall + 显式映射**（与 D4 一致）。
+
+## 1. 实测（`_scratch/probe_sim_state.py`，repo 内 SITL，`--speedup 1`）
+
+| 请求速率 | 实际收到 | 说明 |
+|---|---|---|
+| 200 Hz | **224.8 Hz** | 流调度器把请求速率"取整"到模型循环的整数分之一（模型循环约 1 kHz） |
+| 100 Hz | 112.3 Hz | 同上 |
+
+收到的字段（完整）：`q1..q4, roll, pitch, yaw, xacc, yacc, zacc, xgyro, ygyro, zgyro, lat, lon, alt,
+vn, ve, vd, lat_int, lon_int, std_dev_horz, std_dev_vert`。
+
+**没有**：`time_usec`（仿真时间）、`x/y/z`（局部 NED 位置）。ArduPilot 的 `SIM::sim_state_send()`
+（`.build/ardupilot/libraries/SITL/SITL.cpp:1606`）只填这些字段；固件侧的 `AP_HAL_SITL` 时钟是
+`CLOCK_MONOTONIC`（wall），不是模型时间。旧 tap 之所以有 `t_us`/`pn/pe/pd`，是因为当年的补丁把
+`state.time_now_us` 与 `get_position_relhome()` 塞进了自定义 UDP 流。
+
+## 2. 对管线的影响（设计结论）
+
+1. **真值来源**：SIM_STATE 足够做"状态真值"（速度/姿态/加速度/角速度与旧 tap 同字段、同 NED 约定），
+   且**不需要改 ArduPilot**。
+2. **时间基准**：SIM_STATE 只有接收时刻 ⇒ 飞行链的权威时钟改为 **wall**（D4 决策），bag/CSV 同时记
+   `t_wall_us`（monotonic）与 `t_unix_us`；仿真侧的调度也改为 wall（`lidar_imu` 的扫描节拍不再依赖 tap）。
+3. **位置**：用 lat/lon/alt 反算局部 NED，映射由数据拟合（见下），不写死测地公式常数。
+   注意量化：`lat_int` 1e-7° ≈ **1.1 cm**（对 W4 的 −0.04 m 判据敏感，属 P0 判据线，暂不动）。
+4. **rtf（真实时间因子）**：旧 H1 用 tap 的 sim/wall 比。改 wall 后由 `compare_truth.py` 的重叠期拟合
+   给出（`t_sim = a·t_wall + b`，`a` 即 rtf）；双录期内可直接对比旧 H1。单靠 SIM_STATE 时，可用
+   "请求最大速率时的到达速率 / 标定速率"近似（待 Phase 2 记录验证）。
+
+## 3. 已实现的两个工具（Phase 1a，已在仓库内）
+
+| 工具 | 作用 |
+|---|---|
+| `sim/src/sim_state_recv.py` | 自建 pymavlink 客户端：`SET_MESSAGE_INTERVAL` 请求 SIM_STATE，记录 `sim_state.csv`（原始 lat/lon/alt + 速度/姿态/加速度/角速度 + 接收 wall 时钟 + 临时 NED 估计），SIGTERM 时刷盘 |
+| `scripts/compare_truth.py` | 从同一趟的 `tap.csv` 与 `sim_state.csv` 实测：(a) 时钟映射 `t_sim=a·t_wall+b`（事件信号 FFT 互相关，`a` 即 rtf）；(b) lat/lon→NED 仿射拟合与残差；(c) 速度/姿态/加速度/角速度一致性；(d) SIM_STATE 的速率与 gap。输出 `truth_compare.json`，并给出 PASS/FAIL 判定 |
+
+`compare_truth.py --selftest`：用仓库里的一趟 `tap.csv` 反向合成"已知 `a=1/1.0005`、`b=3.25`"的
+SIM_STATE 流，工具拟合出 `a=0.9996`、`b=3.239`，测地残差 5.0 mm、速度残差 6 mm/s ⇒ **自检 PASS**。
+
+## 4. 迁移判据（双录几趟，全部通过才能把 tap 移出飞行路径）
+
+```
+bash scripts/compare_truth.py --tap  .runs/missionA-<tag>/tap.csv \
+                              --sim-state .runs/missionA-<tag>/sim_state.csv
+```
+
+| 判据 | 阈值 | 为什么 |
+|---|---|---|
+| SIM_STATE 速率 | ≥ 90 Hz | 低于此无法支撑 W2/W6 类统计（1.2 kHz 的 tap 是历史契约，见 P0） |
+| gap>20 ms 的个数 | 0 | 丢样会让速度/姿态对比出现假差异 |
+| 时钟拟合 | `0.97 ≤ a ≤ 1.03` 且相关 > 0.9 | `a` 就是 rtf；相关低说明两段不是同一趟或信号太静 |
+| 速度 RMS | ≤ 0.02 m/s | 同一物理量、同一 NED 约定 |
+| 位置 RMS（拟合后） | ≤ 0.02 m | lat/lon 量化 + 测地映射残差 |
+| 姿态 RMS | ≤ 0.5° | 四元数约定一致性 |
+
+全部通过后，飞臂的 `--truth` 从 tap 切到 `sim_state.csv`（`SIM_STATE=1` 已在 `scripts/fly_hex.sh` 里默认打开，
+双录现在就会发生）；tap 补丁保留在旧分支，作为对比与回滚。
+
+## 5. 尚未解决 / 留给后续 Phase
+
+* **H1 的"飞行窗 rtf"**：旧实现读 tap 的 sim 时间；改 wall 后需要新定义（拟合 `a` 或 wall 覆盖度），
+  属判据线（P0 延后）。
+* **H2 的 1.2 kHz tap 完整性**：SIM_STATE 达不到 1.2 kHz；H2 的判据需要重新定义（P0）。
+* **W2 的 max 尖峰**：旧 tap 1.2 kHz 才能捕捉的瞬态，225 Hz 会平滑；判据线（P0）。
+* **仿真时钟**：`lidar_imu` 目前仍用 tap 的 sim 时间调度；Phase 1b 改为 wall 调度（同一次迁移里做，
+  避免出现"传感器 sim 时间、真值 wall 时间"的混用）。

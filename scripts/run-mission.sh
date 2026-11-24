@@ -33,8 +33,8 @@ TAP="${TAP:-14560}"
 FAN="${FAN:-14561}"
 PORT0="${PORT0:-5780}"
 PORT1="${PORT1:-5781}"
-PORT2="${PORT2:-5763}"
-PORT3="${PORT3:-5764}"
+PORT2="${PORT2:-5782}"
+PORT3="${PORT3:-5783}"
 TAG="${1:-$(date +%Y%m%d_%H%M%S)}"
 OUT="${LIO_LOGS}/missionA-$TAG"
 mkdir -p "$OUT"
@@ -566,8 +566,12 @@ echo "== revisions under test =="
 # LIO's revision and every parameter file, but NOT the commit that produced the PLAN box and the BRIDGE --
 # so "which code flew" could only be reconstructed from the wall clock, and a fix that was in the tree but
 # not in the commit looked identical to one that was.  A dirty tree is stated here, not hidden.
-echo "   this repo : $(git -C "$REPO" rev-parse --short HEAD) $(git -C "$REPO" log -1 --format=%s | cut -c1-58)$(mt=$(git -C "$REPO" status --porcelain --untracked-files=no 2>/dev/null | wc -l); ut=$(git -C "$REPO" status --porcelain --untracked-files=all 2>/dev/null | grep -c '^??'); if [ "${mt:-0}" -gt 0 ]; then echo "  *** TREE DIRTY: $mt tracked path(s) modified ***"; else echo "  (tracked tree clean${ut:+, $ut untracked path(s)})"; fi)"
-echo "   ardupilot : $(git -C "$AP" describe --tags --always) $(git -C "$AP" rev-parse --short HEAD) (tap applied: $(git -C "$AP" --no-pager diff --stat | tail -1 | tr -s ' '))"
+echo "   this repo : $(git -C "$REPO" rev-parse --short HEAD) $(git -C "$REPO" log -1 --format=%s | cut -c1-58) tracked-dirty=$(git -C "$REPO" status --porcelain --untracked-files=no 2>/dev/null | wc -l)"
+# NO `git diff/status` ON THE COPIED ArduPilot TREE: it lives on /mnt/d (drvfs) and a full status there was
+# measured at >60 s (every file needs a content compare after the copy).  The tap marker is a file grep.
+AP_REV="$(git -C "$AP" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+AP_TAP="$(grep -c "truth_tap_update" "$AP/libraries/SITL/SIM_Aircraft.cpp" 2>/dev/null || echo 0)"
+echo "   ardupilot : $AP_REV (truth-tap marker: $AP_TAP)"
 echo "   super_lio : $(git -C ${SLAM_ROOT} rev-parse --short HEAD)  liblio $(md5sum "$WS/install/super_lio/lib/liblio.so" | cut -c1-16)"
 echo "   config    : lio/config/livox_360.yaml + apm_lio_only,sitl_basics,${ALT_MODE}_posz,$MISSION_NAME,$EKF_NAME"
 echo "   override  : $EXTRA_NAME   (appended LAST to --defaults: the last value wins)"
@@ -618,6 +622,20 @@ case "$PLANNER_ARGS" in
         ;;
 esac
 echo "   run dir   : $OUT"
+
+# PHASE 0 (round 24): every sortie carries a manifest -- git HEAD/dirty, the fsm_node binary hash, the
+# SUPER config hash in the module AND in both loader copies, world/calib/parm hashes, ArduPilot revision,
+# resolved paths and the launcher argv.  A sortie directory plus this file is the reproducibility unit.
+CFG_NAME="$(printf '%s' "${CMD_ARGS:-}" | sed -n 's/.*--super-config[ =]\([^ ]*\).*/\1/p')"
+CFG_NAME="${CFG_NAME:-super_planner_hex.yaml}"
+MANIFEST_ARGS=""
+[ -n "${ALT_PARM:-}" ] && MANIFEST_ARGS="$MANIFEST_ARGS --parm $ALT_PARM"
+[ -n "${EKF:-}" ] && MANIFEST_ARGS="$MANIFEST_ARGS --parm $EKF"
+[ -n "${EXTRA_ARG:-}" ] && MANIFEST_ARGS="$MANIFEST_ARGS --parm $EXTRA_ARG"
+python3 "$DSH_ROOT/scripts/write_manifest.py" --out "$OUT/manifest.json" --tag "$TAG" \
+    --world "$WORLD" --calib "$CALIB" --config "$CFG_NAME" \
+    --parm "$MISSION_PARM" $MANIFEST_ARGS --argv "$0 $*" \
+    >/tmp/manifest-$TAG.log 2>&1 || echo "WARNING: manifest could not be written (see /tmp/manifest-$TAG.log)"
 echo
 
 cd "$OUT" || exit 1
@@ -642,6 +660,14 @@ pin_cmd() {                                   # pin_cmd <cores> -- prints a pref
     case "${1:-off}" in off|"") echo "" ;; *) echo "taskset -c $1" ;; esac
 }
 SETSID_PREFIX=$(pin_cmd "$SIM_CORES")
+# THE AUXILIARY NODES GET THEIR OWN CORES TOO (round 24, measured 2026-11-25): the supervisor's guard loop
+# sleeps 1 ms -> it holds ~100 % of a CORE, and the recorders + plan box + bridge add more.  With no
+# affinity they land on the SITL cores (0-3) or the sensor cores (4-7) by luck; measured on 4 sorties in
+# one evening: when they did, SITL fell to rtf 0.67, the LiDAR casts spiked to 190-260 ms, scans were
+# skipped, Super-LIO diverged at leg 8 and the FCU declared EKF failsafe -- while a sortie where they did
+# not land there flew 15/15.  So: SITL 0-3, sensor 4-7, LIO 8-11, everything else 12-19.
+AUX_CORES=${AUX_CORES:-12-19}
+AUX_PREFIX=$(pin_cmd "$AUX_CORES")
 setsid nohup $SETSID_PREFIX env LIO_TRUTH_TAP=$TAP "$BIN" --model "$SITL_MODEL" --speedup 1 -I0 \
     --home -35.363261,149.165230,584,0 --serial0 tcp:${PORT0:-5780} --serial1 tcp:${PORT1:-5781} --serial2 tcp:${PORT2:-5782} --serial3 tcp:${PORT3:-5783} \
     --defaults "$ARD/params/apm_lio_only.parm,$ARD/params/sitl_basics.parm,$ALT_PARM,$MISSION_PARM$EKF_ARG$EXTRA_ARG" \
@@ -677,6 +703,16 @@ stop_stack() {
     done
     kill "${REC_PID:-}" 2>/dev/null
     kill "${RECC_PID:-}" 2>/dev/null
+    # the SIM_STATE recorder closes its CSV on SIGTERM (it installs a handler); wait for it so the file
+    # is complete, and say so if it is not
+    if [ -n "${SS_PID:-}" ]; then
+        kill "$SS_PID" 2>/dev/null
+        for _ in $(seq 1 30); do
+            kill -0 "$SS_PID" 2>/dev/null || break
+            sleep 0.1
+        done
+        kill -9 "$SS_PID" 2>/dev/null || true
+    fi
     # SITL is stopped BEFORE the tap recorder is waited for, because the recorder's own stop condition is
     # "SITL has stopped sending"; and its BIN must be closed before A4 reads it, which is why it is waited
     # for in its own right.  5 s is ~5x what SITL's clean exit has been measured to take; the SIGKILL below
@@ -750,6 +786,20 @@ python3 "$SIM/src/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout 
     > "$OUT/truth_rx.log" 2>&1 &
 RX_PID=$!
 sleep 2
+# PHASE 1 (round 24): a SECOND, UNPATCHED truth stream.  SIM_STATE (MAVLink 108) is read by our own
+# client from the spare serial2 port; it needs no firmware patch.  It is recorded ALONGSIDE the tap for
+# now (SIM_STATE=1) so scripts/compare_truth.py can measure the clock map and the agreement before the
+# tap is removed from the flight path.  Only http://mavlink.io SIM_STATE fields are used.
+if [ "${SIM_STATE:-0}" = "1" ]; then
+    $AUX_PREFIX python3 "$SIM/src/sim_state_recv.py" --mav "tcp:127.0.0.1:${PORT2:-5782}" \
+        --hz "${SIM_STATE_HZ:-1000}" --home "${SIM_STATE_HOME:--35.363261,149.165230,584.0}" \
+        --csv "$OUT/sim_state.csv" > "$OUT/sim_state.log" 2>&1 &
+    SS_PID=$!
+    echo "   truth    : tap (patched) + SIM_STATE (unpatched, msg 108) both recording (SIM_STATE=1)"
+else
+    SS_PID=""
+fi
+sleep 1
 # THE SENSOR RATES ARE THE HARDWARE'S, NOT TUNING KNOBS (owner, 2026-10-25):
 #    lidar 10 Hz, IMU 200 Hz, 20000 points per scan.
 # They are passed explicitly so the sortie's banner records them rather than relying on the
@@ -778,18 +828,19 @@ sleep 2
 # ... and the ESTIMATOR gets cores of its own too (`LIO_CORES`): its scan-to-map matching is the other
 # latency-sensitive consumer, and letting it share a core with the sensor it reads is the same mistake.
 LIO_PREFIX=$(pin_cmd "${LIO_CORES:-8-11}")
+
 $LIO_PREFIX ros2 run super_lio super_lio_node --ros-args --params-file "$SLAM_ROOT/config/livox_360.yaml" \
     > "$OUT/lio.log" 2>&1 &
 LIO_PID=$!
 sleep 5
 kill -0 "$LIO_PID" 2>/dev/null || { echo "the LIO died:"; tail -20 "$OUT/lio.log"; exit 1; }
 
-python3 "$DSH_ROOT/scripts/record-odom.py" --topic /lio/robo/odom --csv "$OUT/lio.csv" \
+$AUX_PREFIX python3 "$DSH_ROOT/scripts/record-odom.py" --topic /lio/robo/odom --csv "$OUT/lio.csv" \
     --seconds 0 > "$OUT/rec.log" 2>&1 &
 REC_PID=$!
 # The LIO's own registered map is recorded next to the odometry, so a flight's clearance number can be
 # checked against the map the trajectory was built from rather than taken on trust.
-python3 "$DSH_ROOT/scripts/record-cloud.py" --topic /lio/cloud_world --csv "$OUT/cloud.csv" \
+$AUX_PREFIX python3 "$DSH_ROOT/scripts/record-cloud.py" --topic /lio/cloud_world --csv "$OUT/cloud.csv" \
     --decimate 40 --scans 3 > "$OUT/reccloud.log" 2>&1 &
 RECC_PID=$!
 # WHICH NAVIGATION SOURCE, AND THEREFORE WHICH CALIBRATION -- MOVED.  `NAV_SOURCE`, `CALIB`,
@@ -812,7 +863,7 @@ RECC_PID=$!
 # smoothness is measurable at the rate it is published (the de-duplicated points file holds one
 # point per distinct command, which is what the Path-era readers need and is NOT enough to answer
 # "is the reference wobbling, or is the aircraft not tracking it?").
-python3 "$DSH_ROOT/scripts/record-traj.py" --topic /plan/cmd --msg position_cmd --csv "$OUT/traj.csv" \
+$AUX_PREFIX python3 "$DSH_ROOT/scripts/record-traj.py" --topic /plan/cmd --msg position_cmd --csv "$OUT/traj.csv" \
     --world "$WORLD" $TRAJ_CALIB_ARG > "$OUT/rectraj.log" 2>&1 &
 RECT_PID=$!
 sleep 3
@@ -885,7 +936,7 @@ fi
 # `trajectory_flag = COMPLETED`.  With PLANNER=ego this process is `planner/ego_source.py`: it asks the ego
 # node for one goal at a time and samples the B-spline it gets back.
 # PLANNER=$PLANNER (see the knob block): the file is chosen there and named in the banner above.
-python3 "$PLANNER_FILE" $PLANNER_ARGS > "$OUT/traj.log" 2>&1 &
+$AUX_PREFIX python3 "$PLANNER_FILE" $PLANNER_ARGS > "$OUT/traj.log" 2>&1 &
 TRAJ_PID=$!
 
 # THE BRIDGE, ITS OWN PROCESS AND ITS OWN ENDPOINT (serial0).  It carries the estimator feed (331) from the
@@ -904,7 +955,7 @@ if [ "$PLANNER" = "rectangle" ]; then
 else
     YAW_ARG=""
 fi
-python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
+$AUX_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
     --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
     --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" \
     > "$OUT/bridge.log" 2>&1 &
@@ -916,7 +967,7 @@ kill -0 "$BRIDGE_PID" 2>/dev/null || { echo "the bridge process died:"; tail -20
 # four gates, LAND and the NAMED abort.  Its inputs are the truth and the LINK, never the LIO in flight.
 # It is last because its exit is the sortie's result, and because the two processes it watches must already
 # be publishing when it starts.
-python3 "$BRIDGE/supervisor/supervisor.py" --mav "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
+$AUX_PREFIX python3 "$BRIDGE/supervisor/supervisor.py" --mav "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
     --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
     --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
     --phase-log "$OUT/phase.csv" > "$OUT/supervisor.log" 2>&1
@@ -972,7 +1023,7 @@ fi
 echo
 echo "== the FCU's own log =="
 if [ -n "$BINFILE" ]; then
-    python3 "$DSH_ROOT/scripts/bin-triage.py" "$BINFILE" | tail -25
+    python3 "$DSH_ROOT/scripts/archive/harness/bin-triage.py" "$BINFILE" | tail -25
     cp "$BINFILE" "$OUT/flight.BIN" 2>/dev/null || true
 fi
 echo

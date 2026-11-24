@@ -9,6 +9,7 @@
 | [SPEC.md](SPEC.md) | **current** | 任务/地图/速度/机体参数的硬规矩（用户口述，逐条固化，含修改记录表） |
 | [CHAIN_DETAIL.md](CHAIN_DETAIL.md) | **deep-dive** | 航点盒、SUPER FSM、薄层每拍判断的逐行注解 |
 | [INTEGRATION.md](INTEGRATION.md) | **record** | 9000+ 行的测量记录：试过什么、数字、为什么否掉（§99–§112 是第 20 轮） |
+| [PHASE1-TRUTH.md](PHASE1-TRUTH.md) | **record** | Phase 1 实测：未打补丁 SITL 的 SIM_STATE 能提供什么（以及时钟/位置的限制与迁移判据） |
 | [PIPELINE-PLAN.md](PIPELINE-PLAN.md) | **proposal** | 数据管线完善方案（分阶段、含验证与回滚）——待所有者批准后执行 |
 | [PATHS.md](PATHS.md) | **current** | 路径约定：仓库内 vs 运行根 vs 历史路径（读旧记录时对照） |
 | [evidence/README.md](evidence/README.md) | **record** | 四张证据图是什么、怎么重画 |
