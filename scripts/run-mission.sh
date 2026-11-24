@@ -792,7 +792,7 @@ sleep 2
 # tap is removed from the flight path.  Only http://mavlink.io SIM_STATE fields are used.
 if [ "${SIM_STATE:-0}" = "1" ]; then
     $AUX_PREFIX python3 "$SIM/src/sim_state_recv.py" --mav "tcp:127.0.0.1:${PORT2:-5782}" \
-        --hz "${SIM_STATE_HZ:-1000}" --home "${SIM_STATE_HOME:--35.363261,149.165230,584.0}" \
+        --hz "${SIM_STATE_HZ:-200}" --home="${SIM_STATE_HOME:--35.363261,149.165230,584.0}" \
         --csv "$OUT/sim_state.csv" > "$OUT/sim_state.log" 2>&1 &
     SS_PID=$!
     echo "   truth    : tap (patched) + SIM_STATE (unpatched, msg 108) both recording (SIM_STATE=1)"

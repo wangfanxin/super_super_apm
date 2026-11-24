@@ -78,7 +78,7 @@ class LocalEnu:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mav", default="tcp:127.0.0.1:5782", help="SITL endpoint (a spare serial port)")
-    ap.add_argument("--hz", type=float, default=1000.0, help="requested SIM_STATE rate")
+    ap.add_argument("--hz", type=float, default=200.0, help="requested SIM_STATE rate (200 works; 1000 is rejected by ArduPilot)")
     ap.add_argument("--csv", default="", help="write the CSV here ('' = stdout)")
     ap.add_argument("--home", default="-35.363261,149.165230,584.0", help="SITL home: lat,lon,alt")
     ap.add_argument("--seconds", type=float, default=0.0, help="stop after N s (0 = until SIGTERM)")
@@ -88,6 +88,9 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _on_signal)
     signal.signal(signal.SIGINT, _on_signal)
 
+    # MAVLink 2 framing is required for SET_MESSAGE_INTERVAL to take effect on ArduPilot's links
+    # (MEASURED: with the default v1 framing the command is accepted but the stream never starts).
+    os.environ.setdefault("MAVLINK20", "1")
     from pymavlink import mavutil
 
     m = mavutil.mavlink_connection(args.mav, source_system=251)
@@ -115,6 +118,7 @@ def main() -> int:
 
     t_start = time.monotonic()
     last_report = t_start
+    last_request = 0.0
     n = 0
     got_hb = False
     try:
@@ -122,6 +126,12 @@ def main() -> int:
             now = time.monotonic()
             if args.seconds and now - t_start >= args.seconds:
                 break
+            if n == 0 and now - last_request > 1.0:
+                last_request = now
+                m.mav.command_long_send(m.target_system, m.target_component,
+                                        mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
+                                        mavutil.mavlink.MAVLINK_MSG_ID_SIM_STATE, interval_us,
+                                        0, 0, 0, 0, 0)
             msg = m.recv_match(type=["SIM_STATE", "HEARTBEAT"], blocking=True, timeout=1.0)
             if msg is None:
                 continue
