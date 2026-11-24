@@ -366,6 +366,25 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 08:00（第 16 条，Phase 2 目标态飞行通过：没有 CSV 记录器，accept 只差 H2）
+
+**`missionA-phase2m-01-01`：完全没有 per-topic CSV 记录器**（record-odom/traj/cloud 都不启动），
+飞行后 `finalize_bag.sh` 从 tmpfs 的两个 bag 派生 `lio.csv`（28871 行）+ `traj.csv.cmd.csv`，metrics/accept 直接读派生层：
+
+- H1 1.0000、H3 200.0 Hz / 144.4 s、H4 13 goals、H5 10.21 vs 10.24 m、H6 cast p50 18.3 ms / skipped 5、
+  W0b 100%、W1 13/13、W1b 13/13（worst 0.08）、W2/W3/W5/W6 全过、**W4 +0.026 m CLEAR**；
+  **只有 H2（200 Hz vs tap 时代 380 Hz 门槛）不绿** —— P0 延后重定义。
+- 修了两个收尾问题：finalize 必须在记录器收到 SIGINT 并写完 metadata.yaml 之后运行（phase2l 的 derived 为空、
+  H3 读不到 lio.csv）；且只能执行一次（EXIT trap 会再次进入 stop_stack）→ 用 `$OUT/.bag_finalized` 文件标记。
+
+**Phase 2 完成**：全量录制 ✓、bag→CSV 与现采逐字节一致 ✓、同趟新旧 accept 逐行一致（14/15，窗口对齐 15/15）✓、
+无 CSV 记录器的目标态真实飞行 ✓。docs/PHASE2-RECORDING.md 记录了全部证据与复现命令。
+
+**下一步：Phase 3** —— bridge+supervisor 合并为单个自建 MAVLink 客户端（extnav 年龄门/质量/reset、
+wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 CSV/rviz 回放）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

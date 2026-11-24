@@ -22,6 +22,17 @@ OUT=${1:?usage: finalize_bag.sh <run-dir> <bag-parent> [split]}
 BAGPARENT=${2:?usage: finalize_bag.sh <run-dir> <bag-parent> [split]}
 SPLIT=${3:-0}
 mkdir -p "$OUT/derived"
+# wait until the recorders have written metadata.yaml (rosbag2 only does that on a graceful close)
+for _ in $(seq 1 100); do
+    _ready=0
+    if [ "$SPLIT" = "1" ]; then
+        [ -f "$BAGPARENT/bag_a/metadata.yaml" ] && [ -f "$BAGPARENT/bag_b/metadata.yaml" ] && _ready=1
+    else
+        [ -f "$BAGPARENT/bag/metadata.yaml" ] && _ready=1
+    fi
+    [ "$_ready" = "1" ] && break
+    sleep 0.1
+done
 BAGS=()
 if [ "$SPLIT" = "1" ]; then
     for g in a b; do
@@ -37,7 +48,7 @@ else
     fi
 fi
 if [ "${#BAGS[@]}" -eq 0 ]; then
-    echo "finalize_bag: no bag found under $BAGPARENT" | tee "$OUT/bag_compare.txt" >&2
+    echo "finalize_bag: no (closed) bag found under $BAGPARENT" | tee "$OUT/bag_compare.txt" >&2
     exit 1
 fi
 

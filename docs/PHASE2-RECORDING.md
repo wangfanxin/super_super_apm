@@ -59,3 +59,26 @@ python3 tests/check_bag_pipeline.py
 * W4 的 −0.05 m 接触是交付已知缺陷（与管线无关）。
 * 目标态还需要"无 CSV 记录器"运行（全部从 bag 派生）；本轮为同趟对比保留了 `record-odom`，下一步把它也去掉，
   并把 `derived/` 直接落成 `lio.csv`/`traj.csv.cmd.csv`（`finalize_bag.sh` 已支持：文件不存在时用派生结果补位）。
+
+## Phase 2 目标态飞行（`missionA-phase2m-01-01`）
+
+**没有任何 per-topic CSV 记录器**：`record-odom`/`record-traj`/`record-cloud` 全部不启动；飞行结束后
+`finalize_bag.sh` 把 tmpfs 里的两个 bag 拷回 sortie 目录、派生 `lio.csv`（28871 行）+ `traj.csv.cmd.csv`，
+`metrics.py`/`accept.py` 直接读派生层。
+
+accept 实测（只失败 **H2 的 tap 时代 380 Hz 速率门槛**，其余全绿）：
+
+```
+H1 rtf 1.0000        H3 28871 samples over 144.4 s (200.0 Hz)     H4 13 goals
+H5 tap 10.21 m vs FCU 10.24 m                                     H6 cast p50 18.3 ms / skipped 5
+W0b 100%  W1 13/13  W1b 13/13 (worst 0.08 m)  W2 p90 1.42  W3 -0.080 m
+W4 +0.026 m CLEAR   W5 ok   W6 p50 0.178 / spread ok
+```
+
+修过的收尾顺序问题：`finalize_bag.sh` 必须在 rosbag2 记录器**收到 SIGINT 并写完 metadata.yaml 之后**运行
+（第一版把它放在"停止"之前：`phase2l` 的 `derived/` 为空、`bag_compare` 报 no bag、H3 读不到 lio.csv）；
+并且只允许执行一次（用 `$OUT/.bag_finalized` 文件标记，EXIT trap 会再次进入 stop_stack）。
+
+**Phase 2 完成判据对照**：全量录制 ✓（bag 与发布率一致）；bag→CSV 派生 ✓（与现采逐字节一致）；
+同趟新旧 accept 逐行一致 ✓（14/15 + 窗口对齐后 15/15，见上）；目标态（无 CSV 记录器）真实飞行 ✓（本趟）。
+

@@ -780,6 +780,16 @@ stop_stack() {
             [ -n "$_b" ] && kill -0 "$_b" 2>/dev/null && { kill -9 "$_b" 2>/dev/null; echo "WARNING: rosbag2 recorder did not stop within 10 s -- the bag may be truncated"; }
         done
     fi
+    # FINALIZE **AFTER** THE RECORDERS ARE STOPPED -- they only write metadata.yaml on a graceful close, so
+    # deriving before the SIGINT (the first version of this code) found no readable bag (MEASURED 2026-11-25
+    # phase2l: bag_compare said "no bag found", derived/ was empty and accept's H3 read a missing lio.csv).
+    # a FILE marker, not a shell variable: the EXIT trap calls stop_stack again after the explicit call,
+    # and a second finalize overwrote bag_compare.txt with "no bag found" (MEASURED 2026-11-25 phase2m).
+    if [ "${BAG:-0}" = "1" ] && [ -n "${BAG_PARENT:-}" ] && [ ! -f "$OUT/.bag_finalized" ]; then
+        bash "$DSH_ROOT/scripts/finalize_bag.sh" "$OUT" "$BAG_PARENT" "${BAG_SPLIT:-0}" \
+            > "$OUT/bag_finalize.log" 2>&1 || true
+        touch "$OUT/.bag_finalized" 2>/dev/null || true
+    fi
     if [ -n "${SS_PID:-}" ]; then
         kill "$SS_PID" 2>/dev/null
         for _ in $(seq 1 30); do
@@ -939,9 +949,15 @@ else
         BAG_PID=""
         BAG_PID2=""
 fi
-    $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-odom.py" --topic /lio/robo/odom --csv "$OUT/lio.csv" \
-        --seconds 0 > "$OUT/rec.log" 2>&1 &
-    REC_PID=$!
+    # PHASE 2 TARGET STATE: with BAG=1 there are NO per-topic CSV recorders left; finalize_bag.sh derives
+    # lio.csv from the bag right after the flight, before metrics/accept run.
+    if [ "${BAG:-0}" = "1" ]; then
+        REC_PID=""
+    else
+        $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-odom.py" --topic /lio/robo/odom --csv "$OUT/lio.csv" \
+            --seconds 0 > "$OUT/rec.log" 2>&1 &
+        REC_PID=$!
+    fi
 else
 python3 "$SIM/src/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout $FAN \
     --fanout-decimate 6 --csv "$OUT/tap.csv" --save "$OUT/truth_report.txt" \
@@ -1003,7 +1019,7 @@ LIO_PID=$!
 sleep 5
 kill -0 "$LIO_PID" 2>/dev/null || { echo "the LIO died:"; tail -20 "$OUT/lio.log"; exit 1; }
 
-if [ "$TRUTH_SRC" != "simstate" ]; then
+if [ "$TRUTH_SRC" != "simstate" ] && [ "${BAG:-0}" != "1" ]; then
     $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-odom.py" --topic /lio/robo/odom --csv "$OUT/lio.csv" \
         --seconds 0 > "$OUT/rec.log" 2>&1 &
     REC_PID=$!
@@ -1169,6 +1185,7 @@ stop_stack
 if [ "${BAG:-0}" = "1" ]; then
     echo
     echo "== bag -> csv (Phase 2: move the bag out of tmpfs and derive the CSV layer) =="
+    BAG_FINALIZED=1
     bash "$DSH_ROOT/scripts/finalize_bag.sh" "$OUT" "$BAG_PARENT" "${BAG_SPLIT:-0}" \
         | sed 's/^/   /' || echo "   WARNING: bag finalize failed"
 fi
