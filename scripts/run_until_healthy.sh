@@ -66,7 +66,7 @@ PROFILE=${PROFILE:-mission}
 CODE=${DSH_ROOT}/scripts   # the launcher + recorders live here now (round 22 module split)
 ROOT=${DSH_ROOT}
 WS=${LIO_WS}
-SUP=$ROOT/apm_thin/ros/planner_source_super.py
+SUP=$ROOT/bridge_nodes/thin/planner_source_super.py
 case "$PROFILE" in
   repro)
     WORLD_NAME=pillars.yaml

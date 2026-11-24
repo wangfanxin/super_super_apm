@@ -44,13 +44,10 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                              "..", "apm_thin"))
-# the driver-side packages import each other by name (e.g. `from bridge.base import Mode`),
-# so the module root (ardupilot/) must be importable too.
+# bridge_nodes/ is the module root: common/, planner/ and mavlink/ are importable from here.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common import frames                    # noqa: E402
-from bridge.base import Mode                 # noqa: E402
+from mavlink.base import Mode                 # noqa: E402
 from planner.cmd_stream import TRAJECTORY_STATUS_COMPLETED   # noqa: E402
 
 HOME_LAT, HOME_LON, HOME_ALT = -35.363261, 149.165230, 584.0
@@ -941,7 +938,7 @@ class Supervisor:
         return None
 
     def run(self):
-        from bridge.mavlink_impl import MavlinkBridge
+        from mavlink.mavlink_impl import MavlinkBridge
         if self.args.calib_file and os.path.exists(self.args.calib_file):
             import json
             d = json.load(open(self.args.calib_file))

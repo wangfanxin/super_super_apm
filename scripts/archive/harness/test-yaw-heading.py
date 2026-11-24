@@ -24,7 +24,7 @@ _d = _os.path.dirname(_os.path.abspath(__file__))
 while _d != _os.path.dirname(_d) and not _os.path.isfile(_os.path.join(_d, "scripts", "_paths.py")):
     _d = _os.path.dirname(_d)
 _sys.path.insert(0, _os.path.join(_d, "scripts"))
-_sys.path.insert(0, _os.path.join(_d, "apm_thin"))
+_sys.path.insert(0, _os.path.join(_d, "bridge_nodes"))
 import _paths as _P  # noqa: E402
 import json
 import math

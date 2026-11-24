@@ -45,10 +45,7 @@ import numpy as np
 # THE REPO ROOT ON THE PATH: this file is run BY PATH (`python3 bridge/bridge_node.py`), so Python's first
 # sys.path entry is `bridge/`, not the repository -- MEASURED the hard way, as a bridge process that died
 # with `ModuleNotFoundError: No module named 'planner'` two seconds into a sortie.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                              "..", "apm_thin"))
-# the driver-side packages import each other by name (e.g. `from bridge.base import Mode`),
-# so the module root (ardupilot/) must be importable too.
+# bridge_nodes/ is the module root: common/, planner/ and mavlink/ are importable from here.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pymavlink import mavutil
@@ -612,7 +609,7 @@ class BridgeProcess:
                     self._fcu_odom_n += 1
         if sent is not None and self.wire_log is not None:
             p_f, yaw_out, cmd = sent
-            from bridge.mavlink_impl import (POS_YAW_MASK, POS_VEL_YAW_MASK,
+            from mavlink.mavlink_impl import (POS_YAW_MASK, POS_VEL_YAW_MASK,
                                              POS_VEL_ACC_YAW_MASK)
             mask = {"pos": POS_YAW_MASK, "posvel": POS_VEL_YAW_MASK,
                     "posvelacc": POS_VEL_ACC_YAW_MASK}[self.args.setpoint_mode]
@@ -708,7 +705,7 @@ class BridgeProcess:
         return True
 
     def run(self) -> int:
-        from bridge.mavlink_impl import MavlinkBridge
+        from mavlink.mavlink_impl import MavlinkBridge
         from std_msgs.msg import String                         # noqa: F401  (published in the loop)
         self.load_calib()
         # THE MAVLINK LINK FIRST, THEN ROS: `start_ros` builds the relay, and the relay needs the bridge.

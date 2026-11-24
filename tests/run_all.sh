@@ -37,7 +37,7 @@ bash scripts/check_pattern.sh || note_fail "check_pattern.sh (see sim/pattern/RE
 
 step "unit tests"
 python3 scripts/test_ref_lp.py || note_fail "test_ref_lp.py"
-python3 scripts/harness/test-stall-gate.py || note_fail "test-stall-gate.py"
+python3 scripts/archive/harness/test-stall-gate.py || note_fail "test-stall-gate.py"
 
 step "path policy"
 bash tests/no_abs_paths.sh || note_fail "no_abs_paths.sh"

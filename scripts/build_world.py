@@ -10,7 +10,7 @@
 
 飞行高度 2.0 m 落在**方盒段**，所以二维避障必须用"到正方形的距离"，
 不能用"到圆心的距离减半径" —— 后者在斜向上会低估阻挡。
-距离函数统一在 `apm_thin/common/obstacles.py`，生成器/栅格/验收共用同一份。
+距离函数统一在 `bridge_nodes/common/obstacles.py`，生成器/栅格/验收共用同一份。
 
 为什么不用 make_world.py
 ------------------------
@@ -28,7 +28,7 @@ import math
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "apm_thin"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bridge_nodes"))
 from common.obstacles import DEFAULT_Z_SPLIT, min_clearance, seg_min_clearance  # noqa: E402
 
 ARENA_HALF = 9.6

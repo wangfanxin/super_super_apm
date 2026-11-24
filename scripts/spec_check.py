@@ -26,7 +26,7 @@ def row(ok, name, detail):
 
 
 def box_surface_dist(dx, dy, r):
-    """点到方柱表面的距离（外为正，内为 0）；与 apm_thin/common/obstacles.py 同一口径。"""
+    """点到方柱表面的距离（外为正，内为 0）；与 bridge_nodes/common/obstacles.py 同一口径。"""
     ox = abs(dx) - r
     oy = abs(dy) - r
     if ox <= 0.0 and oy <= 0.0:
@@ -329,8 +329,8 @@ def main():
             sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                             "src"))
             sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                            "apm_thin"))
-            from ros.planner_source_super import world_tour as _world_tour
+                                            "bridge_nodes"))
+            from thin.planner_source_super import world_tour as _world_tour
             _c, tour_info = _world_tour(args.world, laps_arm if laps_arm else 2, 2.0, verbose=False)
             tour_n = len(_c)
         except Exception as _exc:                                # noqa: BLE001

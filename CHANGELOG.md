@@ -1,16 +1,26 @@
 # 变更记录
 
+## 0.1.2 — 2026-11-24（第 23 轮：模块命名与归档）
+
+* `apm_thin/` → **`bridge_nodes/`**，并把 SITL 驱动侧的 `bridge/`、`supervisor/` 并入
+  （`thin/`、`mavlink/`、`supervisor/`、`planner/`、`common/`）——它们本来就是"规划器 ↔ 飞控"之间的同一组节点。
+* `ardupilot/` → **`fcu_interface/`**，只保留 `params/`（飞行参数）与 `msgs/`（消息定义）。
+* 历史工具归档：`scripts/harness/` → `scripts/archive/harness/`，`offline/` → `scripts/archive/offline/`；
+  现行 `scripts/` 只留当轮在用的工具。
+* 环境变量 `THIN_ROOT` → `BRIDGE_ROOT`；`_paths.py` 增加 `BRIDGE` 常量，旧名保留为别名。
+* `bash tests/run_all.sh` → GATE: PASS。
+
 只记**影响交付或影响复现**的变更；逐轮的测量细节在 `docs/INTEGRATION.md`。
 
 ## 0.1.1 — 2026-11-24（模块化重组）
 
 * **仓库按模块拆分**（用户要求"分模块进行"）：
-  `apm_thin/`（自研薄层 + 共享库）、`hku_super/`（SUPER 源码 + 交付配置 + patches）、
+  `bridge_nodes/`（自研薄层 + 共享库）、`hku_super/`（SUPER 源码 + 交付配置 + patches）、
   `slam/`（Super-LIO + livox + LIO 配置）、`ardupilot/`（bridge/supervisor/params/msgs）、
   `sim/`（仿真代码/世界/rviz/冻结清单/射线图案）。
   旧的 `harness/`、`third_party/`、`src/`、根 `config|params|worlds/` 全部消失。
 * **模块间只通过两种东西耦合**：运行时的话题/端口；构建时的 `setup/env.sh` 变量
-  （`THIN_ROOT`/`SUPER_PLANNER_ROOT`/`SLAM_ROOT`/`SIM_ROOT`/`ARDUPILOT_DIR`）。
+  （`BRIDGE_ROOT`/`SUPER_PLANNER_ROOT`/`SLAM_ROOT`/`SIM_ROOT`/`ARDUPILOT_DIR`）。
 * 入口脚本、评分器、分析工具改为从模块变量取路径；`tests/run_all.sh` 与 CI 全部通过。
 * **重组后真飞验证**：`tidy11-01-01` —— H1–H6 全过、W0b/W1/W1b/W2/W3/W5 过、W4 接触（已知缺陷行）、
   W6 未过（该趟落在正常分布内）。

@@ -79,13 +79,16 @@ if _HERE not in sys.path:
 import ref_lp
 
 #: 前工程根目录（只为复用它的 common/planner 两个包；本文件不属于它）
-LIO_ROOT_DEFAULT = _DSH + "/harness"
+LIO_ROOT_DEFAULT = _DSH + "/bridge_nodes"
 
 #: SUPER 的 mars 消息与 bridge 要的 quadrotor 消息是**两个不同的包**，必须显式转。
 MARS_PKG = "mars_quadrotor_msgs"
 
 
 def add_lio_path(root):
+    # root is bridge_nodes/ itself in the round-22 layout; keep the old root/src form working too
+    if root not in sys.path:
+        sys.path.insert(0, root)
     src = os.path.join(root, "src")
     if src not in sys.path:
         sys.path.insert(0, src)

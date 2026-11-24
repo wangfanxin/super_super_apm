@@ -9,7 +9,7 @@
   3. 参考轨迹离树干最近多少（避障是否真的成立）？
   4. 换段瞬间的 ‖Δp‖ / ‖Δa‖（"缝"有多大）？
 
-用法：python3 offline/sim_stack.py [--v 5.0] [--verbose]
+用法：python3 scripts/archive/offline/sim_stack.py [--v 5.0] [--verbose]
 """
 from __future__ import annotations
 

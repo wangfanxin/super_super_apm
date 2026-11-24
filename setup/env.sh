@@ -16,13 +16,13 @@ DSH_ROOT="${DSH_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export DSH_ROOT
 
 # ---- the five modules -----------------------------------------------------------
-export THIN_ROOT="${THIN_ROOT:-$DSH_ROOT/apm_thin}"            # our thin layer + shared libs
+export BRIDGE_ROOT="${BRIDGE_ROOT:-$DSH_ROOT/bridge_nodes}"            # our thin layer + shared libs
 export SUPER_PLANNER_ROOT="${SUPER_PLANNER_ROOT:-$DSH_ROOT/hku_super}"   # hku-mars SUPER
 export SLAM_ROOT="${SLAM_ROOT:-$DSH_ROOT/slam}"                # Super-LIO + livox + LIO config
 export SIM_ROOT="${SIM_ROOT:-$DSH_ROOT/sim}"                   # simulator, worlds, rviz, frozen
-export ARDUPILOT_DIR="${ARDUPILOT_DIR:-$DSH_ROOT/ardupilot}"   # bridge, supervisor, msgs, params
+export ARDUPILOT_DIR="${ARDUPILOT_DIR:-$DSH_ROOT/fcu_interface}"  # FCU parameters + message packages
 # kept for scripts that predate the split: the thin layer's --lio-root is the shared-lib module
-export LIO_ROOT="${LIO_ROOT:-$THIN_ROOT}"
+export LIO_ROOT="${LIO_ROOT:-$BRIDGE_ROOT}"
 export CALIB_FILE="${CALIB_FILE:-$DSH_ROOT/calib/calib.json}"  # L->W calibration
 export MID360_PATTERN="${MID360_PATTERN:-$SIM_ROOT/pattern/mid360_pattern.csv}"
 
@@ -49,13 +49,13 @@ if [ -f /opt/ros/humble/setup.bash ] && [ -z "${ROS_DISTRO:-}" ]; then
   set -u
 fi
 
-export PYTHONPATH="$DSH_ROOT/apm_thin:$DSH_ROOT/scripts${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$DSH_ROOT/bridge_nodes:$DSH_ROOT/scripts${PYTHONPATH:+:$PYTHONPATH}"
 
 # A short, human-readable line -- printed by setup/build.sh and by a flight's first line.
 dsh_env_summary() {
   echo "DSH_ROOT         = $DSH_ROOT"
   echo "SUPER (planner)  = $SUPER_PLANNER_ROOT"
-  echo "thin layer       = $THIN_ROOT"
+  echo "thin layer       = $BRIDGE_ROOT"
   echo "SUPER module     = $SUPER_PLANNER_ROOT"
   echo "SLAM module      = $SLAM_ROOT"
   echo "sim module       = $SIM_ROOT"

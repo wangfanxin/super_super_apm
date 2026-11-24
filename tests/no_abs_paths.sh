@@ -10,9 +10,9 @@ PAT='/mnt/d/distill_self\|/home/fanxin'
 REQUIRED="
 setup
 tests
-apm_thin
-ardupilot/bridge
-ardupilot/supervisor
+bridge_nodes
+bridge_nodes/mavlink
+bridge_nodes/supervisor
 sim/src
 scripts/fly_hex.sh
 scripts/fly_hex2.sh
@@ -44,7 +44,7 @@ done
 echo
 echo "== historical analysis tools still carrying author paths (informational)"
 n=0
-for f in scripts/*.py scripts/*.sh scripts/harness/*.py ardupilot/bridge/*.py ardupilot/supervisor/*.py sim/src/*.py; do
+for f in scripts/*.py scripts/*.sh scripts/archive/harness/*.py bridge_nodes/mavlink/*.py bridge_nodes/supervisor/*.py sim/src/*.py; do
   [ "$f" = "tests/no_abs_paths.sh" ] && continue
   [ -f "$f" ] || continue
   if grep -q "$PAT" "$f" 2>/dev/null; then n=$((n + 1)); fi

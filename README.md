@@ -38,16 +38,17 @@
 ## 2. 目录
 
 ```
-apm_thin/         【模块 1】自研薄层：把 SUPER 接到飞控（ros/planner_source_super.py、ref_lp.py）
-                  以及三个进程共享的库（common/frames.py、planner/cmd_stream.py…）
+bridge_nodes/     【模块 1】"规划器 ↔ 飞控"之间的全部节点：thin/（薄层 planner_source_super.py、
+                  ref_lp.py）、mavlink/（MAVLink 桥）、supervisor/（守卫/降落）、
+                  planner/（规划器适配：cmd_stream、ego shim）、common/（帧换算等共享库）
 hku_super/        【模块 2】hku-mars SUPER 规划器：super_planner/、rog_map/、mission_planner/、
                   mars_uav_sim/，交付配置 config/super_planner_hex.yaml，以及 patches/（我们的 10/11/12）
 slam/             【模块 3】Super-LIO + livox_ros_driver2 + LIO 配置 config/livox_360.yaml
-ardupilot/        【模块 4】SITL 驱动侧：bridge/（MAVLink 桥）、supervisor/（守卫/降落）、
-                  params/（飞行参数）、msgs/quadrotor_msgs（消息定义）
+fcu_interface/    【模块 4】飞控接口的数据侧：params/（飞行参数）、msgs/（quadrotor_msgs 等消息定义）
 sim/              【模块 5】仿真环境：src/（lidar_imu.py、raycast.py、truth_rx.py）、pattern/
                   （16 MB 供应商射线图案，不入库）、worlds/（冻结世界）、rviz/、frozen/（冻结清单）
-scripts/          跨模块编排：飞行臂 fly_*、评分器 accept.py、记录器、~150 个分析工具、run-mission.sh
+scripts/          跨模块编排：飞行臂 fly_*、评分器 accept.py、记录器、~150 个分析工具、run-mission.sh；
+                  scripts/archive/ 是历史工具（harness 旧工具 + 旧 offline 工具），不参与现行链路
 setup/            env.sh（唯一知道路径的地方）、build.sh、fetch_ardupilot.sh、run_hex.sh
 calib/            L→W 标定（calib.json，实测量）
 docs/             SPEC.md（需求）、DATA_PIPELINE.md（数据管线）、INTEGRATION.md（测量记录）、evidence/
@@ -110,7 +111,7 @@ KNOWN=W4 bash scripts/run_accept.sh <tag> forest_hex12.yaml 2.0 10.0 box 0.5 2
   随时可用 `scripts/patch_super_*.py --check/--apply/--revert` 复算；静态闸门会断言它们在位。
 * `slam/` —— Liansheng-Wang/Super-LIO @ `f89f48d`（+ livox_ros_driver2）。
 * `slam/livox_ros_driver2` —— Livox-SDK/livox_ros_driver2 @ `2144554`。
-* `ardupilot/`、`sim/`、`apm_thin/` —— 本项目自己的三块：驱动侧、仿真侧、薄层。
+* `ardupilot/`、`sim/`、`bridge_nodes/` —— 本项目自己的三块：驱动侧、仿真侧、薄层。
 
 完整 commit 见 `PINS.env`。
 
@@ -129,7 +130,7 @@ KNOWN=W4 bash scripts/run_accept.sh <tag> forest_hex12.yaml 2.0 10.0 box 0.5 2
 |---|---|
 | `git clone` 到任意目录 | 855 个文件 / 20 MB；`setup/env.sh` 把 `DSH_ROOT` 解析成克隆目录，无需任何环境变量 |
 | `bash scripts/check_static.sh` | **STATIC GATE: PASS**（含 `S1 max_vel = 1.35`、两个补丁 APPLIED、冻结地图 13 行） |
-| `python3 apm_thin/ros/planner_source_super.py --selftest` | **SELFTEST PASS** |
+| `python3 bridge_nodes/thin/planner_source_super.py --selftest` | **SELFTEST PASS** |
 | `bash scripts/run-mission.sh`（干跑） | 所有路径解析成功（"nothing started" 分支） |
 | `bash setup/build.sh --no-lio` | **编译出 `fsm_node`（21.7 MB）** —— 内置 SUPER 源码 + 打包进去的两个补丁 |
 | 全部 `.sh` / `.py` 语法 | 101 个 `.sh` + 250 个 `.py`，`bash -n` / `py_compile` **0 失败** |

@@ -21,7 +21,7 @@ import sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "apm_thin", "ros"))
+sys.path.insert(0, os.path.join(HERE, "..", "bridge_nodes", "thin"))
 
 import ref_lp  # noqa: E402
 

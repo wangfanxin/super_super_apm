@@ -21,7 +21,7 @@ import time
 
 import numpy as np
 
-from bridge.base import Bridge, LocalState, Mode
+from mavlink.base import Bridge, LocalState, Mode
 
 # module-level so a missing pymavlink is reported where it matters, not at import time
 try:

@@ -10,7 +10,7 @@
 ★ 距离用 `whtf.common.obstacles`：树干 z<z_split 是方盒、否则圆柱。
   飞行高度 2.0 m 落在方盒段，所以必须用方盒距离。
 
-用法：python3 offline/check_mission.py
+用法：python3 scripts/archive/offline/check_mission.py
 """
 from __future__ import annotations
 

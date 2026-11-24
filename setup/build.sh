@@ -7,7 +7,7 @@
 #         -> symlinks into hku_super/...              (the planner we integrate)
 #    2. .build/upstream/SUPER -> hku_super           (the layout scripts/install_config_hex.sh expects)
 #    3. .build/lio_ws/src/{super_lio,basic,livox_ros_driver2,quadrotor_msgs}
-#         -> symlinks into slam/... + ardupilot/msgs/quadrotor_msgs
+#         -> symlinks into slam/... + fcu_interface/msgs/quadrotor_msgs
 #    4. colcon build (Release) in both workspaces
 #
 #  ArduPilot SITL is NOT built here -- it is a 1.5 GB checkout.  Run setup/fetch_ardupilot.sh first

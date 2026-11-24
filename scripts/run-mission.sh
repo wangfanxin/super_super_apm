@@ -22,7 +22,7 @@ set -u
 AP=${ARDUPILOT_ROOT}
 BIN="$AP/build/sitl/bin/arducopter"
 # --- the five modules (round 22 split) ---------------------------------------------------------
-THIN="$THIN_ROOT"                         # apm_thin: the thin layer + shared libs (common/, planner/)
+BRIDGE="$BRIDGE_ROOT"                         # bridge_nodes: the thin layer + shared libs (common/, planner/)
 SIM="$SIM_ROOT"                           # sim: lidar_imu/truth_rx/raycast, worlds/, rviz/, frozen/, pattern/
 ARD="$ARDUPILOT_DIR"                      # ardupilot: bridge/, supervisor/, params/, msgs/
 # kept as aliases for the parts of this script that are still written in terms of the old two roots
@@ -391,12 +391,12 @@ EGO_SELF_BLIND="${EGO_SELF_BLIND:-0.0}"
 EGO_REF_CLAMP_M="${EGO_REF_CLAMP_M:-1.2}"
 case "$PLANNER" in
     rectangle)
-        PLANNER_FILE="$THIN/planner/rectangle_source.py"
+        PLANNER_FILE="$BRIDGE/planner/rectangle_source.py"
         PLANNER_ARGS="--world $WORLD $TRAJ_CALIB_ARG --hold-s $RECT_HOLD_S $VERTICAL_ARG $SHAPING_ARG ${CMD_ARGS:-}"
         PLANNER_WHAT="the Mission A tour on the rectangle (our own plan box)"
         ;;
     ego)
-        PLANNER_FILE="$THIN/planner/ego_source.py"
+        PLANNER_FILE="$BRIDGE/planner/ego_source.py"
         # THE ARRIVAL GATE IS PASSED EXPLICITLY, and it is looser than the rectangle's 0.060 m on purpose:
         # an ego planner stops planning 0.2 m out (`planner_manager.cpp:55`), so 0.060 m can never be met.
         # See `EGO_ARRIVE_M` in the parameter block.
@@ -410,7 +410,7 @@ case "$PLANNER" in
         if [ "${EGO_CONTRACT:-adapter}" = "shim" ]; then
             # ROUTE B (the owner's call): ego's OWN `traj_server` produces the reference; this process owns only
             # the tour and the contract's `trajectory_id` / `trajectory_flag` (see the knob block above).
-            PLANNER_FILE="$THIN/planner/ego_contract_shim.py"
+            PLANNER_FILE="$BRIDGE/planner/ego_contract_shim.py"
             PLANNER_ARGS="--world $WORLD $TRAJ_CALIB_ARG --hold-s $RECT_HOLD_S --arrive-m $EGO_ARRIVE_M \
 --settle-mps $EGO_SETTLE_MPS --leg-timeout-s $EGO_LEG_TIMEOUT_S --leg-abort-s $EGO_LEG_ABORT_S \
 --arrive-z-m $EGO_ARRIVE_Z_M --start-alt-m $EGO_START_ALT_M --ref-z-clamp-m $EGO_REF_Z_CLAMP_M --ref-z-floor-m $EGO_REF_Z_FLOOR_M \
@@ -510,10 +510,10 @@ if [ "${PLANNER_DRY_RUN:-0}" = "1" ]; then
     echo "   ego stack      : $EGO_STACK (contract $EGO_CONTRACT; cloud_relay /lio/cloud_world -> $EGO_CLOUD_TOPIC; ego max_vel $EGO_MAX_VEL max_acc $EGO_MAX_ACC; inflation $EGO_INFLATION; replan $EGO_REPLAN_S s; cloud window ${EGO_CLOUD_WINDOW}s, self-blind ${EGO_SELF_BLIND}m)"
     if [ "$EGO_STACK" = "1" ]; then
         echo "                    would also run: ros2 launch ego_planner ego_on_lio.launch.py"
-        echo "                                   python3 $THIN/planner/cloud_relay.py --out $EGO_CLOUD_TOPIC --window $EGO_CLOUD_WINDOW --self-blind $EGO_SELF_BLIND"
+        echo "                                   python3 $BRIDGE/planner/cloud_relay.py --out $EGO_CLOUD_TOPIC --window $EGO_CLOUD_WINDOW --self-blind $EGO_SELF_BLIND"
         if [ "$EGO_CONTRACT" = "shim" ]; then
             echo "                    ROUTE B: ros2 run ego_planner traj_server -p traj_server/time_forward:=1.0"
-            echo "                             python3 $THIN/planner/fcu_pose_feed.py --in /fcu/odom --out /ego/odom_fcu  (the FCU's OWN estimate, #32)"
+            echo "                             python3 $BRIDGE/planner/fcu_pose_feed.py --in /fcu/odom --out /ego/odom_fcu  (the FCU's OWN estimate, #32)"
             echo "                             the bridge publishes --fcu-odom-topic /fcu/odom for it"
         fi
     fi
@@ -843,7 +843,7 @@ if [ "$EGO_STACK" = "1" ]; then
     source ${DSH_ROOT}/.build/planner_ws/install/setup.bash
     set -u
     export ROS_LOCALHOST_ONLY=1
-    python3 "$THIN/planner/cloud_relay.py" --in /lio/cloud_world --out "$EGO_CLOUD_TOPIC" \
+    python3 "$BRIDGE/planner/cloud_relay.py" --in /lio/cloud_world --out "$EGO_CLOUD_TOPIC" \
         --voxel "$EGO_CLOUD_VOXEL" \
         --window "$EGO_CLOUD_WINDOW" --self-blind "$EGO_SELF_BLIND" \
         > "$OUT/ego_relay.log" 2>&1 &
@@ -853,7 +853,7 @@ if [ "$EGO_STACK" = "1" ]; then
     if [ "$EGO_CONTRACT" = "shim" ]; then
         EGO_ODOM_TOPIC="/ego/odom_fcu"
         EGO_ODOM_VEL_TOPIC="/ego/odom_fcu"
-        python3 "$THIN/planner/fcu_pose_feed.py" --calib-file "$CALIB" \
+        python3 "$BRIDGE/planner/fcu_pose_feed.py" --calib-file "$CALIB" \
             --in /fcu/odom --out /ego/odom_fcu > "$OUT/fcu_pose_feed.log" 2>&1 &
         EGO_FCU_POSE_PID=$!
         ros2 run ego_planner traj_server --ros-args -p traj_server/time_forward:=1.0 \

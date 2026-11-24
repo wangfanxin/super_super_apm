@@ -174,14 +174,15 @@ L→W 的换算只有一条实现：`calib/calib.json`（yaw +90.049771°，t = 
 ## 9. 目录 → 角色（五个模块 + 跨模块目录）
 
 ```
-apm_thin/    模块1 自研薄层 + 共享库：ros/planner_source_super.py、ros/ref_lp.py、common/、planner/
+bridge_nodes/ 模块1 "规划器 ↔ 飞控"节点组：thin/（薄层）、mavlink/（MAVLink 桥）、supervisor/、planner/（适配）、common/（共享库）
 hku_super/   模块2 hku-mars SUPER：super_planner/、rog_map/、mission_planner/、mars_uav_sim/、
              config/（交付配置与速度变体）、patches/（我们的补丁 10/11/12）
 slam/        模块3 Super-LIO + livox_ros_driver2 + config/livox_360.yaml
-ardupilot/   模块4 SITL 驱动侧：bridge/、supervisor/、params/、msgs/quadrotor_msgs
+fcu_interface/ 模块4 飞控参数与消息：params/、msgs/
 sim/         模块5 仿真环境：src/（lidar_imu/raycast/truth_rx）、pattern/（射线图案）、
              worlds/（冻结世界）、rviz/、frozen/
 scripts/     跨模块编排：飞行臂 fly_*、评分器 accept.py、记录器、run-mission.sh、~150 个分析工具
+             （历史工具在 scripts/archive/，不参与现行链路）
 setup/       入口脚本（env.sh 是唯一路径权威；build/fetch/run_hex）
 calib/       L→W 标定（calib.json）
 docs/        规约（SPEC）、本管线、记录（INTEGRATION）、证据（evidence）、历史（harness-history/）

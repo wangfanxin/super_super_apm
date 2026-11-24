@@ -9,7 +9,7 @@ fi
 # Where does the goal advance happen, and on what condition?
 set -u
 cd ${DSH_ROOT} || exit 1
-F=$(grep -rln 'class TourPacer' apm_thin/ | head -1)
+F=$(grep -rln 'class TourPacer' bridge_nodes/ | head -1)
 echo "== TourPacer in: $F"
 START=$(grep -n 'class TourPacer' "$F" | head -1 | cut -d: -f1)
 END=$((START + 80))

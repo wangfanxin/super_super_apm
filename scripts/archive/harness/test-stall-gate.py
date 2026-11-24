@@ -26,14 +26,26 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))  # repo root
+
+
+def _repo_root(start):
+    """walk up to the directory that holds setup/env.sh (this file lives under scripts/archive/ now)"""
+    d = start
+    while d != os.path.dirname(d):
+        if os.path.isfile(os.path.join(d, "setup", "env.sh")):
+            return d
+        d = os.path.dirname(d)
+    return os.path.dirname(os.path.dirname(start))
+
+
+ROOT = _repo_root(HERE)  # repo root
 sys.path.insert(0, ROOT)
 
 
 def load_supervisor():
     """Import the class without starting anything (rclpy is imported inside start_ros)."""
     spec = importlib.util.spec_from_file_location(
-        "supervisor_under_test", os.path.join(ROOT, "ardupilot", "supervisor", "supervisor.py"))
+        "supervisor_under_test", os.path.join(ROOT, "bridge_nodes", "supervisor", "supervisor.py"))
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)

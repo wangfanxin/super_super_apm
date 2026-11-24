@@ -13,7 +13,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
-sys.path.insert(0, os.path.join(ROOT, "apm_thin"))
+sys.path.insert(0, os.path.join(ROOT, "bridge_nodes"))
 
 from ros.planner_source_super import world_tour  # noqa: E402
 

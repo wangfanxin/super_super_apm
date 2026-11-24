@@ -11,8 +11,8 @@ cd ${DSH_ROOT} || exit 1
 echo "== where cmd_stream lives"
 python3 - <<'PY'
 import importlib.util, inspect, sys
-spec = importlib.util.spec_from_file_location("ps", "apm_thin/ros/planner_source_super.py")
-src = open("apm_thin/ros/planner_source_super.py", encoding="utf-8").read()
+spec = importlib.util.spec_from_file_location("ps", "bridge_nodes/thin/planner_source_super.py")
+src = open("bridge_nodes/thin/planner_source_super.py", encoding="utf-8").read()
 import re
 m = re.search(r"^(?:from|import)\s+([\w\.]+)\s+as\s+cmd_stream", src, re.M)
 print("   import line:", m.group(0) if m else "(not found)")

@@ -22,7 +22,7 @@ import sys
 import numpy as np
 import yaml
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "apm_thin"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bridge_nodes"))
 from common.obstacles import surface_dist  # noqa: E402
 
 import matplotlib                                     # noqa: E402
