@@ -15,8 +15,12 @@ A corner-stop explanation cannot cover those, so this script isolates them:
     python3 scripts/midleg_stops.py --tag kn3-01-01
 """
 import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-import _paths as _P  # noqa: E402  (repo path authority, round 21)
+# repo path authority (round 21): find the directory that holds scripts/_paths.py, then import it.
+_d = _os.path.dirname(_os.path.abspath(__file__))
+while _d != _os.path.dirname(_d) and not _os.path.isfile(_os.path.join(_d, "scripts", "_paths.py")):
+    _d = _os.path.dirname(_d)
+_sys.path.insert(0, _os.path.join(_d, "scripts"))
+import _paths as _P  # noqa: E402
 import argparse
 import csv
 import os

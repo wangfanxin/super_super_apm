@@ -17,8 +17,12 @@ One clock only: `setpoints.csv` (`t_wall`), the reference the bridge actually pu
     python3 scripts/dip_zoom.py kx1-02-01 --t 51.9     # one specific dip
 """
 import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-import _paths as _P  # noqa: E402  (repo path authority, round 21)
+# repo path authority (round 21): find the directory that holds scripts/_paths.py, then import it.
+_d = _os.path.dirname(_os.path.abspath(__file__))
+while _d != _os.path.dirname(_d) and not _os.path.isfile(_os.path.join(_d, "scripts", "_paths.py")):
+    _d = _os.path.dirname(_d)
+_sys.path.insert(0, _os.path.join(_d, "scripts"))
+import _paths as _P  # noqa: E402
 import argparse
 import csv
 import math

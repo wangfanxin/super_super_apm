@@ -10,8 +10,12 @@ is the same body W4 uses.
     python3 scripts/plan_clearance.py <tag> --z 2.0
 """
 import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-import _paths as _P  # noqa: E402  (repo path authority, round 21)
+# repo path authority (round 21): find the directory that holds scripts/_paths.py, then import it.
+_d = _os.path.dirname(_os.path.abspath(__file__))
+while _d != _os.path.dirname(_d) and not _os.path.isfile(_os.path.join(_d, "scripts", "_paths.py")):
+    _d = _os.path.dirname(_d)
+_sys.path.insert(0, _os.path.join(_d, "scripts"))
+import _paths as _P  # noqa: E402
 import argparse
 import csv
 import math

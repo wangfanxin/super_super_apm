@@ -10,8 +10,12 @@ because on a busy host H1 alone can invalidate a sortie that the aircraft flew f
     python3 scripts/hunt_stats.py --all        # every v3*/mx8* sortie that has an accept.json
 """
 import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-import _paths as _P  # noqa: E402  (repo path authority, round 21)
+# repo path authority (round 21): find the directory that holds scripts/_paths.py, then import it.
+_d = _os.path.dirname(_os.path.abspath(__file__))
+while _d != _os.path.dirname(_d) and not _os.path.isfile(_os.path.join(_d, "scripts", "_paths.py")):
+    _d = _os.path.dirname(_d)
+_sys.path.insert(0, _os.path.join(_d, "scripts"))
+import _paths as _P  # noqa: E402
 import glob
 import json
 import os

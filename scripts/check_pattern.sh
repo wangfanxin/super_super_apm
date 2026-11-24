@@ -17,9 +17,14 @@ import raycast  # noqa: E402
 p = raycast.default_pattern_path()
 print("default_pattern_path : %s" % (p or "NONE (the simulator will refuse to run)"))
 if not p:
-    print("  fix:  curl -fsSL -o %s/harness/sim/mid360_pattern.csv \\" % R)
+    # a fresh clone has no vendor data: that is the normal state, not an error.  Flights will refuse to
+    # start until it is fetched (harness/sim/README.md), and this check says so without failing CI.
+    print("SKIP: the real MID-360 ray pattern is not present (vendor data, not in the repo).")
+    print("      fetch it with:")
+    print("        curl -fsSL -o %s/harness/sim/mid360_pattern.csv \\" % R)
     print("          https://raw.githubusercontent.com/Livox-SDK/livox_laser_simulation/main/scan_mode/mid360.csv")
-    sys.exit(1)
+    print("      then re-run this check (expect 800001 rows, elevation about -7..+52 deg).")
+    sys.exit(0)
 try:
     with open(p) as fh:
         head = fh.readline().strip()

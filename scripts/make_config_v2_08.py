@@ -18,8 +18,12 @@ The 0.20 m "safety radius" that earlier rounds of this file encoded was deleted 
 so nothing here should reintroduce it.  Everything else is the accepted arm's values.
 """
 import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-import _paths as _P  # noqa: E402  (repo path authority, round 21)
+# repo path authority (round 21): find the directory that holds scripts/_paths.py, then import it.
+_d = _os.path.dirname(_os.path.abspath(__file__))
+while _d != _os.path.dirname(_d) and not _os.path.isfile(_os.path.join(_d, "scripts", "_paths.py")):
+    _d = _os.path.dirname(_d)
+_sys.path.insert(0, _os.path.join(_d, "scripts"))
+import _paths as _P  # noqa: E402
 import os
 import re
 import shutil
