@@ -108,6 +108,41 @@ SIM_STATE 在飞行中收不到样本的问题（独立测试 200 Hz 正常，�
 
 ---
 
+## 2026-11-25 03:45（第 5 条，Phase 1 真值链路打通 + 时钟/一致度实测）
+
+**打通的部分**
+- `sim/src/sim_state_recv.py` 在真实 sortie 中记录 SIM_STATE 成功：自适应退避后稳定 **~328 Hz**（5.1 万行/趟）。
+  ArduPilot 对超速请求回 `MAV_RESULT_DENIED`（"too fast. Increase SCHED_LOOP_RATE"），100 Hz 有时被拒、
+  120/200 基本被拒；记录器现在遇 DENIED 自动 ×0.8 退避（下限 50 Hz），所以请求 1000 Hz 也能落到可接受速率。
+- `scripts/compare_truth.py` 升级：
+  * 时钟映射改为**位置残差最小化**（旧 FFT 事件拟合一趟偏 2%：1.0193 vs 真值 0.9998）；
+  * `--window FROM:TO` 支持只在正常飞行段评估；
+  * 采样时刻重建（按段线性拟合 arrival->index），减少 TCP 成批到达的时间抖动；
+  * `--selftest` PASS（恢复 a=0.999500/b=3.250、位置残差 0、速度 1e-4 m/s）。
+
+**实测结果（phase1f-01，窗口 0–30 s）**
+```
+clock   t_sim = 0.99960*t_wall + 0.996   (FFT 交叉对照 a=1.003)
+地理    pos rms 11.3 mm (p99 52.9 mm)
+速度    rms 0.7 mm/s     姿态 rms 0.012 deg
+速率    899.7 Hz (p99 gap 6.9 ms)
+```
+=> 低速段 SIM_STATE 可替代 tap（mm 级）。**但飞行中段（20–50 s）位置残差 0.16–0.29 m**，源自 TCP 成批到达
+（到达时间≠采样时刻）与一次 ~1 s 采样空洞（t=18.45，1035 ms），高速段还不能满足 20 mm 判据。
+另一发现：SIM_STATE 的垂直速度在机动段与 tap 差 ~0.1–0.2 m/s（水平分量 18 mm/s 内），需要在换真值前定标。
+
+**飞行稳定性仍是 Flaky**：phase1b/1c/1e/1f 都在 40–150 s 内因 EKF estimator lost / altitude guard 中止；
+phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-divergence 段数据，但完整 2 圈通过仍需要更稳的主机。
+
+**下一步**
+1. 处理 1 s 采样空洞与时间抖动：给 SIM_STATE 批次重建时间戳（按 interval 3 ms 重建 + 空洞分段），
+   并在记录器里记录每个样本的到达顺序/间隔统计；
+2. 定标 vd 通道（对照 tap vd 与 SIM_STATE alt 差分）；
+3. 复飞拿到完整 2 圈 + 双录，跑 compare_truth 全窗口；达标后按计划移除 tap（Phase 1b），
+   再做 Phase 2 同趟 bag 逐行一致。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

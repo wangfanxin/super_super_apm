@@ -809,8 +809,12 @@ sleep 2
 # now (SIM_STATE=1) so scripts/compare_truth.py can measure the clock map and the agreement before the
 # tap is removed from the flight path.  Only http://mavlink.io SIM_STATE fields are used.
 if [ "${SIM_STATE:-0}" = "1" ]; then
+    # SIM_STATE RATE: 100 Hz is the most this firmware accepts -- ArduPilot's set_message_interval returns
+    # MAV_RESULT_DENIED ("Requested rate for message ID 108 too fast. Increase SCHED_LOOP_RATE") for 120 Hz
+    # and 200 Hz on the flight parameter set; MEASURED 2026-11-25.  A higher rate needs SCHED_LOOP_RATE moved,
+    # which is a flight-behaviour change, not a recording change.
     $AUX_PREFIX python3 "$SIM/src/sim_state_recv.py" --mav "tcp:127.0.0.1:${PORT2:-5782}" \
-        --hz "${SIM_STATE_HZ:-200}" --home="${SIM_STATE_HOME:--35.363261,149.165230,584.0}" \
+        --hz "${SIM_STATE_HZ:-100}" --home="${SIM_STATE_HOME:--35.363261,149.165230,584.0}" \
         --csv "$OUT/sim_state.csv" > "$OUT/sim_state.log" 2>&1 &
     SS_PID=$!
     echo "   truth    : tap (patched) + SIM_STATE (unpatched, msg 108) both recording (SIM_STATE=1)"

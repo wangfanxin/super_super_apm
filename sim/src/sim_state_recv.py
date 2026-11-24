@@ -78,7 +78,7 @@ class LocalEnu:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mav", default="tcp:127.0.0.1:5782", help="SITL endpoint (a spare serial port)")
-    ap.add_argument("--hz", type=float, default=200.0, help="requested SIM_STATE rate (200 works; 1000 is rejected by ArduPilot)")
+    ap.add_argument("--hz", type=float, default=120.0, help="requested SIM_STATE rate; ArduPilot DENIES 1000 Hz and (on the flight param set) 200 Hz")
     ap.add_argument("--csv", default="", help="write the CSV here ('' = stdout)")
     ap.add_argument("--home", default="-35.363261,149.165230,584.0", help="SITL home: lat,lon,alt")
     ap.add_argument("--seconds", type=float, default=0.0, help="stop after N s (0 = until SIGTERM)")
@@ -98,10 +98,11 @@ def main() -> int:
     print("sim_state_recv: endpoint %s, heartbeat from system %d component %d"
           % (args.mav, m.target_system, m.target_component), file=sys.stderr)
 
-    interval_us = int(round(1e6 / max(1.0, args.hz)))
+    want_hz = [float(max(1.0, args.hz))]
+    interval_us = [int(round(1e6 / want_hz[0]))]
     m.mav.command_long_send(m.target_system, m.target_component,
                             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
-                            mavutil.mavlink.MAVLINK_MSG_ID_SIM_STATE, interval_us, 0, 0, 0, 0, 0)
+                            mavutil.mavlink.MAVLINK_MSG_ID_SIM_STATE, interval_us[0], 0, 0, 0, 0, 0)
     m.mav.command_long_send(m.target_system, m.target_component,
                             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
                             mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT, 1000000, 0, 0, 0, 0, 0)
@@ -136,7 +137,7 @@ def main() -> int:
                 last_request = now
                 m.mav.command_long_send(m.target_system, m.target_component,
                                         mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
-                                        mavutil.mavlink.MAVLINK_MSG_ID_SIM_STATE, interval_us,
+                                        mavutil.mavlink.MAVLINK_MSG_ID_SIM_STATE, interval_us[0],
                                         0, 0, 0, 0, 0)
             # FAST DRAIN, NOT recv_match(type=[...]): recv_match filters the whole queue per call and the
             # timestamp used to be taken BEFORE the blocking receive, so the recorded wall time lagged the
@@ -152,6 +153,20 @@ def main() -> int:
                 if len(acks) <= 4:
                     print("sim_state_recv: ACK command=%d result=%d" % (int(msg.command), int(msg.result)),
                           file=sys.stderr)
+                # ADAPTIVE FALLBACK (MEASURED 2026-11-25): ArduPilot answers MAV_RESULT_DENIED with
+                # "Requested rate for message ID 108 too fast. Increase SCHED_LOOP_RATE" when the FCU's
+                # scheduler cannot sustain the asked rate -- and that answer CHANGES between runs at the
+                # same requested rate.  Step the request down instead of recording nothing.
+                if int(msg.command) == int(mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL) and int(msg.result) == 2:
+                    rate = max(50.0, want_hz[0] * 0.8)
+                    if rate < want_hz[0]:
+                        want_hz[0] = rate
+                        interval_us[0] = int(round(1e6 / rate))
+                        print("sim_state_recv: rate denied, backing off to %.0f Hz" % rate, file=sys.stderr)
+                        m.mav.command_long_send(m.target_system, m.target_component,
+                                                mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
+                                                mavutil.mavlink.MAVLINK_MSG_ID_SIM_STATE,
+                                                interval_us[0], 0, 0, 0, 0, 0)
                 continue
             if mtype == "HEARTBEAT":
                 got_hb = True
@@ -179,8 +194,8 @@ def main() -> int:
             if t_recv - last_report >= 1.0 / max(0.1, args.report_hz):
                 last_report = t_recv
                 hz = n / max(1e-6, t_recv - t_start)
-                print("sim_state_recv: %d samples, %.1f Hz (requested %.0f), heartbeat %s"
-                      % (n, hz, args.hz, "yes" if got_hb else "no"), file=sys.stderr)
+                print("sim_state_recv: %d samples, %.1f Hz (requested %.0f -> accepted %.0f), heartbeat %s"
+                      % (n, hz, args.hz, want_hz[0], "yes" if got_hb else "no"), file=sys.stderr)
     finally:
         fh.flush()
         if args.csv:

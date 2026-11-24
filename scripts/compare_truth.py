@@ -132,6 +132,39 @@ def fit_clock(tap, sim):
 
 
 
+
+def asdict(a):
+    return {n: np.asarray(a[n]) for n in a.dtype.names}
+
+
+def smooth_timeline(sim, gap_factor=8.0):
+    """Reconstruct the SAMPLING instants of SIM_STATE from arrival times.
+
+    SIM_STATE carries no timestamp: the only time information is when the message reached us.  TCP/MAVLink
+    delivers the stream in bursts (MEASURED: median inter-arrival 1.6 ms but effective rate 328 Hz, i.e.
+    samples arrive in batches), so using the arrival time as the sample time injects tens of milliseconds of
+    jitter -- harmless while parked, 0.3 m of position error at cruise speed and 0.8 deg of attitude error.
+    The simulator emits the stream at a fixed period, so samples are (locally) uniformly spaced: fit
+    t_i = beta0 + beta1*i per contiguous segment (split at arrival gaps), which recovers the sampling instants
+    and removes the burst jitter.  Recording continuity (rate/gap checks) still uses the ARRIVAL times.
+    """
+    t = np.asarray(sim["t_wall_us"], float) * 1e-6
+    if t.size < 3:
+        return t
+    i = np.arange(t.size, dtype=float)
+    dt = np.diff(t)
+    med = float(np.median(dt[dt > 0])) if np.any(dt > 0) else 0.002
+    cuts = np.where(dt > max(0.050, gap_factor * med))[0]
+    out = t.copy()
+    for seg in np.split(i, cuts + 1):
+        if seg.size < 3:
+            continue
+        A = np.column_stack([seg, np.ones(seg.size)])
+        coef, *_ = np.linalg.lstsq(A, t[seg.astype(int)], rcond=None)
+        out[seg.astype(int)] = A @ coef
+    return out
+
+
 def fit_clock_position(tap, sim, verbose=False):
     """Estimate t_sim = a*t_wall + b by MINIMISING THE POSITION RESIDUAL, not by correlating an event signal.
 
@@ -203,8 +236,10 @@ def window_arrays(tap, sim, clock, window):
     mt = (t_tap >= f) & (t_tap <= t)
     msim = ((a * t_sim + b) >= f) & ((a * t_sim + b) <= t)
     # tap/sim come from np.genfromtxt: structured arrays, not dicts
-    tw = {n: np.asarray(tap[n])[mt] for n in tap.dtype.names}
-    sw = {n: np.asarray(sim[n])[msim] for n in sim.dtype.names}
+    if hasattr(tap, "dtype"):
+        tap, sim = asdict(tap), asdict(sim)
+    tw = {n: np.asarray(tap[n])[mt] for n in tap}
+    sw = {n: np.asarray(sim[n])[msim] for n in sim}
     return tw, sw
 
 
@@ -316,7 +351,7 @@ def selftest():
            "vn": tap["vn"], "ve": tap["ve"], "vd": tap["vd"],
            "ax": tap["ax"], "ay": tap["ay"], "az": tap["az"],
            "wx": tap["wx"], "wy": tap["wy"], "wz": tap["wz"]}
-    clock = fit_clock_position(tap, sim)
+    clock = fit_clock_position(asdict(tap), asdict(sim) if hasattr(sim, "dtype") else sim)
     print("selftest: recovered a=%.6f (expect %.6f), b=%.3f (expect %.3f), clock pos rms=%.4f m"
           % (clock["a"], a_true, clock["b"], b_true, clock["pos_rms_clock"]))
     ok = abs(clock["a"] - a_true) < 2e-4 and abs(clock["b"] - b_true) < 0.05
@@ -347,20 +382,23 @@ def main():
     if not args.tap or not args.sim_state:
         ap.error("--tap and --sim-state are required (or use --selftest)")
 
-    tap = load_csv(args.tap, TAP_COLS)
-    sim = load_csv(args.sim_state, SIM_COLS)
+    tap = asdict(load_csv(args.tap, TAP_COLS))
+    sim_arrival = asdict(load_csv(args.sim_state, SIM_COLS))
+    sim = dict(sim_arrival)
+    sim["t_wall_us"] = smooth_timeline(sim_arrival) * 1e6      # sampling instants, not arrival times
     clock = fit_clock_position(tap, sim, verbose=True)
     clock_fft = fit_clock(tap, sim)          # kept as an independent cross-check, not as the estimator
     window = None
     if args.window:
         window = tuple(float(v) for v in args.window.split(":"))
         tap_w, sim_w = window_arrays(tap, sim, clock, window)
+        _, sim_arr_w = window_arrays(tap, sim_arrival, clock, window)
     else:
-        tap_w, sim_w = tap, sim
+        tap_w, sim_w, sim_arr_w = tap, sim, sim_arrival
     geo = fit_geodetic(tap_w, sim_w, clock)
     st = state_compare(tap_w, sim_w, clock)
     rates = {"tap": rate_profile(np.asarray(tap_w["t_us"], float) * 1e-6, "tap"),
-             "sim_state": rate_profile(np.asarray(sim_w["t_wall_us"], float) * 1e-6, "sim_state")}
+             "sim_state": rate_profile(np.asarray(sim_arr_w["t_wall_us"], float) * 1e-6, "sim_state")}
 
     ok_rate = rates["sim_state"].get("rate_hz", 0) >= args.min_rate_hz
     ok_gap = rates["sim_state"].get("gaps_gt_20ms", 9) == 0
