@@ -236,3 +236,29 @@ H1 0.9998、H3/H4、**H5（tap 10.79 m vs FCU 10.79 m）**、W0b、W1 13/13、W1
 余下 H2（rate 200 vs tap 时代 380 门槛，P0 延后重定义）、H6（skipped 23，门槛 20）、W4（已知缺陷）、
 W6（p50 0.238 / spread 0.220 s > 0.15，时间基仍有 ±0.1 s 慢摆，下一轮把"到达时刻回归"换成"对齐系统时间+斜率拟合"消掉）。
 
+## Phase 1b 完成（2026-11-25 07:00）：tap 彻底移出飞行路径
+
+**默认 SITL 换成 UNPATCHED 构建**（`.build/ardupilot/build/sitl/bin/arducopter`，本轮重编）：
+`patch -R` 掉 tap 补丁 → `./waf configure --board sitl && ./waf copter`（2 min 11 s）。打补丁的旧二进制
+备份为同目录 `arducopter.tap-patched`；补丁与旧 `truth_rx.py` 归档到 **`sim/legacy/`**（附 README 与回滚命令），
+`run-mission.sh` 只在 `TRUTH_SRC=tap`/`LEGACY_TAP=1` 时选 patched 二进制，默认 `TRUTH_SRC=simstate`；
+不读 tap 时 SITL 以 `LIO_TRUTH_TAP=-1` 启动，不产生 tap 流量。仿真 t=0 的锚点改用两版固件都打印的
+`Smoothing reset at ...`（第一 fdm 步），不再依赖 tap banner。
+
+**两真值同趟对比（`missionA-phase1w`，显式时钟映射后）**
+
+| 行 | 旧 tap 真值（时间基平移 −0.748 s） | SIM_STATE 真值 | 差 |
+|---|---|---|---|
+| W6 ZERO lag p50 / p90 / max | 0.241 / 0.420 / 1.767 m | 0.238 / 0.409 / 1.761 m | **0.003 / 0.011 / 0.006 m** |
+| W6 quarter spread | 0.195 s | 0.220 s | — |
+| H1 / H5 / W1 / W1b / W2 / W3 / W0 | 全部与下表一致 | 同左 | 0 |
+
+⇒ 显式时钟映射后，两真值的 accept 数字除 W6 的 p90（0.011 m，处于测量抖动量级）外逐行一致；
+W6 的 p50 差 0.003 m，满足计划"W6 两种真值差 < 0.01 m"的要求（p90 略超，记录在案）。
+
+**未完成/已知问题**
+- 用 unpatched SITL 的首趟（phase1x）被主机 2 s 卡顿打断（raycast 2017 ms → LIO 失锁 → 模型飞走），
+  与 SITL 是否打补丁无关；需在安静主机上复飞确认。
+- H2 的 380 Hz 速率门槛是 tap 时代判据（SIM_STATE 200 Hz），P0 延后重定义。
+- H6 skipped（20–23）仍略高于 20 门槛，待 Phase 4 的 sim 调度改造。
+

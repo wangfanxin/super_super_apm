@@ -35,8 +35,10 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                              "..", "apm_thin"))
+# LEGACY (Phase 1b rollback path): the file now lives in sim/legacy/, so the repo root is THREE levels up
+# and the shared frame code is in bridge_nodes/ (this used to say `apm_thin`, the pre-rename name).
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(_REPO, "bridge_nodes"))
 from common import frames  # noqa: E402  (path set above)
 
 GRAVITY = 9.80665     # AP_Math GRAVITY_MSS: what SITL's simulated accelerometer reads at rest.

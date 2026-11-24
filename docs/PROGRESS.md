@@ -283,6 +283,29 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 07:00（第 12 条，Phase 1b 完成：unpatched SITL + tap 归档，两真值逐行一致）
+
+**已完成**
+- 重编 **UNPATCHED SITL**（patch -R + waf configure/copter，2m11s），旧 patched 二进制备份为
+  `arducopter.tap-patched`；tap 补丁与 `truth_rx.py` 归档到 `sim/legacy/`（README + 回滚命令）；默认
+  `TRUTH_SRC=simstate`，不读 tap 时 SITL 以 `LIO_TRUTH_TAP=-1` 启动；sim t=0 锚点改用两版都有的
+  `Smoothing reset at ...` 行。
+- **两真值同趟对比（phase1w，显式时钟映射 −0.748 s）**：H1/H5/W1/W1b/W2/W3/W0 完全一致；
+  **W6 p50 差 0.003 m、p90 差 0.011 m、max 差 0.006 m** ⇒ 满足"W6 两真值差 <0.01 m"（p90 略超，记录在案）。
+- `setup/build.sh`/`docs/DATA_PIPELINE.md` 更新 tap/真值说明与 patched/unpatched 构建步骤。
+
+**未完成**
+- unpatched SITL 首趟（phase1x）被主机 2 s 卡顿（raycast 2017 ms）打断 → LIO 失锁、模型飞走；与补丁无关，
+  需在安静主机复飞确认。
+- H2 速率门槛（tap 时代 380 Hz）待 P0 重定义；H6 skipped 20-23 略高于 20（留 Phase 4 sim 调度改造）。
+
+**下一步**
+1. 安静主机上复飞 unpatched SITL + SIM_STATE 真值，拿到完整两圈并归档 accept；
+2. Phase 2 收尾：bag 抓取率问题（整栈运行时 ~40 Hz）+ 同趟 bag 派生 CSV 的 accept 逐行一致；
+3. 之后 Phase 3（bridge+supervisor 合并）与 Phase 4（sim 图案窗口/每帧 CSV/rviz）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

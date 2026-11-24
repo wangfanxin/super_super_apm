@@ -21,6 +21,16 @@ fi
 set -u
 AP=${ARDUPILOT_ROOT}
 BIN="$AP/build/sitl/bin/arducopter"
+# PHASE 1b DONE (2026-11-25): the flight path uses SIM_STATE, so the DEFAULT SITL is the UNPATCHED build.
+# The tap-patched binary is kept beside it for `TRUTH_SRC=tap` / `LEGACY_TAP=1` verification runs; the patch
+# itself lives in sim/legacy/apm-0001-sitl-truth-tap.patch (rollback path).
+if [ "${TRUTH_SRC:-simstate}" = "tap" ] || [ "${LEGACY_TAP:-0}" = "1" ]; then
+    if [ -x "$AP/build/sitl/bin/arducopter.tap-patched" ]; then
+        BIN="$AP/build/sitl/bin/arducopter.tap-patched"
+    else
+        echo "WARNING: tap-patched SITL not found; the tap will be silent" >&2
+    fi
+fi
 # --- the five modules (round 22 split) ---------------------------------------------------------
 BRIDGE="$BRIDGE_ROOT"                         # bridge_nodes: the thin layer + shared libs (common/, planner/)
 SIM="$SIM_ROOT"                           # sim: lidar_imu/truth_rx/raycast, worlds/, rviz/, frozen/, pattern/
@@ -35,7 +45,7 @@ FAN="${FAN:-14561}"
 # the self-built MAVLink client (sim/src/sim_state_recv.py --ros): it publishes /sim/state (+ /sim/state/imu)
 # for the LiDAR simulator, /sim/truth/odom + /clock + /sim/rtf for the supervisor/health checks, and writes
 # the tap-format CSV that scripts/accept.py reads.  No mavros, no tap in the flight path.
-TRUTH_SRC="${TRUTH_SRC:-tap}"
+TRUTH_SRC="${TRUTH_SRC:-simstate}"    # Phase 1b target state: SIM_STATE via our own client (D3)
 PORT0="${PORT0:-5780}"
 PORT1="${PORT1:-5781}"
 PORT2="${PORT2:-5782}"
@@ -678,7 +688,7 @@ SETSID_PREFIX=$(pin_cmd "$SIM_CORES")
 # ... AND THE ROSBAG2 RECORDER GETS ITS OWN CORES, BECAUSE IT IS THE NEW HEAVIEST RECORDER (round 25): with
 # BAG=1 the CSV recorders + bridge + supervisor are squeezed to 16-17 and the bag writes on 18-19, so the
 # recording base never fights the flight stack.
-if [ "${TRUTH_SRC:-tap}" = "simstate" ]; then
+if [ "$TRUTH_SRC" = "simstate" ]; then
     # MEASURED 2026-11-25 (phase1p): with the truth client + the legacy tap recorder sharing the AUX
     # cores, the BRIDGE stalled for 1.7 s and the FCU aborted "ESTIMATOR FEED IS STALE"; the LIO's own
     # odometry had no gap (rate 200.0, 0 gaps > 50 ms), so the stall was the bridge being starved.
@@ -705,7 +715,12 @@ PLANNER_PREFIX=$(pin_cmd "$PLANNER_CORES")
 BAG_PREFIX=$(pin_cmd "$BAG_CORES")
 TRUTH_PREFIX=$(pin_cmd "${TRUTH_CORES:-off}")
 SITL_T0_US=$(date +%s%6N)     # truth time base: the client's t=0 must be the simulator's t=0
-setsid nohup $SETSID_PREFIX env LIO_TRUTH_TAP=$TAP "$BIN" --model "$SITL_MODEL" --speedup 1 -I0 \
+if [ "$TRUTH_SRC" = "tap" ] || [ "${LEGACY_TAP:-0}" = "1" ]; then
+    SITL_TAP_ENV="LIO_TRUTH_TAP=$TAP"
+else
+    SITL_TAP_ENV="LIO_TRUTH_TAP=-1"       # no reader: do not emit the tap
+fi
+setsid nohup $SETSID_PREFIX env $SITL_TAP_ENV "$BIN" --model "$SITL_MODEL" --speedup 1 -I0 \
     --home -35.363261,149.165230,584,0 --serial0 tcp:${PORT0:-5780} --serial1 tcp:${PORT1:-5781} --serial2 tcp:${PORT2:-5782} --serial3 tcp:${PORT3:-5783} \
     --defaults "$ARD/params/apm_lio_only.parm,$ARD/params/sitl_basics.parm,$ALT_PARM,$MISSION_PARM$EKF_ARG$EXTRA_ARG" \
     -w > sitl.log 2>&1 &
@@ -827,15 +842,19 @@ trap cleanup EXIT
 # put its samples on the SAME time base as the old tap (MEASURED 2026-11-25: using the process start instead
 # put the truth 0.600 s ahead, and W6 between the two truths read a constant +0.600 s offset).
 SITL_SIMT0_US=""
-for i in $(seq 1 1200); do
-    if grep -q TruthTap "$OUT/sitl.log" 2>/dev/null; then
+for i in $(seq 1 1500); do
+    if grep -q "Smoothing reset at" "$OUT/sitl.log" 2>/dev/null; then
+        SITL_SIMT0_US=$(date +%s%6N)
+        break
+    fi
+    if [ "$TRUTH_SRC" = "tap" ] && grep -q TruthTap "$OUT/sitl.log" 2>/dev/null; then
         SITL_SIMT0_US=$(date +%s%6N)
         break
     fi
     kill -0 "$SITL" 2>/dev/null || { echo "SITL died:"; tail -12 "$OUT/sitl.log"; exit 1; }
     sleep 0.02
 done
-[ -n "$SITL_SIMT0_US" ] || { echo "tap never reported"; exit 1; }
+[ -n "$SITL_SIMT0_US" ] || { echo "SITL never reached its first model step"; exit 1; }
 echo "SITL stepping (sim t=0 at wall $SITL_SIMT0_US)"
 
 if [ "$TRUTH_SRC" = "simstate" ]; then
@@ -854,7 +873,7 @@ if [ "$TRUTH_SRC" = "simstate" ]; then
     SS_PID=""
     echo "   truth    : SIM_STATE via our own MAVLink client (TRUTH_SRC=simstate; no tap in the flight path)"
     if [ "${LEGACY_TAP:-0}" = "1" ]; then
-        $TRUTH_PREFIX python3 "$SIM/src/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout $FAN \
+        $TRUTH_PREFIX python3 "$SIM/legacy/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout $FAN \
             --fanout-decimate 6 --csv "$OUT/tap_legacy.csv" --save "$OUT/truth_report.txt" \
             > "$OUT/truth_rx_legacy.log" 2>&1 &
         LEGACY_PID=$!

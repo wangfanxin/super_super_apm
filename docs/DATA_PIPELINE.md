@@ -97,7 +97,8 @@ L→W 的换算只有一条实现：`calib/calib.json`（yaw +90.049771°，t = 
 | 进程 | 入口 | 频率/端口 | 产物 |
 |---|---|---|---|
 | ArduPilot SITL | `.build/ardupilot/build/sitl/bin/arducopter` | 实时（rtf≈1.0） | `sitl.log`、`phase.csv`（经 supervisor） |
-| 真值 tap | `sim/src/truth_rx.py` | UDP 14560→14561 | `tap.csv` |
+| 真值（Phase 1b 默认） | `sim/src/sim_state_recv.py --ros`（SIM_STATE/mavlink 108） | MAVLink TCP 5782 → `/sim/state` + `/sim/truth/odom` | `tap.csv`（同格式）+ `sim_state.csv` |
+| 真值 tap（legacy/回滚） | `sim/legacy/truth_rx.py` + `sim/legacy/apm-0001-sitl-truth-tap.patch` | UDP 14560→14561 | `tap.csv` / `tap_legacy.csv` |
 | 雷达/IMU 仿真 | `sim/src/lidar_imu.py` | 10 Hz / 200 Hz | `lidar_imu.log`、`cloud.csv`（可选） |
 | 估计器 | `ros2 run super_lio super_lio_node` | 200 Hz odom | `lio.csv`、`lio.log` |
 | SUPER 规划器 | `hku_super/.../fsm_node`（`config_name` 由薄层传） | 10 Hz 重规划 | `traj.log`（规划器自身日志） |

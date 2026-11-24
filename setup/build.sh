@@ -82,6 +82,16 @@ echo
 echo "== ArduPilot SITL"
 if [ -x "$ARDUPILOT_ROOT/build/sitl/bin/arducopter" ]; then
   echo "   found: $ARDUPILOT_ROOT/build/sitl/bin/arducopter"
+  if [ -x "$ARDUPILOT_ROOT/build/sitl/bin/arducopter.tap-patched" ]; then
+    echo "   patched (legacy-tap) binary also present: arducopter.tap-patched"
+  fi
+  # PHASE 1b (2026-11-25): the DEFAULT binary is the UNPATCHED SITL -- truth comes from MAVLink SIM_STATE via
+  # sim/src/sim_state_recv.py.  The old tap path is archived:
+  #   apply:  cd "$ARDUPILOT_ROOT" && patch -p1 < "$DSH_ROOT/sim/legacy/apm-0001-sitl-truth-tap.patch"
+  #           ./waf copter && cp build/sitl/bin/arducopter build/sitl/bin/arducopter.tap-patched
+  #   revert: cd "$ARDUPILOT_ROOT" && patch -R -p1 < "$DSH_ROOT/sim/legacy/apm-0001-sitl-truth-tap.patch"
+  #           ./waf configure --board sitl && ./waf copter
+  echo "   truth source: SIM_STATE (unpatched SITL).  Tap patch archived in sim/legacy/ (see its README)."
 else
   echo "   NOT built.  Run:  bash setup/fetch_ardupilot.sh      (1.5 GB clone + build)"
   echo "   or:               ARDUPILOT_ROOT=/existing/ardupilot bash setup/run_hex.sh <tag>"
