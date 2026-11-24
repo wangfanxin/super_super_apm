@@ -216,6 +216,33 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 05:35（第 9 条，Phase 1b 实现：tap 移出飞行路径，首飞 H1/H5 PASS）
+
+**已完成（代码）**
+- `sim/src/sim_state_recv.py --ros` 成为真值节点：/sim/state（Odometry NED/FRD，位置=pad 锚点+速度积分）、
+  /sim/state/imu（同 stamp 配对）、/sim/truth/odom（world_w）、/clock、/sim/rtf；并把**发布网格**写成 tap 格式
+  CSV（accept 无需改）。pad 锚点 (0,0,-0.0999) 依据：速度积分起点用该值对 tap 位置残差 5.7 mm（n/e 2 mm、d 9.5 mm）。
+- `sim/src/lidar_imu.py --truth-topic`：ROS 真值消费。两个关键修正：订阅用**专用 spin 线程**（否则 400 回调/s
+  只处理 ~100/s，IMU 15–20 Hz、75/80 扫描被跳）；odom/imu 配对**先查再 pop**（先 pop 吃掉 odom，配对永远失败）。
+- `scripts/run-mission.sh`：`TRUTH_SRC=simstate` 分支（客户端替换 truth_rx，lidar 用真值话题，`LEGACY_TAP=1` 时
+  并行录旧 tap 供对比）；`LIGHT=1` 跳过 cloud/traj CSV 记录器。
+- `scripts/check_truth_ros.sh`（新）：无飞行管线校验 SITL→客户端→/sim/state→lidar→Super-LIO。
+
+**实测**
+- 无飞行校验 PASS：cloud 9.88 Hz、IMU 195.3 Hz、cast 15.8 ms、skipped 0；真值 CSV 恰好 200.0 Hz、max gap 5 ms、0 空洞。
+- `missionA-phase1l-01-01`（预热 + LIGHT + TRUTH_SRC=simstate + LEGACY_TAP）：**完整飞行、正常 LAND+disarm**；
+  H1 0.9998、H3/H4、**H5**、W0b、W1 13/13、W1b 13/13、W2/W3/W5/W6 全过；仅 H2（333 Hz < tap 时代的 380 下限）、
+  H6（skipped 32 > 20）、W4（已知缺陷）不绿。
+- 同趟两种真值打分对比：H1/H3/H4/H5/W1/W1b/W2/W3/W5 一致；W0 起点差 0.35 s；**W6 差 0.37 m**（计划要求 <0.01 m）。
+  根因：客户端时间轴用"块平均周期"重建，长趟有相对漂移。
+
+**下一步**
+1. 时间轴改成"到达时刻的滚动线性回归（alpha+beta·i）"，消除相对漂移；复飞后重做 W6 双真值对比（目标 <0.01 m）。
+2. H2 速率/空洞门槛随真值重定义（P0 类，延后但必须记录）；H6 skipped 的残余来源（DDS 丢包/arm 空洞）继续压。
+3. 之后删除固件 tap 补丁与 `sim/src/truth_rx.py`/fanout（保留 `sim/legacy` 回滚），再进 Phase 2 收尾。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

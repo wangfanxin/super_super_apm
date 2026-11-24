@@ -314,7 +314,8 @@ def ros_init_without_signal_handlers(rclpy):
 
 
 class RosOut:
-    def __init__(self, cloud_topic, imu_topic, frame_id):
+    def __init__(self, cloud_topic, imu_topic, frame_id, truth_topic="", truth_imu_topic="",
+                 truth_cb=None):
         import rclpy
         from rclpy.node import Node
         from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
@@ -327,6 +328,39 @@ class RosOut:
                          reliability=ReliabilityPolicy.BEST_EFFORT)
         self.pub_cloud = self.node.create_publisher(PointCloud2, cloud_topic, qos)
         self.pub_imu = self.node.create_publisher(Imu, imu_topic, qos)
+        # ---- PHASE 1b truth subscriptions (paired by header stamp: the client publishes
+        #      /sim/state and /sim/state/imu with identical stamps) ----
+        self.truth_cb = truth_cb
+        self.spinning_in_thread = False
+        self._odom_by_stamp = {}
+        self._imu_by_stamp = {}
+        if truth_topic:
+            from nav_msgs.msg import Odometry
+            tq = QoSProfile(depth=500, history=HistoryPolicy.KEEP_LAST,
+                            reliability=ReliabilityPolicy.BEST_EFFORT)
+            self.node.create_subscription(Odometry, truth_topic, self._on_truth_odom, tq)
+            if truth_imu_topic:
+                self.node.create_subscription(Imu, truth_imu_topic, self._on_truth_imu, tq)
+            # A DEDICATED SPIN THREAD.  MEASURED 2026-11-25: one `spin_once()` per main-loop pass (5 ms)
+            # processes ONE callback, so a 200 Hz truth (odom + imu = 400 callbacks/s) was delivered at
+            # ~100 pairs/s, the IMU fell to 15-20 Hz and every scan window had holes (75/80 scans skipped).
+            # The subscription thread below runs the executor at its own rate; the main loop must then stop
+            # calling spin_once (rclpy nodes are not safe for two spinning threads).
+            self.spinning_in_thread = True
+            import threading
+            self._spin_stop = threading.Event()
+
+            def _spin():
+                while not self._spin_stop.is_set():
+                    try:
+                        self.rclpy.spin_once(self.node, timeout_sec=0.002)
+                    except Exception:
+                        break
+
+            self._spin_thread = threading.Thread(target=_spin, daemon=True)
+            self._spin_thread.start()
+            print("  truth <- %s + %s (ROS, subscriptions on a spin thread)"
+                  % (truth_topic, truth_imu_topic), flush=True)
         self.PointCloud2 = PointCloud2
         self.PointField = PointField
         self.Imu = Imu
@@ -379,10 +413,65 @@ class RosOut:
         m.linear_acceleration.z = float(accel[2])
         self.pub_imu.publish(m)
 
+    @staticmethod
+    def _key(stamp):
+        return (int(stamp.sec), int(stamp.nanosec))
+
+    def _emit_truth(self, key):
+        if os.environ.get("TRUTH_DEBUG") and not getattr(self, "_dbg_emit", 0):
+            self._dbg_emit = 1
+            print("  TRUTH_DEBUG emit key=%s sizes=%d/%d cb=%s"
+                  % (key, len(self._odom_by_stamp), len(self._imu_by_stamp),
+                     self.truth_cb is not None), flush=True)
+        # DO NOT POP BEFORE BOTH HALVES ARE HERE (MEASURED 2026-11-25: popping on the first
+        # callback consumed the odom, and the later imu callback then found no partner -> zero truth)
+        o = self._odom_by_stamp.get(key)
+        m = self._imu_by_stamp.get(key)
+        if o is not None and m is not None:
+            self._odom_by_stamp.pop(key, None)
+            self._imu_by_stamp.pop(key, None)
+        if o is None or m is None or self.truth_cb is None:
+            # keep the maps bounded if one half never arrives
+            if len(self._odom_by_stamp) > 50:
+                self._odom_by_stamp.pop(next(iter(self._odom_by_stamp)), None)
+            if len(self._imu_by_stamp) > 50:
+                self._imu_by_stamp.pop(next(iter(self._imu_by_stamp)), None)
+            return
+        t_us = key[0] * 1_000_000 + key[1] // 1000
+        p = o.pose.pose.position
+        q = o.pose.pose.orientation
+        v = o.twist.twist.linear
+        w = m.angular_velocity
+        a = m.linear_acceleration
+        self.truth_cb(t_us, [p.x, p.y, p.z], [v.x, v.y, v.z], [q.w, q.x, q.y, q.z],
+                      [w.x, w.y, w.z], [a.x, a.y, a.z])
+
+    def _on_truth_odom(self, msg):
+        k = self._key(msg.header.stamp)
+        self._odom_by_stamp[k] = msg
+        if os.environ.get("TRUTH_DEBUG") and not getattr(self, "_dbg_odom", False):
+            self._dbg_odom = True
+            print("  TRUTH_DEBUG first odom stamp=%s" % (k,), flush=True)
+        self._emit_truth(k)
+
+    def _on_truth_imu(self, msg):
+        k = self._key(msg.header.stamp)
+        self._imu_by_stamp[k] = msg
+        if os.environ.get("TRUTH_DEBUG") and not getattr(self, "_dbg_imu", False):
+            self._dbg_imu = True
+            print("  TRUTH_DEBUG first imu stamp=%s" % (k,), flush=True)
+        self._emit_truth(k)
+
     def spin_once(self):
         self.rclpy.spin_once(self.node, timeout_sec=0.0)
 
     def shutdown(self):
+        try:
+            if self.spinning_in_thread:
+                self._spin_stop.set()
+                self._spin_thread.join(timeout=1.0)
+        except Exception:
+            pass
         self.node.destroy_node()
         self.rclpy.shutdown()
 
@@ -391,6 +480,11 @@ class RosOut:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=14561, help="the tap fan-out port")
+    # PHASE 1b: consume the reconstructed SIM_STATE truth from our own MAVLink client instead of the tap.
+    ap.add_argument("--truth-topic", default="",
+                    help="nav_msgs/Odometry truth topic (e.g. /sim/state); '' = use the UDP tap fan-out")
+    ap.add_argument("--truth-imu-topic", default="/sim/state/imu",
+                    help="sensor_msgs/Imu with the matching gyro/accel (paired by header stamp)")
     ap.add_argument("--world", default=os.path.join(PROJ, "worlds", "pillars.yaml"))
     ap.add_argument("--pattern", default=None,
                     help="the real MID-360 pattern csv; by default it is looked up (see "
@@ -491,39 +585,53 @@ def main() -> int:
           % (sensor.range_noise, sensor.gyro_sigma, sensor.accel_sigma, args.gyro_noise,
              args.accel_noise, args.imu_hz, args.gyro_bias, args.accel_bias,
              "  [DISABLED]" if args.no_noise else ""), flush=True)
-    out = RosOut(args.cloud_topic, args.imu_topic, args.frame)
+    incoming = []
+    if args.truth_topic:
+        # PHASE 1b: the reconstructed SIM_STATE truth arrives over ROS from our own MAVLink client.
+        def _truth_cb(t_us, p, v, q, w, a):
+            incoming.append(("ros", t_us, p, v, q, w, a))
+            if os.environ.get("TRUTH_DEBUG") and not getattr(_truth_cb, "_dbg", False):
+                _truth_cb._dbg = True
+                print("  TRUTH_DEBUG first paired sample t_us=%d queue=%d" % (t_us, len(incoming)),
+                      flush=True)
+        out = RosOut(args.cloud_topic, args.imu_topic, args.frame,
+                     truth_topic=args.truth_topic, truth_imu_topic=args.truth_imu_topic,
+                     truth_cb=_truth_cb)
+    else:
+        out = RosOut(args.cloud_topic, args.imu_topic, args.frame)
     stop = install_stop_handler()
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 << 20)
-    except OSError:
-        pass
-    sock.bind(("127.0.0.1", args.port))
-    sock.settimeout(0.5)
+    sock = None
+    if not args.truth_topic:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 << 20)
+        except OSError:
+            pass
+        sock.bind(("127.0.0.1", args.port))
+        sock.settimeout(0.5)
 
-    # READER THREAD.  MEASURED 2026-10-13: casting 20 000 points takes ~15 ms, and while the main loop
-    # was inside numpy the kernel buffer filled and the node silently lost 73 % of the tap -- which
-    # starved the LIO, which made the FCU report "VisOdom: not healthy", which aborted every flight.
-    # A thread that only reads the socket and appends parsed samples cannot be starved by the caster,
-    # and the parsing is light enough to interleave with numpy's GIL-free stretches.
-    import threading
-    incoming = []
-    stop_reader = threading.Event()
+        # READER THREAD.  MEASURED 2026-10-13: casting 20 000 points takes ~15 ms, and while the main loop
+        # was inside numpy the kernel buffer filled and the node silently lost 73 % of the tap -- which
+        # starved the LIO, which made the FCU report "VisOdom: not healthy", which aborted every flight.
+        # A thread that only reads the socket and appends parsed samples cannot be starved by the caster,
+        # and the parsing is light enough to interleave with numpy's GIL-free stretches.
+        import threading
+        stop_reader = threading.Event()
 
-    def reader():
-        while not stop_reader.is_set():
-            try:
-                data, _ = sock.recvfrom(2048)
-            except socket.timeout:
-                continue
-            except OSError:
-                break
-            incoming.append(data)
+        def reader():
+            while not stop_reader.is_set():
+                try:
+                    data, _ = sock.recvfrom(2048)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
+                incoming.append(data)
 
-    reader_thread = threading.Thread(target=reader, daemon=True)
-    reader_thread.start()
+        reader_thread = threading.Thread(target=reader, daemon=True)
+        reader_thread.start()
 
     buf = TruthBuffer()
     scan_period_us = int(1e6 / args.scan_hz)
@@ -545,9 +653,13 @@ def main() -> int:
     points_total = 0
     t_start_wall = time.monotonic()
     last_report = t_start_wall
-    print("sim/lidar_imu: tap udp/127.0.0.1:%d, %d points, mount pitch %.1f deg, "
-          "scan %.1f Hz, imu %.1f Hz" % (args.port, len(rays), pitch, args.scan_hz, args.imu_hz),
-          flush=True)
+    if args.truth_topic:
+        print("sim/lidar_imu: truth ROS %s, %d points, mount pitch %.1f deg, scan %.1f Hz, imu %.1f Hz"
+              % (args.truth_topic, len(rays), pitch, args.scan_hz, args.imu_hz), flush=True)
+    else:
+        print("sim/lidar_imu: tap udp/127.0.0.1:%d, %d points, mount pitch %.1f deg, "
+              "scan %.1f Hz, imu %.1f Hz" % (args.port, len(rays), pitch, args.scan_hz, args.imu_hz),
+              flush=True)
     print("  cloud -> %s (frame %s), imu -> %s" % (args.cloud_topic, args.frame, args.imu_topic),
           flush=True)
 
@@ -575,6 +687,13 @@ def main() -> int:
 
     try:
         while True:
+            # SPIN BEFORE THE QUEUE CHECK: with ROS truth the subscriptions ARE the queue producer, and
+            # the old code only spun after `drained > 0` -- so with the queue empty it never spun and the
+            # truth never arrived (MEASURED 2026-11-25 bench: lidar sat at "truth <- ..." forever).
+            _now = time.monotonic()
+            if not out.spinning_in_thread and _now - last_spin >= 0.005:
+                out.spin_once()
+                last_spin = _now
             drained = 0
             t_last = None
 
@@ -582,16 +701,26 @@ def main() -> int:
             #      ~31 us of arithmetic per line, no ROS spin, no scan.  Nothing here can block.
             while incoming and drained < MAX_DRAIN:
                 data = incoming.pop(0)
-                parts = data.decode("ascii", "replace").split()
-                if len(parts) != 19 or parts[0] != "TAP":
-                    continue
-                # ONE conversion for the 17 numbers, instead of 18 float() calls spread over
-                # six list comprehensions (this is on the 200 Hz path, so it is worth it)
-                vals = np.array(parts[2:19], dtype=float)
-                t_us = int(vals[0])
-                p_ned, v_ned = vals[1:4], vals[4:7]
-                q_ned = vals[7:11]
-                gyro, accel = vals[11:14], vals[14:17]
+                if isinstance(data, tuple):
+                    # ROS truth item from RosOut._truth_cb: already in the tap's NED/FRD convention
+                    _, t_us, p_ned, v_ned, q_ned, gyro, accel = data
+                    t_us = int(t_us)
+                    p_ned = np.asarray(p_ned, float)
+                    v_ned = np.asarray(v_ned, float)
+                    q_ned = np.asarray(q_ned, float)
+                    gyro = np.asarray(gyro, float)
+                    accel = np.asarray(accel, float)
+                else:
+                    parts = data.decode("ascii", "replace").split()
+                    if len(parts) != 19 or parts[0] != "TAP":
+                        continue
+                    # ONE conversion for the 17 numbers, instead of 18 float() calls spread over
+                    # six list comprehensions (this is on the 200 Hz path, so it is worth it)
+                    vals = np.array(parts[2:19], dtype=float)
+                    t_us = int(vals[0])
+                    p_ned, v_ned = vals[1:4], vals[4:7]
+                    q_ned = vals[7:11]
+                    gyro, accel = vals[11:14], vals[14:17]
                 p_w, v_w, q_w = frames.wire_to_world(p_ned, v_ned, q_ned)
                 buf.add(t_us, p_w, v_w, q_w, gyro, accel)
                 drained += 1
@@ -622,8 +751,12 @@ def main() -> int:
 
             if drained == 0:
                 if now - t_start_wall > 20.0 and scans == 0:
-                    print("FAIL: no tap samples in 20 s -- is truth_rx running with --fanout %d?"
-                          % args.port, flush=True)
+                    if args.truth_topic:
+                        print("FAIL: no truth samples on %s in 20 s -- is the MAVLink client publishing?"
+                              % args.truth_topic, flush=True)
+                    else:
+                        print("FAIL: no tap samples in 20 s -- is truth_rx running with --fanout %d?"
+                              % args.port, flush=True)
                     return 1
                 time.sleep(0.001)
                 continue
@@ -692,8 +825,9 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\ninterrupted", flush=True)
     finally:
-        stop_reader.set()
-        sock.close()
+        if sock is not None:
+            stop_reader.set()
+            sock.close()
 
     wall = time.monotonic() - t_start_wall
     print("\nsim/lidar_imu report")

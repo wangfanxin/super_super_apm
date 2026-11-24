@@ -136,6 +136,11 @@
 **风险**：`/mnt/d` 上编译慢、记录写入落在 Windows 盘可能影响 rtf → 验证时对比 H1；必要时只把 `.runs` 留 WSL（由 manifest 记录位置）。
 
 ### Phase 1 — 真值与时钟（2–3 天）
+> **状态：[进行中] 2026-11-25。** 已完成：自建客户端订阅 SIM_STATE（msg 108，无 mavros）、`compare_truth.py`
+> （速度通道定时钟 + 速度积分重建位置，飞行窗口位置 rms 1.8–2.5 mm）、`TRUTH_SRC=simstate` 把 tap 从飞行路径
+> 移除（`/sim/state` + lidar ROS 真值），首飞 H1/H5 仍 PASS、正常 LAND+disarm。未完成：时间轴相对漂移
+> （W6 两种真值差 0.37 m，计划要求 <0.01 m）、H2 速率门槛需随真值重定义（P0 延后）、删除固件 tap 补丁与
+> `sim/src/truth_rx.py`/fanout。详见 [PHASE1-TRUTH.md](PHASE1-TRUTH.md)。
 
 **做什么**
 1. 在自建客户端里请求并订阅 **SIM_STATE（MAVLink 108）**（`SET_MESSAGE_INTERVAL`），发布 `/sim/state` 话题；不引入 mavros/DDS（D1）。

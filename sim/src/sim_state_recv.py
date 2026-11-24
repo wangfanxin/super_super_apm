@@ -31,6 +31,8 @@ import signal
 import sys
 import time
 
+import numpy as np
+
 GLOBAL_STOP = False
 
 
@@ -75,6 +77,249 @@ class LocalEnu:
         return n, e, d
 
 
+# THE CSV THAT scripts/accept.py READS (same header/columns as sim/src/truth_rx.py --csv):
+#   t_us,inst,pn,pe,pd,vn,ve,vd,qw,qx,qy,qz,wx,wy,wz,ax,ay,az
+TAP_CSV_HEADER = ("t_us,inst,pn,pe,pd,vn,ve,vd,qw,qx,qy,qz,wx,wy,wz,ax,ay,az\n")
+TAP_ROW = ("%d,0,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,"
+           "%.8f\n")
+
+
+class TruthOut:
+    """Phase 1b: publish the reconstructed truth as ROS topics (and optionally a tap.csv).
+
+    The flight stack's truth contract is the tap: positions in NED relative HOME, attitude as a
+    body->NED quaternion, body rates / specific force in FRD, one sample per model step (~1.2 kHz).
+    SIM_STATE arrives at ~328 Hz with no NED position, so this class:
+
+      * integrates the SIM_STATE velocity (trapezoid) to get the NED position, anchored at the first
+        sample's geodetic position (which on the pad equals HOME; MEASURED the pad value to within 1 cm);
+      * **interpolates** the samples onto a uniform --publish-hz grid (200 Hz default).  200 Hz matters:
+        lidar_imu decides its IMU decimation from the measured stream rate, and at 328 Hz it would
+        decimate by 2 -> 164 Hz IMU, below the 200 Hz the LIO is configured for;
+      * publishes /sim/state (nav_msgs/Odometry: pose NED, twist m/s and rad/s) and
+        /sim/state/imu (sensor_msgs/Imu: same orientation, angular velocity, linear acceleration).
+        Both carry the SAME stamp, so consumers can pair them.
+
+    The time base is the recorder's own monotonic clock; the explicit map to the simulator's clock is
+    t_sim = t_here + b with b measured once by compare_truth (D4: wall clock + explicit mapping).
+    """
+
+    def __init__(self, publish_hz, stamp_offset_us=0, truth_odom=False, clock_hz=100.0,
+                 odom_hz=100.0, rtf_hz=1.0, pad_offset=(0.0, 0.0, -0.0999)):
+        self.pub_hz = float(max(1.0, publish_hz))
+        self.off = int(stamp_offset_us)
+        self.prev = None
+        self.next_us = None
+        self.count = 0
+        self.pad = np.asarray(pad_offset, float)
+        self.truth_odom = bool(truth_odom)
+        self.clock_period_us = int(1e6 / max(0.1, clock_hz))
+        self.odom_period_us = int(1e6 / max(0.1, odom_hz))
+        self.rtf_period_us = int(1e6 / max(0.1, rtf_hz))
+        self.next_clock_us = 0
+        self.next_odom_us = 0
+        self.next_rtf_us = 0
+        self._rtf_wall = None
+        self._rtf_sim = None
+        self.rtf = 1.0
+        # UNIFORM SAMPLE-TIME RECONSTRUCTION (see note in feed()): the arrival wall clock is bursty
+        # (TCP batches), so timestamps are reconstructed from a running estimate of the stream period
+        # instead of being taken from the arrival instant.
+        self.period_us = 3200.0
+        self.recon_us = None
+        self.last_arrival_us = None
+        self.sink = None          # optional callable(t_us, p, v, q, w, a): writes the tap-format CSV
+        # ROBUST period estimate: the mean arrival delta over the last block of samples.  An EMA over
+        # per-message deltas is biased here because TCP bursts put many deltas near 0 (excluded) and a
+        # few long ones in range (included), so the estimate crept up and the reconstructed timeline ran
+        # 1.6x fast (MEASURED 2026-11-25 phase1k: 202 Hz CSV out of a 323 Hz stream, 627 skipped scans).
+        self._blk_n = 0
+        self._blk_t = None
+        self._blk_idx = 0
+        import rclpy
+        from rclpy.node import Node
+        from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+        from nav_msgs.msg import Odometry
+        from sensor_msgs.msg import Imu
+        try:
+            from rclpy.signals import SignalHandlerOptions
+            rclpy.init(args=[], signal_handler_options=SignalHandlerOptions.NO)
+        except Exception:
+            rclpy.init(args=[])
+        self.rclpy = rclpy
+        self.node = Node("sim_state_truth")
+        qos = QoSProfile(depth=500, history=HistoryPolicy.KEEP_LAST,
+                         reliability=ReliabilityPolicy.BEST_EFFORT)
+        self.pub_odom = self.node.create_publisher(Odometry, "/sim/state", qos)
+        self.pub_imu = self.node.create_publisher(Imu, "/sim/state/imu", qos)
+        self.Odometry, self.Imu = Odometry, Imu
+        if self.truth_odom:
+            from rosgraph_msgs.msg import Clock
+            from std_msgs.msg import Float32
+            odom_qos = QoSProfile(depth=200, history=HistoryPolicy.KEEP_LAST,
+                                  reliability=ReliabilityPolicy.BEST_EFFORT)
+            self.pub_truth = self.node.create_publisher(Odometry, "/sim/truth/odom", odom_qos)
+            self.pub_clock = self.node.create_publisher(Clock, "/clock", odom_qos)
+            self.pub_rtf = self.node.create_publisher(Float32, "/sim/rtf", 10)
+            self.Clock, self.Float32 = Clock, Float32
+            # the W-frame conversion lives in ONE place (bridge_nodes/common/frames.py)
+            repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            bridge = os.path.join(repo, "bridge_nodes")
+            if bridge not in sys.path:
+                sys.path.insert(0, bridge)
+            from common import frames as _frames
+            self._frames = _frames
+            import time as _time
+            self._time = _time
+
+    @staticmethod
+    def _stamp(t_us):
+        from builtin_interfaces.msg import Time
+        s = Time()
+        s.sec = int(t_us // 1_000_000)
+        s.nanosec = int((t_us % 1_000_000) * 1000)
+        return s
+
+    def _emit(self, t_us, p, v, q, w, a):
+        from geometry_msgs.msg import Point, Quaternion, Vector3
+        if self.sink is not None:
+            self.sink(t_us, p, v, q, w, a)
+        stamp = self._stamp(t_us + self.off)
+        o = self.Odometry()
+        o.header.stamp = stamp
+        o.header.frame_id = "sim_ned"
+        o.child_frame_id = "sim_body_frd"
+        o.pose.pose.position = Point(x=float(p[0]), y=float(p[1]), z=float(p[2]))
+        o.pose.pose.orientation = Quaternion(w=float(q[0]), x=float(q[1]), y=float(q[2]), z=float(q[3]))
+        o.twist.twist.linear = Vector3(x=float(v[0]), y=float(v[1]), z=float(v[2]))
+        o.twist.twist.angular = Vector3(x=float(w[0]), y=float(w[1]), z=float(w[2]))
+        self.pub_odom.publish(o)
+        m = self.Imu()
+        m.header.stamp = stamp
+        m.header.frame_id = "sim_body_frd"
+        m.orientation = o.pose.pose.orientation
+        m.angular_velocity = o.twist.twist.angular
+        m.linear_acceleration = Vector3(x=float(a[0]), y=float(a[1]), z=float(a[2]))
+        self.pub_imu.publish(m)
+        if self.truth_odom:
+            if t_us >= self.next_clock_us:
+                self.next_clock_us = t_us + self.clock_period_us
+                cm = self.Clock()
+                cm.clock = stamp
+                self.pub_clock.publish(cm)
+            if t_us >= self.next_odom_us:
+                self.next_odom_us = t_us + self.odom_period_us
+                p_w, v_w, q_w = self._frames.wire_to_world(np.asarray(p), np.asarray(v), np.asarray(q))
+                o2 = self.Odometry()
+                o2.header.stamp = stamp
+                o2.header.frame_id = "world_w"
+                o2.child_frame_id = "truth_base_link"
+                o2.pose.pose.position = Point(x=float(p_w[0]), y=float(p_w[1]), z=float(p_w[2]))
+                o2.pose.pose.orientation = Quaternion(w=float(q_w[0]), x=float(q_w[1]),
+                                                      y=float(q_w[2]), z=float(q_w[3]))
+                o2.twist.twist.linear = Vector3(x=float(v_w[0]), y=float(v_w[1]), z=float(v_w[2]))
+                o2.twist.twist.angular = Vector3(x=float(w[0]), y=float(w[1]), z=float(w[2]))
+                self.pub_truth.publish(o2)
+            if t_us >= self.next_rtf_us:
+                self.next_rtf_us = t_us + self.rtf_period_us
+                wall = self._time.monotonic()
+                if self._rtf_wall is not None and wall > self._rtf_wall + 0.05:
+                    self.rtf = ((t_us - self._rtf_sim) * 1e-6) / (wall - self._rtf_wall)
+                self._rtf_wall, self._rtf_sim = wall, t_us
+                fm = self.Float32()
+                fm.data = float(self.rtf)
+                self.pub_rtf.publish(fm)
+
+    def reconstruct_time(self, arrival_us):
+        """Monotone SAMPLE time for one SIM_STATE message, from a running period estimate.
+
+        WHY NOT THE ARRIVAL TIME (MEASURED 2026-11-25): the client receives the ~328 Hz stream in TCP
+        batches, so several messages share (almost) the same arrival instant.  Using those instants as
+        sample times made the published grid bursty, the LiDAR's 20 ms window check report holes
+        (25-27 skipped scans, H6 FAIL) and the CSV carry a 1.04 s gap at arm (H2 FAIL).  The stream
+        period is stable, so reconstruct t = t_prev + period with the period tracked by an EMA over
+        plausible arrival deltas.  The absolute offset is the wall-vs-simulator map of D4, measured by
+        compare_truth (a~1, b=launch offset).
+        """
+        if self._blk_t is None:
+            self._blk_t, self._blk_idx = arrival_us, 0
+        self._blk_idx += 1
+        if self._blk_idx >= 100:
+            self.period_us = float(arrival_us - self._blk_t) / float(self._blk_idx)
+            self._blk_t, self._blk_idx = arrival_us, 0
+        if self.recon_us is None:
+            self.recon_us = arrival_us
+        else:
+            self.recon_us = int(self.recon_us + self.period_us)
+        self.last_arrival_us = arrival_us
+        return self.recon_us
+
+    def feed(self, t_us, p, v, q, w, a):
+        """One raw SIM_STATE sample (already on the reconstructed timeline).  Emits the grid samples."""
+        sample = (np.asarray(p, float), np.asarray(v, float), np.asarray(q, float),
+                  np.asarray(w, float), np.asarray(a, float))
+        if self.prev is None:
+            self.prev = (t_us, sample)
+            self.next_us = t_us
+            self._emit(t_us, *sample)
+            self.count += 1
+            return
+        t0, s0 = self.prev
+        t1, s1 = t_us, sample
+        step = max(1, int(round(1e6 / self.pub_hz)))
+        while self.next_us + step <= t1:
+            self.next_us += step
+            f = (self.next_us - t0) / float(t1 - t0) if t1 != t0 else 0.0
+            f = min(1.0, max(0.0, f))
+            p = (1.0 - f) * s0[0] + f * s1[0]
+            v = (1.0 - f) * s0[1] + f * s1[1]
+            q = (1.0 - f) * s0[2] + f * s1[2]          # normalised-linear (same as the tap consumer)
+            n = float(np.linalg.norm(q))
+            q = q / n if n > 0 else q
+            w = (1.0 - f) * s0[3] + f * s1[3]
+            a = (1.0 - f) * s0[4] + f * s1[4]
+            self._emit(self.next_us, p, v, q, w, a)
+            self.count += 1
+        self.prev = (t1, s1)
+
+    def keep_alive(self, now_wall_us):
+        """Fill a gap in the SIM_STATE stream by HOLDING the last sample on the publish grid.
+
+        WHY: the stream has one ~1 s hole per sortie, at the arm moment (MEASURED 2026-11-25: the tap
+        never has it, and with SIM_STATE as the truth it made the LiDAR skip 27 scans and the bridge
+        abort "ESTIMATOR FEED IS STALE: the LIO sample ... is 1.56 s old").  A held sample is exactly
+        right there -- the vehicle is parked while the FCU arms -- and the alternative (a hole) makes
+        the truth source look dead to the whole flight chain.
+        """
+        if self.prev is None or self.next_us is None or self.last_arrival_us is None:
+            return
+        # only fill when the stream has actually stalled (a couple of periods), and never more than 2 s
+        stall_us = now_wall_us - self.last_arrival_us
+        if stall_us < int(2.5 * self.period_us):
+            return
+        self.recon_us = int(self.recon_us + self.period_us)
+        self.period_us = float(self.period_us)
+        target = self.recon_us
+        step = max(1, int(round(1e6 / self.pub_hz)))
+        n = 0
+        while self.next_us + step <= target and n < int(2.0 * self.pub_hz):
+            self.next_us += step
+            _, (p, v, q, w, a) = self.prev
+            self._emit(self.next_us, p, v, q, w, a)
+            self.count += 1
+            n += 1
+        # advance the hold clock in step with the wall, so a long stall does not emit a burst later
+        self.last_arrival_us = int(now_wall_us - self.period_us)
+
+    def shutdown(self):
+        try:
+            self.node.destroy_node()
+            self.rclpy.shutdown()
+        except Exception:
+            pass
+
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mav", default="tcp:127.0.0.1:5782", help="SITL endpoint (a spare serial port)")
@@ -83,6 +328,31 @@ def main() -> int:
     ap.add_argument("--home", default="-35.363261,149.165230,584.0", help="SITL home: lat,lon,alt")
     ap.add_argument("--seconds", type=float, default=0.0, help="stop after N s (0 = until SIGTERM)")
     ap.add_argument("--report-hz", type=float, default=5.0, help="rate of the progress line on stderr")
+    # PHASE 1b: the same client becomes the TRUTH SOURCE of the flight path.
+    #   --ros            publish /sim/state (nav_msgs/Odometry, NED/FRD like the tap) + /sim/state/imu
+    #                    (sensor_msgs/Imu) at --publish-hz, interpolated between SIM_STATE samples
+    #   --tap-csv PATH   write a tap.csv-compatible file (same 19 columns as truth_rx) so scripts/accept.py
+    #                    keeps working when the firmware tap is no longer in the flight path
+    #   --publish-hz     the rate the flight stack sees; 200 Hz keeps lidar_imu's IMU decimation at 1
+    ap.add_argument("--ros", action="store_true", help="publish /sim/state and /sim/state/imu")
+    ap.add_argument("--publish-hz", type=float, default=200.0,
+                    help="rate of the published truth (must be >= the lidar IMU rate)")
+    ap.add_argument("--tap-csv", default="", help="also write a tap.csv-compatible CSV here")
+    ap.add_argument("--stamp-offset-us", type=int, default=0,
+                    help="added to the published/published-CSV timestamps (aligns the old tap's t=0)")
+    # PHASE 1b: REPLACE truth_rx AS WELL -- it publishes the W-frame truth the supervisor/recorders read.
+    ap.add_argument("--truth-odom", action="store_true",
+                    help="also publish /sim/truth/odom (world_w, like sim/src/truth_rx.py --ros)")
+    ap.add_argument("--clock-hz", type=float, default=100.0, help="rate of /clock when --truth-odom")
+    ap.add_argument("--odom-hz", type=float, default=100.0, help="rate of /sim/truth/odom")
+    ap.add_argument("--rtf-hz", type=float, default=1.0, help="rate of /sim/rtf")
+    ap.add_argument("--pad-offset-n", type=float, default=0.0,
+                    help="wire-NED north offset of the pad (integrated position starts here)")
+    ap.add_argument("--pad-offset-e", type=float, default=0.0, help="wire-NED east offset of the pad")
+    ap.add_argument("--pad-offset-d", type=float, default=-0.0999,
+                    help="wire-NED down offset of the pad: MEASURED 2026-11-25, the tap reports pd=-0.0999 "
+                         "parked, and integrating SIM_STATE velocity from this anchor reproduces the tap's "
+                         "position to 5.7 mm rms (n/e 2 mm, d 9.5 mm) with NO affine fit")
     args = ap.parse_args()
 
     signal.signal(signal.SIGTERM, _on_signal)
@@ -124,6 +394,27 @@ def main() -> int:
     got_hb = False
     acks = []
     warned = False
+    # ---- Phase 1b: this client is the truth source -------------------------------
+    truth_out = TruthOut(args.publish_hz, args.stamp_offset_us, truth_odom=args.truth_odom,
+                         clock_hz=args.clock_hz, odom_hz=args.odom_hz, rtf_hz=args.rtf_hz,
+                         pad_offset=(args.pad_offset_n, args.pad_offset_e, args.pad_offset_d)) \
+        if args.ros else None
+    tap_fh = open(args.tap_csv, "w") if args.tap_csv else None
+    if tap_fh is not None:
+        tap_fh.write(TAP_CSV_HEADER)
+    if truth_out is not None and tap_fh is not None:
+        def _tap_sink(t_us, p, v, q, w, a):
+            tap_fh.write(TAP_ROW % (t_us, p[0], p[1], p[2], v[0], v[1], v[2],
+                                    q[0], q[1], q[2], q[3], w[0], w[1], w[2], a[0], a[1], a[2]))
+        truth_out.sink = _tap_sink
+    p_ned_arr = None            # integrated position, anchored at the first sample
+    prev_t_us = None
+    prev_v = None
+    if truth_out is not None:
+        print("sim_state_recv: publishing /sim/state + /sim/state/imu at %.0f Hz (interpolated)"
+              % args.publish_hz, file=sys.stderr)
+    if tap_fh is not None:
+        print("sim_state_recv: writing tap-compatible CSV %s" % args.tap_csv, file=sys.stderr)
     try:
         while not GLOBAL_STOP:
             now = time.monotonic()
@@ -145,6 +436,8 @@ def main() -> int:
             # fit bias and 2 gaps > 20 ms).  Take one raw message per iteration and stamp it right after.
             msg = m.recv_msg()
             if msg is None:
+                if truth_out is not None:
+                    truth_out.keep_alive(int((time.monotonic() - t_start) * 1e6) + args.stamp_offset_us)
                 time.sleep(0.0005)
                 continue
             mtype = msg.get_type()
@@ -181,6 +474,36 @@ def main() -> int:
             lon_i = int(round(lon_deg * 1e7))
             # alt is AMSL in metres; SITL's --home alt is the ground reference
             p = enu.ned(lat_deg, lon_deg, msg.alt)
+            # ---- Phase 1b: reconstructed truth (position = anchor + integral of the velocity) ----
+            if truth_out is not None or tap_fh is not None:
+                v_cur = np.array([msg.vn, msg.ve, msg.vd], float)
+                if p_ned_arr is None:
+                    # THE ANCHOR IS THE PAD, NOT THE GEODETIC FIRST SAMPLE: MEASURED 2026-11-25, SITL's
+                    # reported pad lat/lon is ~0.47 m east of --home, and using it would shift every
+                    # cast/estimate by that much.  The model's own frame starts at the pad, and the tap
+                    # reports pd=-0.0999 parked, so the anchor is the calibratable pad offset.
+                    p_ned_arr = np.array([args.pad_offset_n, args.pad_offset_e, args.pad_offset_d], float)
+                elif prev_t_us is not None and t_wall_us > prev_t_us:
+                    dt_s = (t_wall_us - prev_t_us) * 1e-6
+                    p_ned_arr = p_ned_arr + 0.5 * (prev_v + v_cur) * dt_s
+                q_cur = np.array([msg.q1, msg.q2, msg.q3, msg.q4], float)
+                w_cur = np.array([msg.xgyro, msg.ygyro, msg.zgyro], float)
+                a_cur = np.array([msg.xacc, msg.yacc, msg.zacc], float)
+                if truth_out is not None:
+                    t_sample_us = truth_out.reconstruct_time(t_wall_us)
+                else:
+                    t_sample_us = t_wall_us
+                if truth_out is not None:
+                    truth_out.feed(t_sample_us + args.stamp_offset_us, p_ned_arr, v_cur, q_cur,
+                                   w_cur, a_cur)
+                if tap_fh is not None and truth_out is None:
+                    tap_fh.write(TAP_ROW % (t_sample_us + args.stamp_offset_us,
+                                            p_ned_arr[0], p_ned_arr[1], p_ned_arr[2],
+                                            v_cur[0], v_cur[1], v_cur[2],
+                                            q_cur[0], q_cur[1], q_cur[2], q_cur[3],
+                                            w_cur[0], w_cur[1], w_cur[2],
+                                            a_cur[0], a_cur[1], a_cur[2]))
+                prev_t_us, prev_v = t_wall_us, v_cur
             w.writerow([t_wall_us, int(time.time() * 1e6), "%.7f" % lat_deg, "%.7f" % lon_deg,
                         "%.3f" % msg.alt,
                         "%.7f" % msg.q1, "%.7f" % msg.q2, "%.7f" % msg.q3, "%.7f" % msg.q4,
@@ -200,6 +523,11 @@ def main() -> int:
         fh.flush()
         if args.csv:
             fh.close()
+        if tap_fh is not None:
+            tap_fh.flush()
+            tap_fh.close()
+        if truth_out is not None:
+            truth_out.shutdown()
         dt = time.monotonic() - t_start
         print("sim_state_recv: stopped, %d samples in %.2f s = %.1f Hz"
               % (n, dt, n / max(1e-6, dt)), file=sys.stderr)

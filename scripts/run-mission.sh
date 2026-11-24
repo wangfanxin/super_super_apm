@@ -31,6 +31,11 @@ REPO="$DSH_ROOT"                          # repo root (git status line, docs)
 WS=${LIO_WS}
 TAP="${TAP:-14560}"
 FAN="${FAN:-14561}"
+# PHASE 1b (D3/D4): WHO IS THE TRUTH?  `tap` keeps the patched-firmware path; `simstate` replaces it with
+# the self-built MAVLink client (sim/src/sim_state_recv.py --ros): it publishes /sim/state (+ /sim/state/imu)
+# for the LiDAR simulator, /sim/truth/odom + /clock + /sim/rtf for the supervisor/health checks, and writes
+# the tap-format CSV that scripts/accept.py reads.  No mavros, no tap in the flight path.
+TRUTH_SRC="${TRUTH_SRC:-tap}"
 PORT0="${PORT0:-5780}"
 PORT1="${PORT1:-5781}"
 PORT2="${PORT2:-5782}"
@@ -809,6 +814,25 @@ done
 grep -q TruthTap "$OUT/sitl.log" || { echo "tap never reported"; exit 1; }
 echo "SITL stepping"
 
+if [ "$TRUTH_SRC" = "simstate" ]; then
+    # THE CLIENT IS THE TRUTH (Phase 1b).  --tap-csv writes the SAME 19-column format truth_rx wrote, so
+    # scripts/accept.py and every offline tool keep working unchanged.
+    $AUX_PREFIX python3 "$SIM/src/sim_state_recv.py" --mav "tcp:127.0.0.1:${PORT2:-5782}" \
+        --hz "${SIM_STATE_HZ:-1000}" --home="${SIM_STATE_HOME:--35.363261,149.165230,584.0}" \
+        --csv "$OUT/sim_state.csv" --ros --publish-hz 200 --tap-csv "$OUT/tap.csv" --truth-odom \
+        --clock-hz 100 --odom-hz 100 --rtf-hz 10 > "$OUT/truth_rx.log" 2>&1 &
+    RX_PID=$!
+    SS_PID=""
+    echo "   truth    : SIM_STATE via our own MAVLink client (TRUTH_SRC=simstate; no tap in the flight path)"
+    if [ "${LEGACY_TAP:-0}" = "1" ]; then
+        python3 "$SIM/src/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout $FAN \
+            --fanout-decimate 6 --csv "$OUT/tap_legacy.csv" --save "$OUT/truth_report.txt" \
+            > "$OUT/truth_rx_legacy.log" 2>&1 &
+        LEGACY_PID=$!
+        echo "   truth    : ALSO recording the legacy tap to tap_legacy.csv (verification only)"
+    fi
+    sleep 2
+else
 python3 "$SIM/src/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout $FAN \
     --fanout-decimate 6 --csv "$OUT/tap.csv" --save "$OUT/truth_report.txt" \
     > "$OUT/truth_rx.log" 2>&1 &
@@ -818,7 +842,7 @@ sleep 2
 # client from the spare serial2 port; it needs no firmware patch.  It is recorded ALONGSIDE the tap for
 # now (SIM_STATE=1) so scripts/compare_truth.py can measure the clock map and the agreement before the
 # tap is removed from the flight path.  Only http://mavlink.io SIM_STATE fields are used.
-if [ "${SIM_STATE:-0}" = "1" ]; then
+if [ "$TRUTH_SRC" != "simstate" ] && [ "${SIM_STATE:-0}" = "1" ]; then
     # SIM_STATE RATE: 100 Hz is the most this firmware accepts -- ArduPilot's set_message_interval returns
     # MAV_RESULT_DENIED ("Requested rate for message ID 108 too fast. Increase SCHED_LOOP_RATE") for 120 Hz
     # and 200 Hz on the flight parameter set; MEASURED 2026-11-25.  A higher rate needs SCHED_LOOP_RATE moved,
@@ -831,6 +855,7 @@ if [ "${SIM_STATE:-0}" = "1" ]; then
 else
     SS_PID=""
 fi
+fi
 sleep 1
 # THE SENSOR RATES ARE THE HARDWARE'S, NOT TUNING KNOBS (owner, 2026-10-25):
 #    lidar 10 Hz, IMU 200 Hz, 20000 points per scan.
@@ -842,8 +867,9 @@ sleep 1
 # the simulator fell to 5.6 scans/s and dragged the LIO and the whole chain with it.  (lidar_imu.py
 # documents the same pathology at its own line 544.)  One thread is both faster and far more stable.
 SENSOR_PREFIX=$(pin_cmd "$SENSOR_CORES")
+if [ "$TRUTH_SRC" = "simstate" ]; then LIDAR_TRUTH_ARG="--truth-topic /sim/state"; else LIDAR_TRUTH_ARG="--port $FAN"; fi
 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
-$SENSOR_PREFIX python3 "$SIM/src/lidar_imu.py" --port $FAN --world "$WORLD" \
+$SENSOR_PREFIX python3 "$SIM/src/lidar_imu.py" $LIDAR_TRUTH_ARG --world "$WORLD" \
     --points "${LIDAR_POINTS:-20000}" \
     --scan-hz "${LIDAR_SCAN_HZ:-10.0}" \
     --imu-hz "${LIDAR_IMU_HZ:-200.0}" \

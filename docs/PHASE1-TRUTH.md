@@ -156,3 +156,49 @@ full run        : pos rms 9.4 mm (p99 51 mm), vel 2.8 mm/s, att 0.592°, gaps 1(
 **结论**：SIM_STATE 作为真值源在**飞行窗口**满足 Phase 1 判据（位置 <1 cm、速度 <2 cm/s、姿态 <0.5°、
 速率 >90 Hz、显式时钟映射），可以进入"从飞行路径移除 tap"的实现（`/sim/state` 话题 + lidar 消费它）。
 
+## Phase 1b：把 tap 从飞行路径移除（2026-11-25 实现 + 首飞）
+
+`TRUTH_SRC=simstate` 已接进 `scripts/run-mission.sh`：
+
+* `sim/src/sim_state_recv.py --ros` 现在是**真值节点**：订阅 SIM_STATE（msg 108）后发布
+  `/sim/state`（nav_msgs/Odometry，NED/FRD，位置 = pad 锚点 + 速度积分）、`/sim/state/imu`
+  （sensor_msgs/Imu，与 odom 同 stamp，按 stamp 配对）、`/sim/truth/odom`（world_w，供 supervisor/
+  记录器，w 系转换走 `bridge_nodes/common/frames.py` 一处）、`/clock`、`/sim/rtf`；并把它发布网格上的
+  同一串样本写成 **tap 格式 CSV**（`tap.csv`，表头/列与 truth_rx 一致），所以 `scripts/accept.py`
+  不用改。
+* `sim/src/lidar_imu.py --truth-topic /sim/state`：改用 ROS 真值而不是 UDP tap。两个关键修正：
+  订阅必须在**专用 spin 线程**里跑（主循环一次 spin_once 只处理一个回调，200 Hz 真值 = 400 回调/s，
+  实测 IMU 掉到 15–20 Hz、75/80 扫描被跳过）；按 header stamp 配对 odom/imu 时**先查再 pop**
+  （先 pop 会把 odom 吃掉，配对永远失败）。
+* 调度：客户端用**重建的均匀采样时刻**（滚动块平均周期），而不是 TCP 到达时刻——到达是成批的，
+  直接用会让 LiDAR 的 20 ms 窗口检查报洞、CSV 出现 1.04 s 空洞、重建时间轴 1.6× 偏快（phase1k 实测
+  202 Hz/323 Hz、627 次跳扫）。
+* 机头仍用带 tap 补丁的固件（tap 仍在发、但飞行路径不再读它）；删除补丁/truth_rx/fanout 是下一步。
+
+**无飞行管线校验**：`bash scripts/check_truth_ros.sh`（SITL → 客户端 → /sim/state → lidar → Super-LIO）。
+实测 PASS：cloud 9.88 Hz、IMU 195.3 Hz、cast 15.8 ms、skipped 0；CSV 恰好 200.0 Hz、max gap 5.0 ms、
+>10 ms 空洞 0。
+
+**首飞（`missionA-phase1l-01-01`，预热 + LIGHT + TRUTH_SRC=simstate + LEGACY_TAP=1）**
+飞行完整：13.7 s 布防、152.5 s 正常 LAND + disarm。同一趟用两种真值打分（accept 相同参数）：
+
+| 行 | 旧 tap 真值 | SIM_STATE 真值 |
+|---|---|---|
+| H1 rtf | 0.9998 | 0.9998 |
+| H5 水平跨度 | 10.65 m（FCU 10.60） | 10.66 m（FCU 10.60） |
+| W1 / W1b | 13/13；worst 0.19 m | 13/13；worst 0.19 m |
+| W2 p90 | 1.51 | 1.49 |
+| W3 偏差 p50 | -0.089 m | -0.088 m |
+| W6 ZERO lag p50 / spread | 0.596 m / 0.120 s | **0.229 m / 0.117 s** |
+| H2 | 1200.5 Hz，0 gap | **333 Hz，max gap 0.64 s，101 gap>10ms** |
+| H6 skipped | 3 | 3（同一 lidar 日志） |
+
+* **H1/H5 在更换真值后仍 PASS** —— 这是计划给 Phase 1b 的验收条件。
+* H2 的 380 Hz 速率下限/空洞门槛是**为 1.2 kHz tap 定的**（SIM_STATE 上限 ~330 Hz，被
+  `SCHED_LOOP_RATE` 卡住）；这属于验收判据类改动（P0，延后），但"真值切 SIM_STATE"后必须重新定义。
+* **W6 两种真值差 0.37 m**（计划要求 <0.01 m）：根因是客户端时间轴用"块平均周期"重建，飞行 130 s 上
+  仍有相对漂移（W0 起点差 0.35 s 也指示这一点）。修法是改成"到达时刻的滚动线性回归（alpha+beta·i）"
+  当时间轴，漂移相对 wall 恒定为 0；这是下一步的第一件。
+* 相对旧 tap 真值，SIM_STATE 真值还让 **W6 从 0.596 m 降到 0.229 m**（旧 tap 的 1.2 kHz 自身时序
+  有 ~0.6 m 的等效滞后，值得下一轮用同一趟数据核实是谁的偏差）。
+
