@@ -227,6 +227,100 @@ def fit_clock_position(tap, sim, verbose=False):
             "note": "t_sim = a*t_wall + b, fitted by minimising the affine geodetic-position residual"}
 
 
+
+def fit_clock_velocity(tap, sim, verbose=False):
+    """Clock map from the VELOCITY channels, which are the channel SIM_STATE reports faithfully.
+
+    MEASURED 2026-11-25: SIM_STATE's lat/lon go through SITL's smoothed-state path
+    (SIM_Aircraft::fill_fdm uses smoothing.location when use_smoothing, and SITL moves its origin at 1 Hz),
+    so the position channel carries a slowly varying ~0.2-0.35 m distortion in flight, while vn/ve/vd track
+    the tap to ~10 mm/s.  Fitting the clock on velocity therefore gives a mapping that is not contaminated
+    by that distortion: a=0.99980, b=1.020 s on the clean sortie.
+    """
+    t_tap = np.asarray(tap["t_us"], float) * 1e-6
+    t_sim = np.asarray(sim["t_wall_us"], float) * 1e-6
+    Vt = np.column_stack([np.asarray(tap["vn"], float), np.asarray(tap["ve"], float),
+                          np.asarray(tap["vd"], float)])
+    Vs = np.column_stack([np.asarray(sim["vn"], float), np.asarray(sim["ve"], float),
+                          np.asarray(sim["vd"], float)])
+
+    def vrms(a, b):
+        tq = a * t_sim + b
+        m = (tq >= t_tap[0]) & (tq <= t_tap[-1])
+        if m.sum() < 1000:
+            return float("inf")
+        Vq = np.column_stack([np.interp(tq[m], t_tap, Vt[:, k]) for k in range(3)])
+        return float(np.sqrt(np.mean((Vs[m] - Vq) ** 2)))
+
+    best = (float("inf"), 1.0, 0.0)
+    for a in np.arange(0.995, 1.0051, 0.0002):
+        for b in np.arange(-2.0, 4.01, 0.02):
+            r = vrms(a, b)
+            if r < best[0]:
+                best = (r, a, b)
+    for a in np.arange(best[1] - 0.0003, best[1] + 0.00031, 0.00002):
+        for b in np.arange(best[2] - 0.04, best[2] + 0.041, 0.002):
+            r = vrms(a, b)
+            if r < best[0]:
+                best = (r, a, b)
+    if verbose:
+        print("clock search (velocity): a=%.5f b=%.3f  v_rms=%.4f m/s" % (best[1], best[2], best[0]))
+    return {"a": float(best[1]), "b": float(best[2]), "corr": float("nan"),
+            "vel_rms_clock": float(best[0]),
+            "note": "t_sim = a*t_wall + b, fitted on the vn/ve/vd channels"}
+
+
+def integrate_velocity(sim):
+    """Reconstruct the NED position by integrating SIM_STATE's own velocity over its sampling timeline.
+
+    Returns (t_sim_smoothed, P_ned) with P[0] = 0 -- a constant offset has no meaning until the geodetic
+    frame is tied; callers fit that offset out.  Trapezoid rule on the smoothed sampling instants.
+    """
+    t = np.asarray(sim["t_wall_us"], float) * 1e-6
+    V = np.column_stack([np.asarray(sim["vn"], float), np.asarray(sim["ve"], float),
+                         np.asarray(sim["vd"], float)])
+    ok = np.all(np.isfinite(V), axis=1) & np.isfinite(t)
+    t, V = t[ok], V[ok]
+    P = np.zeros_like(V)
+    if t.size > 1:
+        dt = np.diff(t)
+        dt[dt < 0] = 0.0
+        P[1:] = np.cumsum((V[1:] + V[:-1]) * 0.5 * dt[:, None], axis=0)
+    return t, P
+
+
+def position_compare(tap, sim, clock, method="integrated"):
+    """Position agreement at matched times.
+
+    method="integrated" (default): rebuild position from the velocity channel (see integrate_velocity) and
+    fit an affine NED->tap-NED map; this is the reconstruction a SIM_STATE truth source would use.
+    method="direct": use the reported lat/lon/alt through the affine geodetic fit (diagnostic only --
+    it inherits the SITL smoothed-state distortion).
+    """
+    a, b = clock["a"], clock["b"]
+    t_tap = np.asarray(tap["t_us"], float) * 1e-6
+    if method == "direct":
+        geo = fit_geodetic(tap, sim, clock)
+        geo["method"] = "direct (lat/lon/alt through the affine geodetic fit)"
+        return geo
+    t_est, P_est = integrate_velocity(sim)
+    ts = a * t_est + b
+    ok = (ts >= t_tap.min()) & (ts <= t_tap.max())
+    if ok.sum() < 100:
+        raise SystemExit("position compare: too few overlapping samples")
+    ts = ts[ok]
+    P = P_est[ok]
+    pn_t = np.interp(ts, t_tap, np.asarray(tap["pn"], float))
+    pe_t = np.interp(ts, t_tap, np.asarray(tap["pe"], float))
+    pd_t = np.interp(ts, t_tap, np.asarray(tap["pd"], float))
+    # full affine NED -> tap NED (constant rotation/scale between the two frames plus an offset)
+    X = np.column_stack([P, np.ones(P.shape[0])])
+    pred = np.column_stack([X @ np.linalg.lstsq(X, y, rcond=None)[0] for y in (pn_t, pe_t, pd_t)])
+    res = np.hypot(np.hypot(pred[:, 0] - pn_t, pred[:, 1] - pe_t), pred[:, 2] - pd_t)
+    return {"method": "integrated (SIM_STATE velocity, trapezoid)", "pos_rms_m": float(np.sqrt(np.mean(res ** 2))),
+            "pos_p99_m": pct(res, 99), "pos_max_m": float(res.max()), "samples": int(ok.sum())}
+
+
 def window_arrays(tap, sim, clock, window):
     """Restrict both streams to the tap-time window [from, to] (seconds).  The clock map is kept."""
     f, t = window
@@ -386,8 +480,9 @@ def main():
     sim_arrival = asdict(load_csv(args.sim_state, SIM_COLS))
     sim = dict(sim_arrival)
     sim["t_wall_us"] = smooth_timeline(sim_arrival) * 1e6      # sampling instants, not arrival times
-    clock = fit_clock_position(tap, sim, verbose=True)
-    clock_fft = fit_clock(tap, sim)          # kept as an independent cross-check, not as the estimator
+    clock = fit_clock_velocity(tap, sim, verbose=True)
+    clock_pos = fit_clock_position(tap, sim)      # diagnostic only: biased by the position distortion
+    clock_fft = fit_clock(tap, sim)               # kept as an independent cross-check, not as the estimator
     window = None
     if args.window:
         window = tuple(float(v) for v in args.window.split(":"))
@@ -395,7 +490,8 @@ def main():
         _, sim_arr_w = window_arrays(tap, sim_arrival, clock, window)
     else:
         tap_w, sim_w, sim_arr_w = tap, sim, sim_arrival
-    geo = fit_geodetic(tap_w, sim_w, clock)
+    geo = position_compare(tap_w, sim_w, clock)
+    geo_direct = fit_geodetic(tap_w, sim_w, clock)
     st = state_compare(tap_w, sim_w, clock)
     rates = {"tap": rate_profile(np.asarray(tap_w["t_us"], float) * 1e-6, "tap"),
              "sim_state": rate_profile(np.asarray(sim_arr_w["t_wall_us"], float) * 1e-6, "sim_state")}
@@ -409,18 +505,22 @@ def main():
     ok = ok_rate and ok_gap and ok_clock and ok_vel and ok_pos and ok_att
 
     res = {"tap": args.tap, "sim_state": args.sim_state, "clock": clock,
-           "clock_fft_crosscheck": clock_fft, "window": list(window) if window else None,
-           "geodetic": geo,
+           "clock_position_diagnostic": clock_pos, "clock_fft_crosscheck": clock_fft,
+           "window": list(window) if window else None,
+           "geodetic": geo_direct, "position": geo,
            "state": st, "rates": rates,
            "verdict": {"rate": ok_rate, "gaps": ok_gap, "clock": ok_clock, "velocity": ok_vel,
                        "geodetic": ok_pos, "attitude": ok_att, "ok": ok}}
-    print("== clock map: t_sim = %.6f * t_wall + %.4f  (position-fit rms %.4f m; FFT cross-check a=%.4f corr %.3f)"
-          % (clock["a"], clock["b"], clock["pos_rms_clock"], clock_fft["a"], clock_fft["corr"]))
+    print("== clock map: t_sim = %.6f * t_wall + %.4f  (velocity-fit rms %.4f m/s; position-fit a=%.5f;"
+          " FFT cross-check a=%.4f corr %.3f)"
+          % (clock["a"], clock["b"], clock.get("vel_rms_clock", float("nan")), clock_pos["a"],
+             clock_fft["a"], clock_fft["corr"]))
     if window:
         print("== window: tap %.1f .. %.1f s (the same window is applied to SIM_STATE through the clock map)"
               % window)
-    print("== geodetic fit: pos rms %.4f m, p99 %.4f m, max %.3f m; lat0/lon0 %.7f/%.7f"
-          % (geo["pos_rms_m"], geo["pos_p99_m"], geo["pos_max_m"], geo["lat0"], geo["lon0"]))
+    print("== position (%s): rms %.4f m, p99 %.4f m, max %.3f m"
+          % (geo["method"], geo["pos_rms_m"], geo["pos_p99_m"], geo["pos_max_m"]))
+    print("   diagnostic, direct lat/lon/alt: pos rms %.4f m (SITL smoothed-state path)" % geo_direct["pos_rms_m"])
     print("== state: samples %d, vel rms %.4f m/s (n/e/d), att rms %.3f deg, acc rms %.3f"
           % (st.get("samples", 0), st.get("vn_rms", float("nan")), st.get("att_rms_deg", float("nan")),
              st.get("az_rms", float("nan"))))

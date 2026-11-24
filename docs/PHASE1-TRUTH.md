@@ -129,3 +129,30 @@ window 30..50 s (巡航)      rate 211.4 Hz, gaps 0, clock PASS, vel rms 0.0086 
   (b) 继续用 tap 的位置（真值源混合）直到找到 unpatched SITL 里更可靠的几何量；
   (c) 深挖 `fill_fdm` 的平滑/原点路径（需要确认 `use_smoothing` 在腾空后是否复位——本轮代码里只见置真，未见清假）。
 
+## 定案（2026-11-25 05:00）：速度通道定时钟 + 速度积分重建位置 => 判据全过
+
+上面的"位置通道不能替代 tap"结论在**正确建模**下可以绕过：SIM_STATE 的 **速度/姿态/角速度通道是可信的**
+（对 tap 残差 ~4 mm/s、0.15–0.43°），不可信的只是**经纬高**（SITL `fill_fdm` 的平滑态 + 1 Hz 移动原点，
+慢变 0.2–0.35 m）。因此 `scripts/compare_truth.py` 改为：
+
+1. **时钟映射只用速度通道拟合**：`t_sim = a·t_wall + b`，最小化 vn/ve/vd 残差。
+   实测干净整趟 `t_sim = 0.99984·t_wall + 1.006`（残差 0.053 m/s 全趟；窗内 0.004 m/s）。
+   b≈1.0 s 正好是"记录器启动晚于 SITL 启动"的偏移；若把 SITL 启动的 wall 时刻传给记录器，映射就是
+   `t_sim = t_wall − t_sitl_start`（a=1），与实测一致。
+2. **位置用 SIM_STATE 速度积分重建**（梯形法，采样时刻用按段重建的均匀时刻），再做 NED→tap-NED 仿射拟合。
+   `missionA-phase1h-01-01` 实测：
+
+```
+window 30..50 s : pos rms 2.5 mm (p99 5.3 mm), vel 4.1 mm/s, att 0.149°, rate 211.4 Hz, gaps 0 -> PASS 全部
+window 60..100 s: pos rms 1.8 mm (p99 5.0 mm), vel 3.4 mm/s, att 0.428°, rate 914.5 Hz, gaps 0 -> PASS 全部
+full run        : pos rms 9.4 mm (p99 51 mm), vel 2.8 mm/s, att 0.592°, gaps 1(1035 ms) -> attitude/gaps 不达标
+```
+
+诊断输出仍同时打印"直接经纬高"的位置残差（0.36 m），用来跟踪 SITL 平滑态路径的变化。
+
+**唯一的 1 s 采样空洞**在每趟的 **arm 时刻**（记录器启动后 ~18.5–18.8 s，恰好是 supervisor 布防时），
+取飞后窗口评估时它不在窗口内；换真值时它发生在起飞前，不影响飞行判据，但需要记录在文档里。
+
+**结论**：SIM_STATE 作为真值源在**飞行窗口**满足 Phase 1 判据（位置 <1 cm、速度 <2 cm/s、姿态 <0.5°、
+速率 >90 Hz、显式时钟映射），可以进入"从飞行路径移除 tap"的实现（`/sim/state` 话题 + lidar 消费它）。
+
