@@ -31,8 +31,8 @@ REPO="$DSH_ROOT"                          # repo root (git status line, docs)
 WS=${LIO_WS}
 TAP="${TAP:-14560}"
 FAN="${FAN:-14561}"
-PORT0="${PORT0:-5760}"
-PORT1="${PORT1:-5761}"
+PORT0="${PORT0:-5780}"
+PORT1="${PORT1:-5781}"
 PORT2="${PORT2:-5763}"
 PORT3="${PORT3:-5764}"
 TAG="${1:-$(date +%Y%m%d_%H%M%S)}"
@@ -904,7 +904,7 @@ if [ "$PLANNER" = "rectangle" ]; then
 else
     YAW_ARG=""
 fi
-python3 "$ARD/bridge/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
+python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
     --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
     --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" \
     > "$OUT/bridge.log" 2>&1 &
@@ -916,7 +916,7 @@ kill -0 "$BRIDGE_PID" 2>/dev/null || { echo "the bridge process died:"; tail -20
 # four gates, LAND and the NAMED abort.  Its inputs are the truth and the LINK, never the LIO in flight.
 # It is last because its exit is the sortie's result, and because the two processes it watches must already
 # be publishing when it starts.
-python3 "$ARD/supervisor/supervisor.py" --mav "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
+python3 "$BRIDGE/supervisor/supervisor.py" --mav "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
     --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
     --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
     --phase-log "$OUT/phase.csv" > "$OUT/supervisor.log" 2>&1

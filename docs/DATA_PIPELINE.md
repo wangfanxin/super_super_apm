@@ -4,7 +4,7 @@
 > 它与 `docs/CHAIN.md`（第 87 轮的逐段快照）、`docs/PIPELINE.md`（更早的状态机笔记）的区别是：
 > 那两份是历史记录，**这份是当前实现**，并且把"运行时的数据流"和"离线产物的数据流"画在一起。
 > 数字来自三处：`scripts/run-mission.sh`（启动器）、`scripts/run_until_healthy.sh`（飞行臂）、
-> `apm_thin/ros/planner_source_super.py`（薄层），以及最近一次实测记录 `smoke3-01-01` 与
+> `bridge_nodes/thin/planner_source_super.py`（薄层），以及最近一次实测记录 `smoke3-01-01` 与
 > `kx6-03-01-01`（后者是 14 行全过的那趟）。
 
 ---
@@ -69,7 +69,7 @@
 |---|---|---|
 | **W** | 任务系（ENU，场地坐标；角点半径 10.000 m） | `sim/worlds/forest_hex12.yaml` |
 | **L** | LIO 世界系（SUPER 看到的点云/地图所在系） | Super-LIO 初始化 |
-| **fcu/compass** | 发给飞控的偏航（罗盘航向） | `apm_thin/common/frames.py` 的 `l_to_wire_yaw()` |
+| **fcu/compass** | 发给飞控的偏航（罗盘航向） | `bridge_nodes/common/frames.py` 的 `l_to_wire_yaw()` |
 | **t_wall** | `time.monotonic()`（薄层、bridge 同一个进程时钟） | 记录里所有 `t_wall` 列 |
 | **t_sim_us** | SITL 仿真时间（微秒） | `tap.csv` / `setpoints.csv` 的 `t_sim_us` |
 
@@ -101,9 +101,9 @@ L→W 的换算只有一条实现：`calib/calib.json`（yaw +90.049771°，t = 
 | 雷达/IMU 仿真 | `sim/src/lidar_imu.py` | 10 Hz / 200 Hz | `lidar_imu.log`、`cloud.csv`（可选） |
 | 估计器 | `ros2 run super_lio super_lio_node` | 200 Hz odom | `lio.csv`、`lio.log` |
 | SUPER 规划器 | `hku_super/.../fsm_node`（`config_name` 由薄层传） | 10 Hz 重规划 | `traj.log`（规划器自身日志） |
-| 薄层 | `apm_thin/ros/planner_source_super.py` | 100 Hz | `traj.csv`（参考轨迹记录） |
-| 桥 | `ardupilot/bridge/bridge_node.py` | 50 Hz 上线 | `setpoints.csv`、`wire.csv`、`bridge.log` |
-| 监督器 | `ardupilot/supervisor/supervisor.py` | 事件驱动 | `supervisor.log`、`phase.csv` |
+| 薄层 | `bridge_nodes/thin/planner_source_super.py` | 100 Hz | `traj.csv`（参考轨迹记录） |
+| 桥 | `bridge_nodes/mavlink/bridge_node.py` | 50 Hz 上线 | `setpoints.csv`、`wire.csv`、`bridge.log` |
+| 监督器 | `bridge_nodes/supervisor/supervisor.py` | 事件驱动 | `supervisor.log`、`phase.csv` |
 | 指标 | `scripts/metrics.py` | 结束后一次 | `metrics.txt` |
 | 评分 | `scripts/accept.py` | 结束后一次 | `accept.json` |
 
@@ -154,7 +154,7 @@ L→W 的换算只有一条实现：`calib/calib.json`（yaw +90.049771°，t = 
 | 类别 | 位置 | 进 git？ | 说明 |
 |---|---|---|---|
 | 源码/配置/世界/参数/标定/文档/图 | 仓库内 | **是** | 全部可复现的输入 |
-| 第三方源码（SUPER/Super-LIO/livox） | `third_party/` | **是**（SUPER 已打补丁） | 见 `third_party/pins.env` |
+| 第三方源码（SUPER/Super-LIO/livox） | `hku_super/`、`slam/` | **是**（SUPER 已打补丁） | 见 `PINS.env` |
 | ArduPilot SITL | `.build/ardupilot` | 否 | `setup/fetch_ardupilot.sh` 固定 commit |
 | MID-360 射线图案 | `sim/pattern/*.csv` | 否（供应商数据） | `sim/pattern/README.md` / `scripts/check_pattern.sh` |
 | 编译产物 | `.build/` | 否 | `setup/build.sh` |
@@ -196,11 +196,11 @@ PINS.env     第三方 commit 与补丁说明
 ## 10. 与"别人的项目"的对照（为什么这样分）
 
 * **ROS 2 工作区惯例**（SUPER/Super-LIO/livox 各自是独立包）→ 本仓库不把它们揉进自己的源码树，
-  而是放 `third_party/` 并用 `setup/build.sh` 软链进 `.build/ws_*`；这与 ArduPilot 的 `--defaults`
+  而是放 `hku_super/`、`slam/` 并用 `setup/build.sh` 软链进 `.build/ws_*`；这与 ArduPilot 的 `--defaults`
   外置参数、PX4 的 `ROMFS/init.d` 外置启动脚本是同一类做法：**上游源码只读，改动以补丁脚本存在**。
 * **研究仓库惯例**（如 FAST-LIO/EGO-Planner 的 docs/ + scripts/ + config/ 三分）→ 我们保留
   `docs/`（规约与记录分开）、`scripts/`（可复现实验入口）、`config/`（实验变量）；
-  额外用 `third_party/pins.env` 记录 commit（EGO/FAST-LIO 常用 submodule，我们用 vendored + pins，
+  额外用 `PINS.env` 记录 commit（EGO/FAST-LIO 常用 submodule，我们用 vendored + pins，
   避免 clone 时必须 `--recursive`）。
 * **可复现性惯例**（论文仓库常见 `reproduce.sh`）→ 我们的对应物是 `setup/run_hex.sh` +
   `tests/run_all.sh`：前者一条命令飞+评分，后者一条命令做无飞行自检（静态闸门、图案、单测、链接检查）。
