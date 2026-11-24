@@ -243,6 +243,24 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 06:00（第 10 条，Phase 1b 打磨：时间基对齐/流就绪门/重连；剩 LIO 停顿）
+
+**本轮修复（全部已提交前验证）**
+- 时间基：launcher 把 `client_start - sitl_start` 传给客户端 `--stamp-offset-us`；真值 t=0 = 仿真 t=0。
+  实测 phase1p 的 W6 偏移 +0.600 s、四段 spread **0.005 s**（此前块平均周期 0.118 s、两真值差 0.37 m）→ **漂移解决**。
+- 采样时刻：滚动最小二乘（alpha+beta·i）替代块平均；CSV 200.0 Hz、max gap 5 ms、0 空洞（H2 的空洞项已过）。
+- 流就绪门：客户端等 autopilot 心跳（system≥1）；`FIRST SIM_STATE` 后 launcher 才起 LiDAR；8 s 无样本自动重连。
+  phase1o 的教训：早起 LiDAR 进带洞缓冲区 -> 271 次跳扫、LIO 无里程计、abort。
+- 客户端把发布网格写成 tap 格式 CSV（accept 免改），H2 的 max gap 从 1.04 s → 0.005 s。
+
+**剩余**
+- phase1p 飞行中段一次 **LIO 1.70 s 停顿** → "ESTIMATOR FEED IS STALE"（1.50 s 限）→ LAND 不完整、W1 6/13。
+  H6 skipped 21（门槛 20）。都指向 SIM_STATE→ROS 偶发丢包/停顿：下一轮做单条组合消息（回调减半）+ DDS 资源上限
+  + 客户端 hold 策略，再复飞拿一趟完整两圈。
+- H2 rate 200 Hz vs 380 门槛属 tap 时代判据（P0 延后，需随真值重定义）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

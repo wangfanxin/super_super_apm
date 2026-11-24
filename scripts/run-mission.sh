@@ -689,6 +689,7 @@ PLANNER_CORES=${PLANNER_CORES:-12-15}
 AUX_PREFIX=$(pin_cmd "$AUX_CORES")
 PLANNER_PREFIX=$(pin_cmd "$PLANNER_CORES")
 BAG_PREFIX=$(pin_cmd "$BAG_CORES")
+SITL_T0_US=$(date +%s%6N)     # truth time base: the client's t=0 must be the simulator's t=0
 setsid nohup $SETSID_PREFIX env LIO_TRUTH_TAP=$TAP "$BIN" --model "$SITL_MODEL" --speedup 1 -I0 \
     --home -35.363261,149.165230,584,0 --serial0 tcp:${PORT0:-5780} --serial1 tcp:${PORT1:-5781} --serial2 tcp:${PORT2:-5782} --serial3 tcp:${PORT3:-5783} \
     --defaults "$ARD/params/apm_lio_only.parm,$ARD/params/sitl_basics.parm,$ALT_PARM,$MISSION_PARM$EKF_ARG$EXTRA_ARG" \
@@ -817,10 +818,14 @@ echo "SITL stepping"
 if [ "$TRUTH_SRC" = "simstate" ]; then
     # THE CLIENT IS THE TRUTH (Phase 1b).  --tap-csv writes the SAME 19-column format truth_rx wrote, so
     # scripts/accept.py and every offline tool keep working unchanged.
+    CLIENT_T0_US=$(date +%s%6N)
+    TRUTH_OFFSET_US=$((CLIENT_T0_US - SITL_T0_US))
+    echo "   truth    : SIM_STATE time base offset +${TRUTH_OFFSET_US} us (client start - SITL start)"
     $AUX_PREFIX python3 "$SIM/src/sim_state_recv.py" --mav "tcp:127.0.0.1:${PORT2:-5782}" \
         --hz "${SIM_STATE_HZ:-1000}" --home="${SIM_STATE_HOME:--35.363261,149.165230,584.0}" \
         --csv "$OUT/sim_state.csv" --ros --publish-hz 200 --tap-csv "$OUT/tap.csv" --truth-odom \
-        --clock-hz 100 --odom-hz 100 --rtf-hz 10 > "$OUT/truth_rx.log" 2>&1 &
+        --stamp-offset-us "$TRUTH_OFFSET_US" --clock-hz 100 --odom-hz 100 --rtf-hz 10 \
+        > "$OUT/truth_rx.log" 2>&1 &
     RX_PID=$!
     SS_PID=""
     echo "   truth    : SIM_STATE via our own MAVLink client (TRUTH_SRC=simstate; no tap in the flight path)"
@@ -831,7 +836,21 @@ if [ "$TRUTH_SRC" = "simstate" ]; then
         LEGACY_PID=$!
         echo "   truth    : ALSO recording the legacy tap to tap_legacy.csv (verification only)"
     fi
-    sleep 2
+    # GATE ON THE TRUTH BEING UP BEFORE THE SENSOR STARTS (MEASURED 2026-11-25 phase1o: the client
+    # connected at t~2 s, the stream scheduler answered DENIED until ~10 s, the LiDAR started into a
+    # hole-y buffer, 271 scans were skipped and the LIO never produced odometry -> abort).
+    _ready=0
+    for _ in $(seq 1 120); do
+        grep -q "FIRST SIM_STATE" "$OUT/truth_rx.log" 2>/dev/null && { _ready=1; break; }
+        kill -0 "$RX_PID" 2>/dev/null || break
+        sleep 0.5
+    done
+    if [ "$_ready" = "1" ]; then
+        echo "   truth    : SIM_STATE stream up"
+    else
+        echo "   truth    : WARNING no SIM_STATE within 60 s -- flying anyway (the sensor will report)"
+    fi
+    sleep 1
 else
 python3 "$SIM/src/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout $FAN \
     --fanout-decimate 6 --csv "$OUT/tap.csv" --save "$OUT/truth_report.txt" \

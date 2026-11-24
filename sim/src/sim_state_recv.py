@@ -129,13 +129,19 @@ class TruthOut:
         self.recon_us = None
         self.last_arrival_us = None
         self.sink = None          # optional callable(t_us, p, v, q, w, a): writes the tap-format CSV
-        # ROBUST period estimate: the mean arrival delta over the last block of samples.  An EMA over
-        # per-message deltas is biased here because TCP bursts put many deltas near 0 (excluded) and a
-        # few long ones in range (included), so the estimate crept up and the reconstructed timeline ran
-        # 1.6x fast (MEASURED 2026-11-25 phase1k: 202 Hz CSV out of a 323 Hz stream, 627 skipped scans).
-        self._blk_n = 0
-        self._blk_t = None
-        self._blk_idx = 0
+        # CLOCK-LIKE TIME BASE (D4): sample time = alpha + beta*index, with (alpha, beta) refitted by
+        # least squares over a rolling window of ARRIVAL instants.  Two earlier attempts failed:
+        #   * EMA over per-message arrival deltas: TCP batches put many deltas near 0 (excluded) and a few
+        #     long ones in range (included) -> period crept up, timeline ran 1.6x fast (phase1k: 202 Hz CSV
+        #     out of a 323 Hz stream, 627 skipped scans);
+        #   * block-mean period: rate right, but the intercept was never pinned, so the timeline drifted
+        #     against wall by ~0.35 s over 130 s (phase1l: W6 differed by 0.37 m between the two truths).
+        # A regression of arrival on index pins BOTH: beta is the stream period, alpha the wall anchor.
+        self._idx = 0
+        self._slope = 3200.0
+        self._inter = None
+        self._hist_i = []
+        self._hist_t = []
         import rclpy
         from rclpy.node import Node
         from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -241,16 +247,26 @@ class TruthOut:
         plausible arrival deltas.  The absolute offset is the wall-vs-simulator map of D4, measured by
         compare_truth (a~1, b=launch offset).
         """
-        if self._blk_t is None:
-            self._blk_t, self._blk_idx = arrival_us, 0
-        self._blk_idx += 1
-        if self._blk_idx >= 100:
-            self.period_us = float(arrival_us - self._blk_t) / float(self._blk_idx)
-            self._blk_t, self._blk_idx = arrival_us, 0
-        if self.recon_us is None:
+        self._idx += 1
+        self._hist_i.append(self._idx)
+        self._hist_t.append(arrival_us)
+        if len(self._hist_i) > 600:
+            self._hist_i = self._hist_i[-600:]
+            self._hist_t = self._hist_t[-600:]
+        if len(self._hist_i) >= 64 and self._idx % 16 == 0:
+            n = np.asarray(self._hist_i, float)
+            a = np.asarray(self._hist_t, float)
+            A = np.column_stack([n, np.ones_like(n)])
+            coef, *_ = np.linalg.lstsq(A, a, rcond=None)
+            self._slope = float(coef[0])
+            self._inter = float(coef[1])
+        if self._inter is not None:
+            self.recon_us = int(round(self._inter + self._slope * self._idx))
+        elif self.recon_us is None:
             self.recon_us = arrival_us
         else:
-            self.recon_us = int(self.recon_us + self.period_us)
+            self.recon_us = int(self.recon_us + self._slope)
+        self.period_us = self._slope
         self.last_arrival_us = arrival_us
         return self.recon_us
 
@@ -363,10 +379,26 @@ def main() -> int:
     os.environ.setdefault("MAVLINK20", "1")
     from pymavlink import mavutil
 
-    m = mavutil.mavlink_connection(args.mav, source_system=251)
-    m.wait_heartbeat(timeout=20)
-    print("sim_state_recv: endpoint %s, heartbeat from system %d component %d"
-          % (args.mav, m.target_system, m.target_component), file=sys.stderr)
+    def open_link():
+        """Connect and wait for the AUTOPILOT heartbeat (system id >= 1).
+
+        MEASURED 2026-11-25: connecting to SITL's serial port before the autopilot is up yields a
+        heartbeat from system 0, and the stream requests sent on that link are then answered with a mix
+        of DENIED/ACCEPTED while no SIM_STATE ever arrives (phase1n: 15 s with no samples, the LiDAR
+        declared the truth dead and the sortie aborted).  The system-0 heartbeat is therefore not
+        "connected" -- keep waiting.
+        """
+        link = mavutil.mavlink_connection(args.mav, source_system=251)
+        link.wait_heartbeat(timeout=20)
+        tries = 0
+        while link.target_system < 1 and tries < 100:
+            tries += 1
+            link.wait_heartbeat(timeout=1.0)
+        print("sim_state_recv: endpoint %s, heartbeat from system %d component %d"
+              % (args.mav, link.target_system, link.target_component), file=sys.stderr)
+        return link
+
+    m = open_link()
 
     want_hz = [float(max(1.0, args.hz))]
     interval_us = [int(round(1e6 / want_hz[0]))]
@@ -394,6 +426,7 @@ def main() -> int:
     got_hb = False
     acks = []
     warned = False
+    reconnects = 0
     # ---- Phase 1b: this client is the truth source -------------------------------
     truth_out = TruthOut(args.publish_hz, args.stamp_offset_us, truth_odom=args.truth_odom,
                          clock_hz=args.clock_hz, odom_hz=args.odom_hz, rtf_hz=args.rtf_hz,
@@ -434,6 +467,22 @@ def main() -> int:
             # timestamp used to be taken BEFORE the blocking receive, so the recorded wall time lagged the
             # real arrival by up to one loop period (MEASURED: 87-91 Hz over a 100 Hz request, a ~1 % clock
             # fit bias and 2 gaps > 20 ms).  Take one raw message per iteration and stamp it right after.
+            # If the stream never starts, the link may have been made before the autopilot's stream
+            # scheduler was ready: reconnect and re-request (phase1n spent 15 s on such a link).
+            if n == 0 and reconnects < 3 and now - t_start > 8.0 and now - last_request > 8.0:
+                reconnects += 1
+                last_request = now
+                print("sim_state_recv: no SIM_STATE after %.0f s -- reconnecting (%d/3)"
+                      % (now - t_start, reconnects), file=sys.stderr)
+                try:
+                    m.close()
+                except Exception:
+                    pass
+                m = open_link()
+                m.mav.command_long_send(m.target_system, m.target_component,
+                                        mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
+                                        mavutil.mavlink.MAVLINK_MSG_ID_SIM_STATE, interval_us[0],
+                                        0, 0, 0, 0, 0)
             msg = m.recv_msg()
             if msg is None:
                 if truth_out is not None:
@@ -513,6 +562,8 @@ def main() -> int:
                         "%.5f" % msg.vn, "%.5f" % msg.ve, "%.5f" % msg.vd,
                         "%.5f" % p[0], "%.5f" % p[1], "%.5f" % p[2],
                         lat_i, lon_i, "%.4f" % msg.std_dev_horz, "%.4f" % msg.std_dev_vert])
+            if n == 0:
+                print("sim_state_recv: FIRST SIM_STATE (stream is up)", file=sys.stderr)
             n += 1
             if t_recv - last_report >= 1.0 / max(0.1, args.report_hz):
                 last_report = t_recv

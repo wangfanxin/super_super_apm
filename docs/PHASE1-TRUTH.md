@@ -202,3 +202,18 @@ full run        : pos rms 9.4 mm (p99 51 mm), vel 2.8 mm/s, att 0.592°, gaps 1(
 * 相对旧 tap 真值，SIM_STATE 真值还让 **W6 从 0.596 m 降到 0.229 m**（旧 tap 的 1.2 kHz 自身时序
   有 ~0.6 m 的等效滞后，值得下一轮用同一趟数据核实是谁的偏差）。
 
+## Phase 1b 打磨（2026-11-25 06:00）：时间基对齐、流就绪门、断线重连
+
+* **时间基**：`run-mission.sh` 在 SITL 启动前记 wall 时刻，客户端启动时把 `client_start - sitl_start` 作为
+  `--stamp-offset-us`，于是真值 CSV/话题的 t=0 就是仿真 t=0（实测 +1.17 s）。同一趟 `missionA-phase1p` 的
+  W6 偏移为 **+0.600 s，四段 spread 仅 0.005 s**（此前用块平均周期时 spread 0.118 s、W6 两真值差 0.37 m）；
+  **漂移问题已解决**，剩下的 0.600 s 是飞行中段的真实跟踪滞后（见下）。
+* **采样时刻**：改为"到达时刻对样本序号做滚动最小二乘（alpha+beta·i）"，beta=流周期、alpha=wall 锚点，
+  长趟无相对漂移；CSV 恰好 200.0 Hz、max gap 5 ms、>10 ms 空洞 0。
+* **流就绪门**：客户端等到 autopilot 心跳（system id ≥1）才开始；`FIRST SIM_STATE` 标记出现后 launcher 才启动
+  LiDAR（phase1o 的教训：客户端 t≈2 s 连上、调度器拒绝到 ~10 s，LiDAR 起进一个带洞的缓冲区，271 次跳扫、
+  LIO 没有里程计、abort）。若 8 s 无样本自动重连（最多 3 次）。
+* **剩余问题**：`phase1p` 飞行中段一次 **LIO 1.70 s 无输出** 触发 "ESTIMATOR FEED IS STALE"（限 1.50 s）→ LAND 不完整；
+  H6 skipped 21（门槛 20）——都指向 SIM_STATE → ROS 的**偶发丢包/停顿**。候选修法：单条组合消息（回调减半）、
+  提高 DDS 资源上限、客户端停顿时的 hold 时长/重发。H2 的 rate 200 vs 380 是 tap 时代门槛，等 P0 一并重定义。
+
