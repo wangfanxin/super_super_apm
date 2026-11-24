@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # sim_rates.sh -- the lidar sim's measured rate/cost per sortie (the estimator's food supply).
 #
 #   bash scripts/sim_rates.sh hx4-01-01 oldctl2-01 v3h132-01-01
 set -u
-D=/home/fanxin/lio_avoid/logs
+D=${LIO_LOGS}
 printf '%-14s %10s %10s %12s %10s\n' sortie cloud_hz cast_ms scans skipped
 for t in "$@"; do
   f="$D/missionA-$t/lidar_imu.log"

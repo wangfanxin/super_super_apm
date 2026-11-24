@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # 单独验证 config/rviz_super.rviz 能不能被 rviz2 正常加载（不需要飞行栈）。
 # 起 12 s、截一张图、退出。日志里有 error/failed 就是配置有问题。
 set -uo pipefail
-ROOT=/mnt/d/distill_self/super_super_apm
+ROOT=${DSH_ROOT}
 LOG=/tmp/rviz_standalone.log
 SHOT=${1:-/tmp/rviz_standalone.png}
 

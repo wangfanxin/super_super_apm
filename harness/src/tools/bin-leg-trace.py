@@ -17,6 +17,9 @@ is its own boot clock.
 usage: tools/bin-leg-trace.py <flight.BIN> --tap <tap.csv> --phase <phase.csv> --leg N [--bins 24]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import importlib.util
@@ -25,11 +28,11 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src")
+sys.path.insert(0, _P.HARNESS_SRC)
 from tools.metrics import read_phase, read_tap        # noqa: E402
 
 _spec = importlib.util.spec_from_file_location(
-    "metrics_x", "/mnt/d/distill_self/lio_avoid/src/tools/metrics.py")
+    "metrics_x", _P.HARNESS_SRC + "/tools/metrics.py")
 _m = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_m)
 

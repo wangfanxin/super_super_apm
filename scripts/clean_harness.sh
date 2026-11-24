@@ -9,15 +9,15 @@ fi
 # 只清**我自己这份副本**的残留，按端口而不是按程序名匹配。
 #
 # ★ 为什么必须这样 ★ 这台机器上同时存在两份 harness 副本：
-#     /mnt/d/distill_self/lio_avoid      （我的；端口已改成 14580/14581/5780/5781）
-#     /mnt/d/distill_self/lio_nav_apm    （另一条线的；仍是 14560/14561/5760/5761）
+#     <DSH_ROOT>/harness                （我的；端口已改成 14580/14581/5780/5781）
+#     （另一条线的旧树 lio_nav_apm；仍是 14560/14561/5760/5761）
 #   它们共用**同一个** SITL 二进制。以前我用 `pkill -f 'bin/arducopter'` 按程序名清，
 #   会把对方正在飞的 sortie 一起杀掉（对方那几次 "never left the ground" 里就有我造成的）。
 #   现在只按"命令行里带我的端口/我的 planner 路径"来匹配。
 set -u
 MYPORTS='14580|14581|5780|5781'
 MINE='planner_source_super\.py'
-# ★ LIO 的命令行里**没有端口**：只有 `--params-file /mnt/d/distill_self/lio_avoid/src/lio/config/livox_360.yaml`。
+# ★ LIO 的命令行里**没有端口**：只有 `--params-file <DSH_ROOT>/harness/src/lio/config/livox_360.yaml`。
 #   只按端口匹配会漏掉它（实测残留两个 super_lio_node 一直占着图）。按"我这副本的配置路径"匹配。
 MYLIO="${DSH_ROOT}/harness/src/lio/config"
 MYFSM='super_planner/lib/super_planner/fsm_node|super_planner/fsm_node'

@@ -9,6 +9,9 @@ is the same body W4 uses.
     python3 scripts/plan_clearance.py pv1-02-02 soft-02-02 d85-01-02
     python3 scripts/plan_clearance.py <tag> --z 2.0
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import math
@@ -17,7 +20,7 @@ import os
 import numpy as np
 import yaml
 
-ROOT = "/mnt/d/distill_self/super_super_apm"
+ROOT = _P.ROOT
 
 
 def trunks(world):

@@ -10,6 +10,9 @@ This counts the near-zero episodes of the published speed and locates them relat
 
     python3 scripts/ref_stops.py --tag ke1-01-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -19,7 +22,7 @@ import yaml
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="ke1-01-01")
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 ap.add_argument("--stop-v", type=float, default=0.20)
 ap.add_argument("--world", default="worlds/forest_hex12.yaml")
 a = ap.parse_args()

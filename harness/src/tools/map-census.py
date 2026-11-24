@@ -22,6 +22,9 @@ cell within the pillar's radius, and it reports HOW MANY MESSAGES it saw so the 
 usage: map-census.py <world.yaml> [--topic T] [--seconds S] [--voxel 0.1] [--map-origin -8 -8 -0.02]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import os
@@ -62,7 +65,7 @@ def main() -> int:
     ap.add_argument("--seconds", type=float, default=300.0)
     ap.add_argument("--voxel", type=float, default=0.10)
     ap.add_argument("--margin", type=float, default=0.15, help="count a cell as ON the pillar within r+margin")
-    ap.add_argument("--calib-file", default="/mnt/d/distill_self/_stage/calib.json",
+    ap.add_argument("--calib-file", default=_P.CALIB,
                     help="the L<->W calibration.  THE PILLARS ARE IN W AND THE MAP IS IN L, so the "
                          "comparison is meaningless without it and this tool REFUSES to run without it.")
     args = ap.parse_args()

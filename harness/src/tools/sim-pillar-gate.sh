@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # S4 gate: SITL parked + truth_rx (fan-out) + lidar_imu + the pillar fit.
 #
 # This is the gate that validates the mount, the real pattern, the per-point timing and the frame
@@ -7,16 +14,16 @@
 #
 # usage: tools/sim-pillar-gate.sh [SECONDS]
 set -u
-AP=/home/fanxin/lio_avoid/src/ardupilot
+AP=${ARDUPILOT_ROOT}
 BIN="$AP/build/sitl/bin/arducopter"
-ROOT=/mnt/d/distill_self/lio_avoid        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
+ROOT=${DSH_ROOT}/harness        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
 REPO="$ROOT/src"                          # the code: bridge/, common/, lio/, planner/, sim/, supervisor/, tools/
 TAP_PORT=14560
 FAN_PORT=14561
 HOME_POS=-35.363261,149.165230,584,0
 SECS="${1:-8}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUT="/home/fanxin/lio_avoid/logs/s4-pillar-$STAMP"
+OUT="${LIO_LOGS}/s4-pillar-$STAMP"
 mkdir -p "$OUT"
 
 set +u

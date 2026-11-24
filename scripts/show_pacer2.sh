@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 set -u
-cd /mnt/d/distill_self/super_super_apm || exit 1
+cd ${DSH_ROOT} || exit 1
 echo "== where cmd_stream lives"
 python3 - <<'PY'
 import importlib.util, inspect, sys
@@ -14,6 +21,6 @@ print("   any cmd_stream import:", m2.group(0) if m2 else "(none)")
 PY
 echo
 echo "== TourPacer.tick / advance"
-F=$(find /mnt/d/distill_self -name 'cmd_stream.py' 2>/dev/null | head -1)
+F=$(find "${DSH_ROOT}" -name 'cmd_stream.py' 2>/dev/null | head -1)
 echo "   file: $F"
 grep -n 'class TourPacer' -A 70 "$F" 2>/dev/null | sed -n '1,75p'

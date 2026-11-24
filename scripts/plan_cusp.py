@@ -10,7 +10,7 @@ prefix of the old one (`temp_exp_traj = temp_exp_traj + out_traj` in `generateEx
 `i` = sample index, `e/n/u` = W).  For each plan this reports the sharpest turn (angle between
 consecutive steps) and where it is, then prints the points around the sharpest one.
 
-    python3 scripts/plan_cusp.py /home/fanxin/lio_avoid/logs/missionA-kx1-02-01 --near 0.95 -8.35
+    python3 scripts/plan_cusp.py <LIO_LOGS>/missionA-<tag> --near 0.95 -8.35
 """
 import argparse
 import csv

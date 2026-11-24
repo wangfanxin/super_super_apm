@@ -37,6 +37,9 @@ usage: ego_contract_shim.py --world worlds/diagonal.yaml --calib-file _stage/cal
        ego_contract_shim.py --selftest
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import math
@@ -1072,7 +1075,7 @@ def _parser() -> "argparse.ArgumentParser":
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--world", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
                                                     "worlds", "diagonal.yaml"))
-    ap.add_argument("--calib-file", default="/mnt/d/distill_self/_stage/calib.json")
+    ap.add_argument("--calib-file", default=_P.CALIB)
     ap.add_argument("--z", type=float, default=2.0)
     ap.add_argument("--hold-s", type=float, default=5.0)
     ap.add_argument("--arrive-m", type=float, default=0.30)

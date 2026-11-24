@@ -17,7 +17,7 @@ cover"), the cloud rate collapses, Super-LIO has to scan-match across a gap, and
 (yaw steps up to 154 deg were recorded).  The FCU then follows the bad estimate out of the fence -- so the
 sortie's control numbers describe a sensor starvation, not a control problem.
 
-    python3 scripts/lidar_stall.py /home/fanxin/lio_avoid/logs/missionA-kxD-01-01
+    python3 scripts/lidar_stall.py <LIO_LOGS>/missionA-<tag>
     -> "cast_max_ms=38.7 skipped=0"   (exit 0 when inside the gate)
 
 Thresholds: a healthy scan costs 20-25 ms and the budget is 100 ms (the 10 Hz scan period), so

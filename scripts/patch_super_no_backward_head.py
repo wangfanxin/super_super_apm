@@ -37,7 +37,7 @@ Usage
     python3 scripts/patch_super_no_backward_head.py --check
     python3 scripts/patch_super_no_backward_head.py --apply
     python3 scripts/patch_super_no_backward_head.py --revert
-    python3 scripts/patch_super_no_backward_head.py --apply --root /mnt/d/distill_self/_stage/super_src
+    python3 scripts/patch_super_no_backward_head.py --apply --root <repo>/third_party/SUPER/super_planner
 """
 from __future__ import annotations
 

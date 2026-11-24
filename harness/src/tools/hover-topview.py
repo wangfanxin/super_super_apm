@@ -9,6 +9,9 @@ The numbers in the title are the sortie's own acceptance rows, not a memory of t
 
 usage: src/tools/hover-topview.py <tag> <out.png>
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import csv
 import os
 import sys
@@ -26,7 +29,7 @@ if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
           "every hover marked with its measured length, and the speed trace that shows the hovers as plateaus.")
     raise SystemExit(0)
 TAG = sys.argv[1] if len(sys.argv) > 1 else "FLIGHTHOLD5-maxjitter"
-OUT = sys.argv[2] if len(sys.argv) > 2 else "/mnt/d/distill_self/_stage/figures/hover-%s.png" % TAG
+OUT = sys.argv[2] if len(sys.argv) > 2 else _P.LEGACY_STAGE + "/figures/hover-%s.png" % TAG
 D = os.path.expanduser("~/lio_avoid/logs/missionA-") + TAG
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

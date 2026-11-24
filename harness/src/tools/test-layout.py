@@ -22,6 +22,9 @@ WHAT IT CHECKS, all offline and in seconds:
 usage: tools/test-layout.py           (exit 0 = the layout is consistent)
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import os
 import re
@@ -135,7 +138,7 @@ def main() -> int:
     # ---- 4. no tracked code file still names the old layout
     #     (NOT this file: it contains those patterns as regexes, so it would match itself)
     SELF_REL = os.path.relpath(os.path.abspath(__file__), PROJ)
-    OLD = [r'sys\.path\.insert\(0, "/mnt/d/distill_self/lio_avoid"\)',
+    OLD = ["sys\\.path\\.insert\\(0, \"" + _P.HARNESS + "\"\\)",
            r'\$REPO/(params|worlds|docs|frozen|rviz)',
            r'os\.path\.join\(ROOT, "(worlds|docs|frozen|params|rviz)"',
            r'"os\.path\.join\(HERE, "\.\."\)',

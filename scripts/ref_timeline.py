@@ -18,6 +18,9 @@ The bridges used here, in order of reliability:
     python3 scripts/ref_timeline.py kwC-01-01 --check   # how good is the clock fit?
     python3 scripts/ref_timeline.py kwC-01-01 30 60     # only sim t in [30, 60)
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import csv
 import os
 import re
@@ -25,7 +28,7 @@ import sys
 
 import numpy as np
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 EPOCH = re.compile(r"\[(\d{9,}\.\d+)\]")
 

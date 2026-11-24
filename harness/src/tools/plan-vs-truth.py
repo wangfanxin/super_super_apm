@@ -20,6 +20,9 @@ usage:
     tools/plan-vs-truth.py --run logs/missionA-B2b-circle-12 --world worlds/forest_b.yaml
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import importlib.util
@@ -68,7 +71,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
     ap.add_argument("--world", default=os.path.join(PROJ, "worlds", "forest_b.yaml"))
-    ap.add_argument("--calib", default="/mnt/d/distill_self/_stage/calib.json")
+    ap.add_argument("--calib", default=_P.CALIB)
     ap.add_argument("--out", default="")
     ap.add_argument("--fresh-s", type=float, default=0.50,
                     help="a published plan older than this is not 'the plan in force' for a vehicle that has "

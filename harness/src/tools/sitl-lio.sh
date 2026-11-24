@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # S6 gate: the clean upstream LIO, fed by the simulated MID-360, measured against the truth tap.
 #
 # Phases (each recorded separately):
@@ -9,18 +16,18 @@
 #
 # usage: tools/sitl-lio.sh [PARKED_SECONDS] [MOVING_SECONDS]
 set -u
-AP=/home/fanxin/lio_avoid/src/ardupilot
+AP=${ARDUPILOT_ROOT}
 BIN="$AP/build/sitl/bin/arducopter"
-ROOT=/mnt/d/distill_self/lio_avoid        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
+ROOT=${DSH_ROOT}/harness        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
 REPO="$ROOT/src"                          # the code: bridge/, common/, lio/, planner/, sim/, supervisor/, tools/
-WS=/home/fanxin/lio_avoid/lio_ws
+WS=${LIO_WS}
 TAP_PORT=14560
 FAN_PORT=14561
 MAV=tcp:127.0.0.1:5760
 PARKED="${1:-30}"
 MOVING="${2:-25}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUT="/home/fanxin/lio_avoid/logs/s6-lio-$STAMP"
+OUT="${LIO_LOGS}/s6-lio-$STAMP"
 mkdir -p "$OUT"
 
 set +u
@@ -71,7 +78,7 @@ sleep 2
 
 echo
 echo "== starting the LIO (clean upstream, our measured config) =="
-echo "   super_lio : $(git -C /home/fanxin/lio_avoid/src/Super-LIO rev-parse --short HEAD)"
+echo "   super_lio : $(git -C ${DSH_ROOT}/harness/src/Super-LIO rev-parse --short HEAD)"
 echo "   liblio.so : $(md5sum "$WS/install/super_lio/lib/liblio.so" | cut -c1-32)"
 ros2 run super_lio super_lio_node --ros-args --params-file "$REPO/lio/config/livox_360.yaml" \
     > "$OUT/lio.log" 2>&1 &

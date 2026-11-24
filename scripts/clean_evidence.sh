@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Round 72: docs/evidence/ had 31 files (8.5 MB) after the per-run figure work.
 # Keep only what the current conclusions rest on; archive the rest OUTSIDE the repo first.
 set -eu
-E=/mnt/d/distill_self/super_super_apm/docs/evidence
-ARC=/mnt/d/distill_self/_evidence_archive_round72.tar.gz
+E=${DSH_ROOT}/docs/evidence
+ARC=${DSH_ROOT}/../_evidence_archive_round72.tar.gz
 cd "$E"
 
 KILL="cp-01-lap1.png cp-01-lap2.png cp-01-lap3.png cp-01-speed-t.png

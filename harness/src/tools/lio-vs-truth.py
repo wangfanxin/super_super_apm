@@ -20,6 +20,9 @@ Method, and why it is two fits rather than one:
 usage: tools/lio-vs-truth.py --tap tap.csv --odom lio.csv [--window T0,T1]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import math
@@ -28,7 +31,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src")
+sys.path.insert(0, _P.HARNESS_SRC)
 from common import frames          # noqa: E402
 
 

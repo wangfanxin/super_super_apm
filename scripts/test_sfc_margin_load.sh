@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Prove that `traj_opt/boundary/sfc_margin` (patch 12) is actually READ from a config, without flying.
 #
 # Why this exists: a config knob that is silently not loaded looks exactly like a knob that has no
@@ -16,7 +23,7 @@ SRC=/tmp/sfc_margin_probe.cpp
 BIN=/tmp/sfc_margin_probe
 INC="-I$ROOT/../../_stage/super_src/include"
 # The live upstream headers are the ones the flight binary was built from, so use those first.
-UP=/home/fanxin/super_super_apm/upstream/SUPER/super_planner/include
+UP=${SUPER_PLANNER_ROOT}/super_planner/include
 [ -d "$UP" ] && INC="-I$UP"
 
 cat > "$SRC" <<'CPP'

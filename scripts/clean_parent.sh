@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # clean_parent.sh -- remove the junk that earlier PowerShell quoting accidents created next to the
 # project (files literally named `|`, `=130`, `done|still`, a directory named `;`, ...) plus the
 # one-off probe scripts from those rounds.  Archived first, same rule as clean_workspace.sh.
 #
 #   bash scripts/clean_parent.sh [--apply]
 set -u
-P=/mnt/d/distill_self
+P=${DSH_ROOT}/..
 STAMP=$(date '+%Y%m%d-%H%M%S')
-ARC=/mnt/d/distill_self/_archive_super/parent-$STAMP
+ARC=${DSH_ROOT}/../_archive_super/parent-$STAMP
 APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 

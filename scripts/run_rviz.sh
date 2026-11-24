@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # 起 RViz 看这套栈的内部状态（复用的 lio_avoid 的看板思路，话题换成 SUPER 的）。
 #
 # 需要图形显示：WSL2 + WSLg 直接可用；老环境要自己起 X server 并 export DISPLAY。
@@ -9,7 +16,7 @@
 #   bash scripts/run_rviz.sh          # 只看
 #   bash scripts/run_rviz.sh -d ...   # 换配置文件
 set -uo pipefail
-ROOT=/mnt/d/distill_self/super_super_apm
+ROOT=${DSH_ROOT}
 CFG=${1:-"$ROOT/config/rviz_super.rviz"}
 
 if [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
@@ -20,8 +27,8 @@ fi
 
 set +u
 source /opt/ros/humble/setup.bash
-source /home/fanxin/super_super_apm/ws/install/setup.bash
-source /home/fanxin/super_super_apm/ws_super/install/setup.bash
+source ${DSH_ROOT}/ws/install/setup.bash
+source ${WS_SUPER}/install/setup.bash
 set -u
 
 echo "== 当前话题（先确认 SITL 那套在跑）=="

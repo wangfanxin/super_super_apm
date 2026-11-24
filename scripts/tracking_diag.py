@@ -21,6 +21,9 @@ shift means nothing.
 
     python3 scripts/tracking_diag.py d85-01-02
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -66,7 +69,7 @@ def freeze_segments(t, frozen):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tag")
-    ap.add_argument("--root", default="/mnt/d/distill_self/super_super_apm/logs")
+    ap.add_argument("--root", default=_P.ROOT + "/logs")
     ap.add_argument("--speed", type=float, default=0.30, help="below this |v| the plan counts as frozen")
     ap.add_argument("--shift-max", type=float, default=60.0)
     args = ap.parse_args()

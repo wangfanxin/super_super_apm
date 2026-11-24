@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Where does the built liblio.so come from, and what are the build flags?
 set -u
-WS=/home/fanxin/lio_avoid/lio_ws
+WS=${LIO_WS}
 echo "== workspace layout"
 ls -la "$WS" | head -8
 echo
@@ -12,7 +19,7 @@ echo
 echo "== is it a symlink or a copy?"
 if [ -L "$WS/src/super_lio" ]; then echo "   SYMLINK -> $(readlink -f "$WS/src/super_lio")"; else echo "   REAL DIRECTORY (a copy)"; fi
 cmp -s "$WS/src/super_lio/src/lio/super_lio.cpp" \
-       /home/fanxin/lio_avoid/src/lio-fork/super_lio_local/src/lio/super_lio.cpp \
+       ${DSH_ROOT}/harness/src/lio-fork/super_lio_local/src/lio/super_lio.cpp \
   && echo "   source identical to src/lio-fork/super_lio_local" || echo "   source DIFFERS from src/lio-fork/super_lio_local"
 echo
 echo "== build config"

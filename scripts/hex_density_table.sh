@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Per-leg bottleneck b for a few (seed, keep-prob) combinations of the hex generator.
 # b = the widest route's minimum surface clearance on that leg; it is the number that decides whether
 # SUPER can plan inside the corridor at all (docs/INTEGRATION.md 71.2 / the tracking diagnosis).
 set -u
-cd /mnt/d/distill_self/super_super_apm || exit 1
+cd ${DSH_ROOT} || exit 1
 for p in 1.0 0.8 0.6 0.4; do
   for s in 4 20240521; do
     out=$(python3 scripts/make_world_v2_hex.py --seed "$s" --keep-prob "$p" --out /tmp/pp_${s}_${p}.yaml 2>&1)

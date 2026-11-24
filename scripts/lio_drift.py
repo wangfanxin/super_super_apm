@@ -14,13 +14,16 @@ it moves in JUMPS (a scan-matching latch onto the wrong lattice cell: this field
 
     python3 scripts/lio_drift.py hz2-01-01 [--step 5]
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
 
 import numpy as np
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def sp(tag):

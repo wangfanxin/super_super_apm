@@ -10,6 +10,9 @@ LIO's error, not a drawing choice.
 usage: tools/plot-run.py <run-dir> [--calib _stage/calib.json] [--out DIR] [--tag NAME]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import json
@@ -19,7 +22,7 @@ import sys
 import numpy as np
 import yaml
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src")
+sys.path.insert(0, _P.HARNESS_SRC)
 from common import frames                       # noqa: E402
 from tools.metrics import read_tap, read_odom, read_phase    # noqa: E402
 # `tools/world-info.py` cannot be imported by name (hyphen), and the world file is plain YAML anyway: the
@@ -34,9 +37,9 @@ from matplotlib.patches import Circle, Rectangle             # noqa: E402
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("run")
-    ap.add_argument("--calib", default="/mnt/d/distill_self/_stage/calib.json")
+    ap.add_argument("--calib", default=_P.CALIB)
     ap.add_argument("--bin", default="", help="the FCU's flight log: draws its own EKF estimate too")
-    ap.add_argument("--world", default="/mnt/d/distill_self/lio_avoid/worlds/pillars.yaml",
+    ap.add_argument("--world", default=_P.HARNESS_WORLDS + "/pillars.yaml",
                     help="the world file: the corners, the pillars and therefore the plot's SCALE come "
                          "from here, so a 6 x 4 m mission in a 12 x 12 m forest is drawn as such instead "
                          "of inside a 2 x 1.2 m box (the plot used to hard-code both)")

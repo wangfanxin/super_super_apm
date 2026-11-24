@@ -32,7 +32,8 @@ echo "== must be path-free"
 bad=0
 for p in $REQUIRED; do
   [ -e "$p" ] || { echo "   MISSING $p"; bad=1; continue; }
-  hits=$(grep -rn "$PAT" "$p" --include=*.py --include=*.sh 2>/dev/null | grep -v '^\s*#' | wc -l)
+  hits=$(grep -rn "$PAT" "$p" --include=*.py --include=*.sh 2>/dev/null | grep -v '^\s*#' \
+         | grep -v "tests/no_abs_paths.sh" | wc -l)
   if [ "$hits" -gt 0 ]; then
     echo "   FAIL $p ($hits author path reference(s))"
     grep -rn "$PAT" "$p" --include=*.py --include=*.sh 2>/dev/null | head -3 | sed 's/^/        /'
@@ -44,6 +45,7 @@ echo
 echo "== historical analysis tools still carrying author paths (informational)"
 n=0
 for f in scripts/*.py scripts/*.sh harness/src/*/*.py harness/src/*/*.sh; do
+  [ "$f" = "tests/no_abs_paths.sh" ] && continue
   [ -f "$f" ] || continue
   if grep -q "$PAT" "$f" 2>/dev/null; then n=$((n + 1)); fi
 done

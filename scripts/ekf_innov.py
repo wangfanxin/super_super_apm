@@ -7,12 +7,15 @@ the external nav" is read off the log instead of guessed.
 
     python3 scripts/ekf_innov.py kx8-03-01 --t0 60 --t1 120
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import os
 
 from pymavlink import mavutil
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 
 
 def main():

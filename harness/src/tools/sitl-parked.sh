@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # S3 gate, parked: run SITL with the truth tap enabled, receive 30 s of it, and print the verdict.
 #
 #   tools/sitl-parked.sh [SECONDS] [--defaults PARM]
@@ -10,15 +17,15 @@ set -u
 SECONDS_SIM="${1:-30}"
 DEFAULTS="${2:-}"
 
-AP=/home/fanxin/lio_avoid/src/ardupilot
+AP=${ARDUPILOT_ROOT}
 BIN="$AP/build/sitl/bin/arducopter"
-ROOT=/mnt/d/distill_self/lio_avoid        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
+ROOT=${DSH_ROOT}/harness        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
 REPO="$ROOT/src"                          # the code: bridge/, common/, lio/, planner/, sim/, supervisor/, tools/
 PORT=14560
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUT="/home/fanxin/lio_avoid/logs/s3-parked-$STAMP"
+OUT="${LIO_LOGS}/s3-parked-$STAMP"
 mkdir -p "$OUT"
-cd /home/fanxin/lio_avoid || exit 1
+cd ${DSH_ROOT}/harness || exit 1
 
 if [ ! -x "$BIN" ]; then
     echo "no SITL binary at $BIN -- build first (wsl ./waf copter)" >&2

@@ -10,6 +10,9 @@ reads the SITL truth tap's quaternion, extracts the true heading, and compares i
 
     python3 scripts/heading_truth.py --tag jd1-01-02
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import json
@@ -20,7 +23,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="jd1-01-02")
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 a = ap.parse_args()
 R = os.path.join(a.root, "missionA-" + a.tag)
 
@@ -43,7 +46,7 @@ yw = np.array([float(r["yaw_out"]) for r in wire])
 pw = np.array([[float(r["p_w_x"]), float(r["p_w_y"])] for r in wire])
 
 try:
-    yawL = float(json.load(open("/mnt/d/distill_self/_stage/calib.json"))["yaw_deg"])
+    yawL = float(json.load(open(_P.CALIB))["yaw_deg"])
 except Exception:                                            # noqa: BLE001
     yawL = 90.049771
 

@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Does the LIO track a MOVING truth?  Isolated: no SITL, no flight controller, no geofence, no
 # arena -- a truth tap (recorded, or synthetic) is replayed over UDP into the real lidar_imu, the
 # real Super-LIO consumes it, and the result is compared with the tap it was made from.
@@ -13,9 +20,9 @@
 #
 #   offline_lio_check.sh [tap.csv] [world.yaml] [seconds] [scan_hz] [imu_hz]
 set -u
-ROOT=/mnt/d/distill_self/super_super_apm
-LIO=/mnt/d/distill_self/lio_avoid
-CSV=${1:-/home/fanxin/lio_avoid/logs/missionA-supertest-01/tap.csv}
+ROOT=${DSH_ROOT}
+LIO=${DSH_ROOT}/harness
+CSV=${1:-${LIO_LOGS}/missionA-supertest-01/tap.csv}
 WORLD=${2:-$ROOT/worlds/pillars.yaml}
 SECS=${3:-55}
 SCAN_HZ=${4:-10}
@@ -29,7 +36,7 @@ mkdir -p "$OUT"
 
 set +u
 source /opt/ros/humble/setup.bash
-source /home/fanxin/lio_avoid/lio_ws/install/setup.bash
+source ${LIO_WS}/install/setup.bash
 set -u
 export ROS_LOCALHOST_ONLY=1
 

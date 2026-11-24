@@ -8,6 +8,9 @@ fold say which state the planner was in.  This prints them compactly, with the S
     python3 scripts/cusp_context.py kx4-01-01
     python3 scripts/cusp_context.py kx4-01-01 --before 6 --after 6 --all
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import os
 import re
@@ -38,7 +41,7 @@ def main():
     ap.add_argument("--before", type=int, default=6)
     ap.add_argument("--after", type=int, default=6)
     ap.add_argument("--all", action="store_true", help="print every kept line, cusp lines marked")
-    ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+    ap.add_argument("--root", default=_P.LOGS)
     ap.add_argument("--quiet", action="store_true",
                     help="drop the 10 Hz `ReplanOnce succeed` lines, so the state changes stand out")
     a = ap.parse_args()

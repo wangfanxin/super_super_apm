@@ -48,13 +48,16 @@ Usage
     python3 scripts/patch_super_sfc_margin.py --check --config config/super_planner_hex_rr15m.yaml
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import hashlib
 import os
 import sys
 
-DEFAULT_ROOT = "/home/fanxin/super_super_apm/upstream/SUPER/super_planner"
+DEFAULT_ROOT = _P.SUPER + "/super_planner"
 
 HPP = "include/traj_opt/config.hpp"
 CPP = "src/traj_opt/exp_traj_optimizer_s4.cpp"

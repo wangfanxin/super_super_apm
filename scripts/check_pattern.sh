@@ -35,7 +35,7 @@ el = rays[:, 1].min(), rays[:, 1].max()
 print("loader              : %s" % src)
 print("azimuth   deg       : %.2f .. %.2f (expect ~0..360)" % (az[0] * 57.2958, az[1] * 57.2958))
 print("elevation deg       : %.2f .. %.2f (expect ~-7..+52)" % (el[0] * 57.2958, el[1] * 57.2958))
-ok = ("Zenith" in head) and nrows >= 800000 and el[0] < 0 and el[1] > 1.0
+ok = (("Zenith" in head) and nrows >= 800000 and el[0] < 0 and (el[1] * 57.2958) > 1.0)
 print("RESULT              : %s" % ("OK" if ok else "SUSPECT -- see harness/sim/README.md"))
 sys.exit(0 if ok else 1)
 PY

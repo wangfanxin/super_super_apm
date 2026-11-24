@@ -18,6 +18,9 @@ any speed up to 6 m/s) takes it at 2-4 m/s and bows by up to metres.
     python3 scripts/corner_overshoot.py cmp2-01-01 --world worlds/compare_low.yaml
     python3 scripts/corner_overshoot.py pv1-02-02 --world worlds/forest_v2_hex.yaml
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import math
@@ -26,7 +29,7 @@ import os
 import numpy as np
 import yaml
 
-ROOT = "/mnt/d/distill_self/super_super_apm"
+ROOT = _P.ROOT
 
 
 def load(prep):

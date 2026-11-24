@@ -21,6 +21,9 @@ script asks the next question -- what is the reference doing when that happens -
 
     python3 scripts/why_reversal.py --tag kv1-02-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -29,7 +32,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", required=True)
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 ap.add_argument("--out-dir", default=None)
 a = ap.parse_args()
 run = os.path.join(a.root, "missionA-" + a.tag)

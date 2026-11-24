@@ -17,6 +17,9 @@ and reports the dips, their duration, and what the aircraft's along-track error 
 
     python3 scripts/ref_pulse.py --tag jd1-01-02 [--dip-frac 0.35]
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -25,7 +28,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="jd1-01-02")
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 ap.add_argument("--dip-frac", type=float, default=0.35)
 ap.add_argument("--min-plan", type=float, default=0.30)
 a = ap.parse_args()

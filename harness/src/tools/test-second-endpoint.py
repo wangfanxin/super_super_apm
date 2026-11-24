@@ -30,6 +30,9 @@ usage: python3 tools/test-second-endpoint.py [--url0 tcp:127.0.0.1:5760] [--url1
        [--tap-port 14560] [--seconds 6]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import socket
@@ -39,7 +42,7 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src")
+sys.path.insert(0, _P.HARNESS_SRC)
 
 try:
     from pymavlink import mavutil

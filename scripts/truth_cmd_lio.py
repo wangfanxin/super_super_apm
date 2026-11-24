@@ -13,7 +13,7 @@ is which stream moved first:
 `setpoints.csv` carries `t_sim_us`, and `tap.csv` carries `t_us` on the same SITL boot clock, so the
 truth can be joined sample-exactly (no wall-clock fitting).  Truth is NED, so W = (e, n, -d).
 
-    python3 scripts/truth_cmd_lio.py /home/fanxin/lio_avoid/logs/missionA-kx1-01-01 --t0 70 --t1 101
+    python3 scripts/truth_cmd_lio.py <LIO_LOGS>/missionA-<tag> --t0 70 --t1 101
 """
 import argparse
 import csv

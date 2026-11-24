@@ -35,6 +35,9 @@ silently skipped**: a gate that goes quiet when its input is missing is worse th
 usage: tools/check-doc-citations.py [--doc docs/PLANNERS.md ...] [--show N]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import os
@@ -49,22 +52,22 @@ PROJ = os.path.abspath(os.path.join(CODE, ".."))          # <repo>
 ROOTS = (
     PROJ,
     CODE,
-    "/home/fanxin/lio_avoid/src/ardupilot",
-    "/home/fanxin/lio_avoid/src/Super-LIO",
-    "/home/fanxin/lio_avoid/src/ego-planner-swarm",
-    "/home/fanxin/lio_avoid/src/ego-planner-swarm/src",
-    "/mnt/d/distill_self/_stage",
+    _P.ARDUPILOT,
+    _P.HARNESS_SRC + "/Super-LIO",
+    _P.HARNESS_SRC + "/ego-planner-swarm",
+    _P.HARNESS_SRC + "/ego-planner-swarm/src",
+    _P.LEGACY_STAGE,
     # the four public PX4+ego integrations surveyed in ARCHITECTURE.md 7.6, downloaded (not cloned: the
     # git port is blocked on this host) into `_refs/<repo>/`.  Added when 7.6 started quoting them, so that
     # every one of those quotes is checked by this gate rather than by trust.
-    "/mnt/d/distill_self/_refs",
+    _P.LEGACY_REFS,
 )
 
 #: roots that answer a FULL PATH but never a basename.  `_refs` holds four independent copies of the same
 #: packages (`ego_replan_fsm.cpp`, `controller.cpp`, `README.md`, ...), so letting it answer bare basenames
 #: would make every existing citation ambiguous -- and a bare citation means THIS project's tree.  A quote
 #: from a reference repository must therefore carry its repository name, which is also what makes it readable.
-PATH_ONLY_ROOTS = ("/mnt/d/distill_self/_refs",)
+PATH_ONLY_ROOTS = (_P.LEGACY_REFS,)
 
 #: `path/to/thing.ext:12` or `:12-34`, inside backticks.  The extension list is explicit so that a prose
 #: `12:30` (a clock time) or a chapter reference is not mistaken for a citation.

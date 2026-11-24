@@ -12,6 +12,9 @@
 
     python3 scripts/yaw_and_pattern.py --tag jd1-01-02
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import math
@@ -21,8 +24,8 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="jd1-01-02")
-ap.add_argument("--run-root", default="/home/fanxin/lio_avoid/logs")
-ap.add_argument("--pattern", default="/home/fanxin/lio_avoid/sim/mid360_pattern.csv")
+ap.add_argument("--run-root", default=_P.LOGS)
+ap.add_argument("--pattern", default=_P.HARNESS + "/sim/mid360_pattern.csv")
 a = ap.parse_args()
 
 R = os.path.join(a.run_root, "missionA-" + a.tag)
@@ -58,7 +61,7 @@ print("   signed error p05/p50/p95: %+.1f / %+.1f / %+.1f deg"
 # calibration yaw (about +90.05 deg), so the honest comparison rotates one of them first.
 try:
     import json
-    cal = json.load(open("/mnt/d/distill_self/_stage/calib.json"))
+    cal = json.load(open(_P.CALIB))
     yawL = float(cal.get("yaw_deg", cal.get("yaw", 90.049771)))
 except Exception:                                            # noqa: BLE001
     yawL = 90.049771

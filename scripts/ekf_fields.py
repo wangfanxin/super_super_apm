@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """ekf_fields.py -- dump the field names of the EKF rows in a dataflash log (one of each)."""
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import os
 import sys
 
 from pymavlink import mavutil
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 tag = sys.argv[1] if len(sys.argv) > 1 else "kx8-03-01"
 want = set(sys.argv[2:]) or {"XKF4", "XKFS", "XKF3", "VISP", "VISV"}
 p = os.path.join(ROOT, "missionA-" + tag, "flight.BIN")

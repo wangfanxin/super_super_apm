@@ -17,6 +17,9 @@ Both are reported with counts, and the exit status is the verdict.
 usage: tools/pillar-fit.py --seconds 8 [--dump out.npz]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import math
@@ -24,7 +27,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src")
+sys.path.insert(0, _P.HARNESS_SRC)
 from common import frames          # noqa: E402
 from sim import raycast            # noqa: E402
 
@@ -75,7 +78,7 @@ class TruthInterp:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seconds", type=float, default=8.0, help="how long to collect clouds")
-    ap.add_argument("--world", default="/mnt/d/distill_self/lio_avoid/worlds/pillars.yaml")
+    ap.add_argument("--world", default=_P.HARNESS_WORLDS + "/pillars.yaml")
     ap.add_argument("--mount-pitch", type=float, default=45.0)
     ap.add_argument("--max-points", type=int, default=400000, help="cap on accumulated points")
     ap.add_argument("--surface-tol", type=float, default=0.030, help="P95 surface residual target, m")

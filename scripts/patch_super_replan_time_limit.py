@@ -38,7 +38,7 @@ Usage
     python3 scripts/patch_super_replan_time_limit.py --check      # is it applied?
     python3 scripts/patch_super_replan_time_limit.py --apply     # patch (idempotent)
     python3 scripts/patch_super_replan_time_limit.py --revert    # put upstream back
-    python3 scripts/patch_super_replan_time_limit.py --apply --root /mnt/d/distill_self/_stage/super_src
+    python3 scripts/patch_super_replan_time_limit.py --apply --root <repo>/third_party/SUPER/super_planner
 """
 from __future__ import annotations
 

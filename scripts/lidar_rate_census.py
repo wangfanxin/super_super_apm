@@ -8,6 +8,9 @@ and a final `raycast … ms/scan (… Hz capable)`.  The LIO's scan-to-map match
     python3 scripts/lidar_rate_census.py            # every kx* sortie
     python3 scripts/lidar_rate_census.py kx8-03-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import glob
 import os
 import re
@@ -15,7 +18,7 @@ import sys
 
 import numpy as np
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 
 
 def outcome(tag):

@@ -23,6 +23,9 @@ records.  The live check needs ROS sourced, so this tool does it through a shell
 usage: tools/install-ego-launch.py [--ego DIR] [--ws DIR] [--static] [--run] [--dry-run]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import os
@@ -37,8 +40,8 @@ PROJ = os.path.abspath(os.path.join(CODE, ".."))            # <repo>
 
 SRC_NAME = "ego_on_lio.launch.py"
 SRC = os.path.join(CODE, "planner", SRC_NAME)
-DEFAULT_EGO = "/home/fanxin/lio_avoid/src/ego-planner-swarm"
-DEFAULT_WS = "/home/fanxin/lio_avoid/planner_ws"
+DEFAULT_EGO = _P.HARNESS_SRC + "/ego-planner-swarm"
+DEFAULT_WS = _P.HARNESS + "/planner_ws"
 REL = "src/planner/plan_manage/launch"                      # inside the ego checkout
 
 

@@ -4,12 +4,15 @@ wire.csv is the bridge's record of every setpoint it put on the wire: it carries
 flag the thin layer attached.  Grouping by id answers the question the figures cannot: how many distinct
 plans did the aircraft get, how long did each last, and were the long ones moving or holding?
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import csv
 import sys
 from collections import OrderedDict
 
 run = sys.argv[1]
-rows = list(csv.DictReader(open("/home/fanxin/lio_avoid/logs/missionA-%s/wire.csv" % run)))
+rows = list(csv.DictReader(open(_P.LOGS + "/missionA-%s/wire.csv" % run)))
 print("== %s: %d wire rows" % (run, len(rows)))
 seg = OrderedDict()
 t0 = float(rows[0]["t_wall"])

@@ -11,12 +11,15 @@ thrust axis is from vertical).
     python3 scripts/attitude_truth.py mx8-01-01 --t0 26 --t1 60
     python3 scripts/attitude_truth.py v3c5-01-01 --t0 26 --t1 42
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import math
 import os
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def load_tap(path):

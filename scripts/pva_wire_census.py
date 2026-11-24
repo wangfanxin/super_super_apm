@@ -14,12 +14,15 @@ This script prints, for one sortie, four censuses on the same footing:
 
     python3 scripts/pva_wire_census.py v3l2-01-02
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import math
 import os
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def census(path, cols, scale=1.0):

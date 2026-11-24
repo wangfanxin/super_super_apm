@@ -16,6 +16,9 @@ One clock only: `setpoints.csv` (`t_wall`), the reference the bridge actually pu
     python3 scripts/dip_zoom.py kx1-02-01 --n 3        # only the first 3
     python3 scripts/dip_zoom.py kx1-02-01 --t 51.9     # one specific dip
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import math
@@ -23,7 +26,7 @@ import os
 
 import numpy as np
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 CORNERS = [(10.0, 0.0), (5.0, 8.66), (-5.0, 8.66), (-10.0, 0.0), (-5.0, -8.66), (5.0, -8.66)]
 
 

@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Every figure the docs name must exist, and the figures the owner asked to delete must NOT be back.
 #
 # Round 83 (owner): keep ONLY (a) the per-lap path/trajectory top views, (b) v_xy/v_z/x/y/z against time,
@@ -13,7 +20,7 @@
 #     lio-err-t.png                     the estimator's error against time + its CDF
 # plus the map review figure and this README.  Nothing else belongs in docs/evidence.
 set -u
-E=/mnt/d/distill_self/super_super_apm/docs/evidence
+E=${DSH_ROOT}/docs/evidence
 REQUIRED="README.md world-hex12.png lap1-paths.png lap2-paths.png vxyz-t.png lio-err-t.png"
 LEGACY_PATTERNS='pv1-* d84-* d85-* r15b-* v4a-01-* i1a-* v3pv-* v3d-* v3h132-* cmp1-* cmp2-* frontier.png deviation.png pipeline-states.png *-lap1-paths.png *-lap2-paths.png *-vxyz-t.png *-lio-err-t.png mx8-* pm-01-* pgf-* hx*-* hy0-* hz*-* ja1-01-* jb1-* jc1-*'
 

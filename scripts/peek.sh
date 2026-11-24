@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # 看任意一轮的健康度：sensor 链、LIO、bridge、supervisor 的关键行。
 # 用法： bash peek.sh <tag>
 set -u
 T=${1:?tag}
-D=/home/fanxin/lio_avoid/logs/missionA-$T
-[ -d "$D" ] || D=/mnt/d/distill_self/lio_avoid/logs/missionA-$T
+D=${LIO_LOGS}/missionA-$T
+[ -d "$D" ] || D=${DSH_ROOT}/harness/logs/missionA-$T
 echo "== run dir: $D =="
 [ -d "$D" ] || { echo MISSING; exit 2; }
 echo "-- 行数 --"

@@ -12,6 +12,9 @@ compared with the body's angular-rate limit, not only with the planner's `max_je
 Reported here: the published acceleration's derivative (that is what the FCU actually sees) on the
 delivered sortie, converted into the tilt rate it implies, next to the ArduPilot rate ceiling.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import math
@@ -23,7 +26,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="kh1-02-01")
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 a = ap.parse_args()
 R = os.path.join(a.root, "missionA-" + a.tag)
 
@@ -52,7 +55,7 @@ for q in (50, 90, 99):
 print("     max  %6.1f m/s^3  ->  %5.1f deg/s" % (jer_mag.max(), math.degrees(jer_mag.max() / 9.81)))
 
 # ArduPilot's rate ceiling, from the source tree if it is there
-for root in ("/home/fanxin/lio_avoid/src/ardupilot", "/home/fanxin/super_super_apm/upstream/ardupilot"):
+for root in (_P.ARDUPILOT, _P.ROOT + "/upstream/ardupilot"):
     hit = subprocess.run(["grep", "-rn", "RATE_RLL_MAX", root + "/ArduCopter/Parameters.cpp"],
                          capture_output=True, text=True)
     if hit.returncode == 0 and hit.stdout.strip():

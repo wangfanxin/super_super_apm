@@ -16,6 +16,9 @@ Every sortie in the A/B is scored the same way, from its own `setpoints.csv` (ON
 
     python3 scripts/reversal_table.py kv1-02-01 kw1-01-01 kw2-01-01 ...
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import csv
 import json
 import os
@@ -23,7 +26,7 @@ import sys
 
 import numpy as np
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 CORNERS = [(10.0, 0.0), (5.0, 8.66), (-5.0, 8.66), (-10.0, 0.0), (-5.0, -8.66), (5.0, -8.66)]
 
 

@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """trace.py -- one compact table: t, truth(x,y,z), fcu(x,y,z), cmd(x,y,z), speed, for a sortie.
 Reads setpoints.csv (cmd/fcu) and tap.csv (truth), joined on the shared simulated clock."""
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse, csv, os
 import numpy as np
 
-R = "/home/fanxin/lio_avoid/logs/missionA-%s"
+R = _P.LOGS + "/missionA-%s"
 
 ap = argparse.ArgumentParser()
 ap.add_argument("tag")

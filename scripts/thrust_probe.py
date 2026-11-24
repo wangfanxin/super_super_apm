@@ -21,6 +21,9 @@ the factor by which the thrust requirement grows.  A window where `ThO / MOT_THS
     python3 scripts/thrust_probe.py v3c5-01-01 --t0 28 --t1 34
     python3 scripts/thrust_probe.py mx8-01-01 --t0 30 --t1 60      # a sortie that completed
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import math
 import os
@@ -28,7 +31,7 @@ import os
 import numpy as np
 from pymavlink import mavutil
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def load_bin(d):

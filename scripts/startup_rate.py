@@ -12,11 +12,14 @@ the resolution needed to see where the deficit is.
 
     python3 scripts/startup_rate.py kx1-01-02 kx1-02-01 kv1-02-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import csv
 import os
 import sys
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 
 
 def one(tag):

@@ -13,6 +13,9 @@ This script is the honesty check, in three layers:
 
     python3 scripts/check_raycast_flat.py [--world worlds/forest_hex12.yaml] [--points 12000]
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import os
 import sys
@@ -20,7 +23,7 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src/sim")
+sys.path.insert(0, _P.HARNESS_SRC + "/sim")
 import raycast                                                   # noqa: E402
 
 
@@ -37,7 +40,7 @@ def hex_poses():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--world", default="/mnt/d/distill_self/super_super_apm/worlds/forest_hex12.yaml")
+    ap.add_argument("--world", default=_P.ROOT + "/worlds/forest_hex12.yaml")
     ap.add_argument("--points", type=int, default=12000)
     ap.add_argument("--z", type=float, default=2.0)
     ap.add_argument("--verbose", action="store_true")

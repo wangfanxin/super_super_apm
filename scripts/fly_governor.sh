@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Give the FCU the velocity feed-forward (BRIDGE_FIELDS=posvel) AND make the reference a real trajectory
 # first (--ref-gov-kp), which is the precondition nobody had.
 #
@@ -18,7 +25,7 @@
 # is fed with.  The governor integrates ONE velocity per tick and derives BOTH outputs from it, so
 # (p, v) are consistent by construction and continuous by construction, and |v| is bounded.
 set -u
-ROOT=/mnt/d/distill_self/super_super_apm
+ROOT=${DSH_ROOT}
 cd "$ROOT" || exit 1
 export SUPER_CONFIG=${SUPER_CONFIG:-super_lio_15m_fast.yaml}
 export ARRIVE_M=${ARRIVE_M:-2.5}

@@ -12,6 +12,9 @@ the phase log and the FCU's BIN), and the things metrics.txt cannot see are adde
 usage: tools/sortie-score.py <run-dir> [...]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import os
 import re
@@ -100,4 +103,4 @@ if __name__ == "__main__":
         print(__doc__)
         sys.exit(2)
     for r in runs:
-        score(r if os.path.isabs(r) else os.path.join("/home/fanxin/lio_avoid/logs", r))
+        score(r if os.path.isabs(r) else os.path.join(_P.LOGS, r))

@@ -13,6 +13,9 @@ from the cross-spectrum of the plan's velocity against the truth's velocity.
 
     python3 scripts/track_gain.py --tag kh1-02-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -21,7 +24,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="kh1-02-01")
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 a = ap.parse_args()
 R = os.path.join(a.root, "missionA-" + a.tag)
 

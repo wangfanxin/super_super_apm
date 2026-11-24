@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # clean_workspace.sh -- one pass, archived and auditable (round 88).
 #
 # The owner asked to clean the workspace of wrong/expired code, docs, test scripts, data, maps and
@@ -16,12 +23,12 @@
 #   bash scripts/clean_workspace.sh            # dry run: prints what WOULD go
 #   bash scripts/clean_workspace.sh --apply    # archive + delete
 set -u
-ROOT=/mnt/d/distill_self/super_super_apm
+ROOT=${DSH_ROOT}
 cd "$ROOT" || exit 1
 APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 STAMP=$(date '+%Y%m%d-%H%M%S')
-ARC="/mnt/d/distill_self/_archive_super/$STAMP"   # archives live OUTSIDE the workspace on purpose
+ARC="${DSH_ROOT}/../_archive_super/$STAMP"   # archives live OUTSIDE the workspace on purpose
 MAN="$ARC/CLEANUP-manifest.md"
 
 KEEP_DIR="$ARC/keep"

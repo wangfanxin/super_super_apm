@@ -11,6 +11,9 @@ is bandwidth loss.  That distinction decides the fix:
 
     python3 scripts/loop_response.py pv1-02-02 v4a-01 d84-01-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -18,7 +21,7 @@ import os
 import numpy as np
 from pymavlink import mavutil
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def series(rows, keys):

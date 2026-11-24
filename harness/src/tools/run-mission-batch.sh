@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Mission A, N flights, with a summary that carries "how many of how many" for every acceptance line.
 #
 #   tools/run-mission-batch.sh [N] [TAG_PREFIX]
@@ -9,9 +16,9 @@
 set -u
 N="${1:-10}"
 PREFIX="${2:-batch}"
-ROOT=/mnt/d/distill_self/lio_avoid        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
+ROOT=${DSH_ROOT}/harness        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
 REPO="$ROOT/src"                          # the code: bridge/, common/, lio/, planner/, sim/, supervisor/, tools/
-BASE=/home/fanxin/lio_avoid/logs
+BASE=${LIO_LOGS}
 STAMP="$(date +%Y%m%d_%H%M%S)"
 SUMMARY="$BASE/missionA-$PREFIX-$STAMP-summary.txt"
 mkdir -p "$BASE"

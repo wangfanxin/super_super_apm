@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 set -u
-S=/home/fanxin/lio_avoid/src/lio-fork/super_lio_local/src/lio/super_lio.cpp
+S=${DSH_ROOT}/harness/src/lio-fork/super_lio_local/src/lio/super_lio.cpp
 echo "== where Output() transforms a cloud"
 grep -n 'Output\|transformPointCloud' "$S" | head -20
 echo

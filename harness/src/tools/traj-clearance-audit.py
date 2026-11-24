@@ -20,6 +20,9 @@ it cannot come back:
 usage: tools/traj-clearance-audit.py <run-dir> [--world W] [--calib C] [--tol-m 0.15] [--all]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import importlib.util
@@ -69,7 +72,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("run", help="a run dir (with traj.csv and traj.csv.points.csv)")
     ap.add_argument("--world", default=os.path.join(PROJ, "worlds", "pillars.yaml"))
-    ap.add_argument("--calib", default="/mnt/d/distill_self/_stage/calib.json")
+    ap.add_argument("--calib", default=_P.CALIB)
     ap.add_argument("--tol-m", type=float, default=0.15,
                     help="how far the plan's own clearance and the FLIGHT's minimum may legitimately "
                          "differ (m).  They differ only by how far the aircraft left the plan, which the "

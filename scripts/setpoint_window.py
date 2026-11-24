@@ -13,13 +13,16 @@ the `t` printed below is the TRUTH clock, the same one the figures and the accep
 
     python3 scripts/setpoint_window.py v3c5-01-01 --t0 31 --t1 35 --cols yaw_cmd cmd_x cmd_y
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
 
 import numpy as np
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def load(path, cols):

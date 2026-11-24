@@ -8,13 +8,16 @@ the largest single-sample jump and the envelope, so the two can be told apart.
 
     python3 scripts/tap_jumps.py kx1-02-02 kwC-02-01 kx1-01-02
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import csv
 import os
 import sys
 
 import numpy as np
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 
 
 def one(tag, stride=1):

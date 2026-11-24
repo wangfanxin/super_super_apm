@@ -15,13 +15,16 @@ tick it just read), so they are joined directly with a tolerance instead of a sh
 
     python3 scripts/z_audit.py hz1-01-01 [--step 1.0]
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
 
 import numpy as np
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def load_sp(tag):

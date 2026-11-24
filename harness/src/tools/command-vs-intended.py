@@ -37,6 +37,9 @@ instead.
 usage: tools/command-vs-intended.py <glob-of-phase.csv> [...] [--max-err-mm 100]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import glob
@@ -44,7 +47,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src")
+sys.path.insert(0, _P.HARNESS_SRC)
 from tools.metrics import read_phase          # noqa: E402
 
 # worlds/pillars.yaml, mission.corners -- the intended geometry, in W
@@ -95,7 +98,7 @@ def main() -> int:
     ap.add_argument("--max-err-mm", type=float, default=100.0,
                     help="a command error larger than this means the CONVENTION is wrong, not the flight")
     args = ap.parse_args()
-    pats = args.pats or ["/home/fanxin/lio_avoid/logs/missionA-*/phase.csv"]
+    pats = args.pats or [_P.LOGS + "/missionA-*/phase.csv"]
     files = []
     for p in pats:
         files.extend(sorted(glob.glob(p)))

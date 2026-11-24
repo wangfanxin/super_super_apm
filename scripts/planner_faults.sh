@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # planner_faults.sh -- one line per sortie: which fault dominates SUPER's log?
 #   occupied  "Local start point is deeply occupied"      (robot inside the inflated map)
 #   belowgnd  "Odom below virtual ground"                 (odom z under the map's floor)
@@ -7,7 +14,7 @@
 #
 #   bash scripts/planner_faults.sh hx1-01-01 hx3-01-01 oldctl-01
 set -u
-D=/home/fanxin/lio_avoid/logs
+D=${LIO_LOGS}
 printf '%-14s %9s %9s %9s %9s\n' sortie occupied belowgnd pfr minco
 for t in "$@"; do
   f="$D/missionA-$t/traj.log"

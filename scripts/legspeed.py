@@ -13,13 +13,16 @@ time, as v(s) along the reference's own path.
 Columns of the ASCII plot: s (distance along the leg, m), v (reference |v_xy|, m/s), and a marker
 where the speed is BELOW 60 % of the leg's own p90 (i.e. a sag, not a normal start/stop ramp).
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import csv
 import os
 import sys
 
 import numpy as np
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 
 
 def load(tag):

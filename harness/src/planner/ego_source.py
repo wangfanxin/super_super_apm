@@ -40,6 +40,9 @@ usage:
   planner/ego_source.py --world worlds/pillars.yaml --calib-file _stage/calib.json [--hold-s 5.0]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import math
@@ -737,7 +740,7 @@ def main() -> int:
     ap.add_argument("--selftest", action="store_true", help="assert the contract with no ROS and no flight")
     ap.add_argument("--world", default=os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                     "..", "..", "worlds", "pillars.yaml"))
-    ap.add_argument("--calib-file", default="/mnt/d/distill_self/_stage/calib.json")
+    ap.add_argument("--calib-file", default=_P.CALIB)
     ap.add_argument("--z", type=float, default=2.0, help="mission altitude for the world's corners, m")
     ap.add_argument("--hold-s", type=float, default=5.0)
     ap.add_argument("--arrive-m", type=float, default=0.060)

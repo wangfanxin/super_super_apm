@@ -17,12 +17,15 @@ Reading of the columns:
   repl  `ReplanOnce succeed`             a 10 Hz re-plan tick that changed something
   tr    `change state` transitions       FOLLOW_TRAJ -> GENERATE_TRAJ is the FSM leaving the follow loop
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import os
 import re
 import sys
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 
 
 def main():

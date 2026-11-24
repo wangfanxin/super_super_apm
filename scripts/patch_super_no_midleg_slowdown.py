@@ -30,13 +30,16 @@ Usage
     python3 scripts/patch_super_no_midleg_slowdown.py --revert
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import hashlib
 import os
 import sys
 
-DEFAULT_ROOT = "/home/fanxin/super_super_apm/upstream/SUPER/super_planner"
+DEFAULT_ROOT = _P.SUPER + "/super_planner"
 REL = "src/super_core/super_planner.cpp"
 
 ANCHOR = "        double replan_total_t = (ros_ptr_->getSimTime() - replan_process_start_WT);"

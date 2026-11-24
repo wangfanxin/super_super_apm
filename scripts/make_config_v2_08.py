@@ -17,13 +17,16 @@ Round 81 changed what these two knobs mean, so read this before touching them:
 The 0.20 m "safety radius" that earlier rounds of this file encoded was deleted from the spec in round 81,
 so nothing here should reintroduce it.  Everything else is the accepted arm's values.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import os
 import re
 import shutil
 import sys
 
-SRC = "/mnt/d/distill_self/super_super_apm/config/super_lio_15m.yaml"
-DST = "/mnt/d/distill_self/super_super_apm/config/super_planner_hex.yaml"
+SRC = _P.ROOT + "/config/super_lio_15m.yaml"
+DST = _P.ROOT + "/config/super_planner_hex.yaml"
 
 SET = {
     "resolution": "0.05",
@@ -61,13 +64,13 @@ for k, v in SET.items():
 # (v3g-01: truth max 4.23, below the ">= 4 m/s for 1 s" bar).  At 6.0/5.5 W2 passed but W6 got worse
 # (0.63-0.68); 5.5/5.0 gives truth peaks of 4.28-4.73 m/s and W6 quarters of 0.49-0.57 (v3t/v3v/v3w).
 import subprocess
-subprocess.run([sys.executable, "/mnt/d/distill_self/super_super_apm/scripts/patch_yaml.py", DST,
+subprocess.run([sys.executable, _P.ROOT + "/scripts/patch_yaml.py", DST,
                 "--set", "traj_opt.boundary.max_vel=3.0",
                 "--set", "traj_opt.boundary.max_acc=8.0"], check=False)
 # map_voxel_num is the A* search grid: [300, 300, 60] at 0.05 m is only 15 x 15 m, and the v2 field
 # is 16 m across (+-8.0), so raise it to 20 x 20 m.  (Measured note from the old world: the grid and
 # planning_horizon have to move together, or a leg's end lands outside the search grid.)
-subprocess.run([sys.executable, "/mnt/d/distill_self/super_super_apm/scripts/patch_yaml.py", DST,
+subprocess.run([sys.executable, _P.ROOT + "/scripts/patch_yaml.py", DST,
                 "--set", "astar.map_voxel_num=[480,480,60]",
                 "--set", "super_planner.planning_horizon=16.0"], check=False)
 # planning_horizon 16 + a 480-cell (24 m) A* grid: 12 m is SHORTER than a 14.4 m leg, so one trajectory
@@ -80,7 +83,7 @@ subprocess.run([sys.executable, "/mnt/d/distill_self/super_super_apm/scripts/pat
 # against 518 successes, i.e. most replans were rejected and the reference simply held, and the
 # aircraft ended up crawling (76 % of the reference samples at 0.00 m/s).  This is the option's own
 # default in SuperPlannerConfig (super_core/config.hpp: LoadParam(..., false)).
-subprocess.run([sys.executable, "/mnt/d/distill_self/super_super_apm/scripts/patch_yaml.py", DST,
+subprocess.run([sys.executable, _P.ROOT + "/scripts/patch_yaml.py", DST,
                 "--set", "super_planner.backup_traj_en=false"], check=False)
 
 # the inherited comment on inflation_step still describes the OLD value ("0.1 m x 3 = 0.3 m")

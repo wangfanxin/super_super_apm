@@ -11,13 +11,16 @@ plus the `flags` word that says which aiding the lane has active.
     python3 scripts/ekf_log.py kx8-03-01 --t0 60 --t1 100
     python3 scripts/ekf_log.py kx8-03-01 --list         # which message types the log has
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import os
 import sys
 
 from pymavlink import mavutil
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 FLAG_BITS = [
     (0x1, "ATTD"), (0x2, "HORIZ"), (0x4, "VERT"), (0x8, "TERR"), (0x10, "CONST"),
     (0x20, "GPS"), (0x40, "OPT"), (0x80, "BODY"), (0x100, "WIND"), (0x200, "MAG"),

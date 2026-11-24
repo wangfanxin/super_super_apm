@@ -9,11 +9,14 @@ has to scan-match across.
     python3 scripts/lidar_skips.py kx8-03-01            # the whole flight
     python3 scripts/lidar_skips.py kx8-03-01 --near 99  # only rows around t=99 s
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import os
 import re
 
-ROOT = "/home/fanxin/lio_avoid/logs"
+ROOT = _P.LOGS
 
 
 def main():

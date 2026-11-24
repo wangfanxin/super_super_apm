@@ -10,6 +10,9 @@ heading back the way we came, the vehicle will turn round.
 
     python3 scripts/seam_direction.py --tag kn3-01-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import math
@@ -19,7 +22,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="kn3-01-01")
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 a = ap.parse_args()
 R = os.path.join(a.root, "missionA-" + a.tag)
 

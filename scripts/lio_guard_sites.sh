@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Read the four unguarded sites the LIO audit identified, in the tree that BUILT the library.
 set -u
-B=/home/fanxin/lio_avoid/src/Super-LIO/src/super_lio/src
+B=${DSH_ROOT}/harness/src/Super-LIO/src/super_lio/src
 echo "=== ROSWrapper.cpp 440-460 (empty-cloud check) ==="
 sed -n '440,460p' $B/ros/ROSWrapper.cpp
 echo

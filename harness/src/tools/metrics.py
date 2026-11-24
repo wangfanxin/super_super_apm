@@ -28,6 +28,9 @@ Outputs, each with its window:
 usage: tools/metrics.py --tap ... --odom ... --phase ... --corners "0.5,0.4,2.0;..."
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import math
@@ -36,7 +39,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src")
+sys.path.insert(0, _P.HARNESS_SRC)
 from common import frames          # noqa: E402
 
 # THE ACCEPTANCE TARGETS, NAMED ONCE.  A3's wander bound is DERIVED from A1's target ("10% of A1"), which

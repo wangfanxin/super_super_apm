@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # 全量构建自己的工作区。
 #
 # 关键：livox_ros_driver2 的 CMakeLists 引用了一个**从未被设置**的变量 DISTRO_ROS，
@@ -8,7 +15,7 @@
 # 因此这里只需要 -DDISTRO_ROS=humble，不需要改它的源码。
 set -euo pipefail
 
-WS=/home/fanxin/super_super_apm/ws
+WS=${DSH_ROOT}/ws
 LOG="${1:-/tmp/whtf_build.log}"
 
 set +u

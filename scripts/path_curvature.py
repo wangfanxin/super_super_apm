@@ -13,6 +13,9 @@ stream), so it is a property of what SUPER asked for, not of how the aircraft fl
 
     python3 scripts/path_curvature.py v4a-01 d84-01-01 d85-01-02 pv1-01-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import math
@@ -20,8 +23,8 @@ import os
 
 import numpy as np
 
-MISSION = "/home/fanxin/lio_avoid/logs"
-COMPACT = "/mnt/d/distill_self/super_super_apm/logs"
+MISSION = _P.LOGS
+COMPACT = _P.ROOT + "/logs"
 
 
 def find(tag, root):

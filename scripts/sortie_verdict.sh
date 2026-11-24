@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Did the flight complete, and what are its per-lap numbers?
 set -u
-cd /mnt/d/distill_self/super_super_apm || exit 1
+cd ${DSH_ROOT} || exit 1
 T=${1:?tag}
-R=/home/fanxin/lio_avoid/logs/missionA-$T
+R=${LIO_LOGS}/missionA-$T
 echo "=== $T"
 echo "ABORT lines : $(grep -c ABORT "$R/supervisor.log" 2>/dev/null)"
 grep -E 'phase ->' "$R/supervisor.log" 2>/dev/null | tail -3

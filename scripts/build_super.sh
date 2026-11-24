@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # 编译 SUPER（ROS 2 Humble）。
 #
 # SUPER 是 catkin + ament 双制式：每个包都有 ros1.* / ros2.* 模板，
@@ -6,8 +13,8 @@
 # 所以先切到 ROS2，再在独立工作区里 colcon build。
 set -uo pipefail
 
-R=/home/fanxin/super_super_apm/upstream/SUPER
-WS=/home/fanxin/super_super_apm/ws_super
+R=${SUPER_PLANNER_ROOT}
+WS=${WS_SUPER}
 LOG=${1:-/tmp/super_build.log}
 
 echo "== select ROS2 templates =="

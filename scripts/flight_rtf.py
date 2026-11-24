@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """flight_rtf.py -- print the FLIGHT-window real-time factor of a sortie (one number).
 
-    python3 scripts/flight_rtf.py /home/fanxin/lio_avoid/logs/missionA-kx1-01-02
+    python3 scripts/flight_rtf.py <LIO_LOGS>/missionA-<tag>
     -> 0.9999
 
 This is the host gate's number, and it comes from `phase.csv` (take-off .. land) rather than from the

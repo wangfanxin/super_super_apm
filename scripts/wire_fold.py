@@ -13,6 +13,9 @@ publish rate, so it answers this without any clock fitting: `p_l` is exactly wha
     python3 scripts/wire_fold.py kx4-01-01
     python3 scripts/wire_fold.py kx4-01-01 --near -0.15 -5.77      # one fold from the CUSP lines
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -26,7 +29,7 @@ def main():
     ap.add_argument("--near", nargs=2, type=float, default=None)
     ap.add_argument("--radius", type=float, default=0.25)
     ap.add_argument("--top", type=int, default=10)
-    ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+    ap.add_argument("--root", default=_P.LOGS)
     a = ap.parse_args()
 
     p = os.path.join(a.root, "missionA-" + a.tag, "wire.csv")

@@ -36,6 +36,9 @@ usage: fcu_pose_feed.py --calib-file _stage/calib.json [--in /fcu/odom] [--out /
        fcu_pose_feed.py --selftest
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import os
@@ -64,7 +67,7 @@ def pose_w_to_l(p_w, v_w, q_w, calib):
 def _selftest() -> int:
     import json
     bad = []
-    cal = json.load(open("/mnt/d/distill_self/_stage/calib.json"))
+    cal = json.load(open(_P.CALIB))
     calib = frames.Calib(R_WL=np.array(cal["R_WL"], dtype=float), t_WL=np.array(cal["t_WL"], dtype=float))
     # a point in L, pushed to W and back, must return
     p_l = np.array([1.5, -2.25, 1.75])
@@ -96,7 +99,7 @@ def _selftest() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
-    ap.add_argument("--calib-file", default="/mnt/d/distill_self/_stage/calib.json")
+    ap.add_argument("--calib-file", default=_P.CALIB)
     ap.add_argument("--in", dest="in_topic", default="/fcu/odom",
                     help="the FCU's OWN estimate (bridge --fcu-odom-topic).  `/sim/truth/odom` is the SITL "
                          "simulator's model state, a TEST channel that does not exist on hardware")

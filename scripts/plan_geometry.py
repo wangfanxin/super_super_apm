@@ -15,14 +15,17 @@ the commanded one, the aircraft is cutting the weave, which is a tracking proble
 
     python3 scripts/plan_geometry.py hx9-01-01 v3h132-01-01 [--arrays 5]
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
 
 import numpy as np
 
-MISSION = "/home/fanxin/lio_avoid/logs"
-COMPACT = "/mnt/d/distill_self/super_super_apm/logs"
+MISSION = _P.LOGS
+COMPACT = _P.ROOT + "/logs"
 A_TILT = 9.81
 
 

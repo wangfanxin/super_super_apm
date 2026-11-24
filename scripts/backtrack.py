@@ -15,6 +15,9 @@ the cumulative arc length of both, so a negative slope means "went backwards".
     python3 scripts/backtrack.py --tag kh1-02-01 --t0 40 --t1 110
     python3 scripts/backtrack.py --tag kh1-02-01 --find      (scan the whole lap for episodes)
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -23,7 +26,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="kh1-02-01")
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 ap.add_argument("--t0", type=float, default=None)
 ap.add_argument("--t1", type=float, default=None)
 ap.add_argument("--find", action="store_true", help="report every backward episode instead of a window")

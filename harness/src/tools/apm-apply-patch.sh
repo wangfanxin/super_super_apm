@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Apply (or revert) every patch in patches/ against the ArduPilot tree.
 #
 # The ArduPilot checkout stays PRISTINE in git: our only change to it is the truth tap, kept as a
@@ -7,10 +14,10 @@
 # of leaving a half-patched tree.
 #
 # usage: tools/apm-apply-patch.sh [--revert] [AP_TREE]
-#        AP_TREE defaults to /home/fanxin/lio_avoid/src/ardupilot
+#        AP_TREE defaults to $ARDUPILOT_ROOT (see setup/env.sh)
 set -eu
 
-AP_TREE=/home/fanxin/lio_avoid/src/ardupilot
+AP_TREE=${ARDUPILOT_ROOT}
 REVERT=""
 if [ "${1:-}" = "--revert" ]; then
     REVERT="--reverse"

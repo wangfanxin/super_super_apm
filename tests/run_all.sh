@@ -45,16 +45,38 @@ bash tests/no_abs_paths.sh || note_fail "no_abs_paths.sh"
 step "evidence links"
 bash scripts/check_evidence_links.sh || note_fail "check_evidence_links.sh"
 
-step "tool --help smoke (python tools in scripts/)"
+step "tool smoke: every python tool IMPORTS cleanly (a broken import is the real failure here)"
+# Not every historical tool has a CLI (`--help` legitimately exits 2 for positional-only tools), so the
+# check is: the interpreter must not die with a traceback on import/startup.  A tool that prints its usage
+# and exits 2 is fine; a tool that raises ImportError/NameError is not.
 k=0
+guard() {   # md5 of every SPEC-frozen input; a tool must never change them
+  find config params worlds calib -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1
+}
+before_g=$(guard)
+skipped=0
 for f in scripts/*.py; do
   case "$(basename "$f")" in
-    accept.py|show_gate.py) continue ;;
+    _paths.py) continue ;;
   esac
-  timeout 20 python3 "$f" --help >/dev/null 2>&1 || { echo "   --help failed: $f"; k=$((k + 1)); }
+  # positional-only tools (no argparse) cannot answer --help; running them with it makes them read
+  # "--help" as a filename, which looks like a crash and tells us nothing.  Skip them by construction.
+  if ! grep -q "argparse.ArgumentParser" "$f"; then skipped=$((skipped + 1)); continue; fi
+  out=$(timeout 20 python3 "$f" --help 2>&1)
+  if printf '%s' "$out" | grep -q -e "Traceback (most recent call last)" -e "ModuleNotFoundError" -e "ImportError"; then
+    echo "   broken on startup: $f"
+    printf '%s\n' "$out" | grep -e "Error" | head -1 | sed 's/^/        /'
+    k=$((k + 1))
+  fi
+  if [ "$(guard)" != "$before_g" ]; then
+    echo "   !! $f MODIFIED a SPEC-frozen input (config/params/worlds/calib) -- restoring"
+    git checkout -- config params worlds calib 2>/dev/null || true
+    before_g=$(guard)
+    k=$((k + 1))
+  fi
 done
-echo "   $k tool(s) failed --help"
-[ "$k" -gt 3 ] && note_fail "more than 3 tools cannot print --help"
+echo "   $k tool(s) broken, $skipped skipped (no argparse)"
+[ "$k" -gt 0 ] && note_fail "$k tool(s) fail to start (or write to a frozen input)"
 
 echo
 if [ "$fail" -eq 0 ]; then echo "GATE: PASS"; exit 0; fi

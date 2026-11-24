@@ -45,6 +45,9 @@ also fail -- a transpose alone can hide behind a rotation that happens to be nea
 usage: tools/test-s4-l-to-wire.py [--no-self-test]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import importlib.util
@@ -175,7 +178,7 @@ def calibrations(fr=None):
             ("composed: yaw 123 deg, t = (0.31, -0.22, 0.07)",
              fr.Calib(R_WL=fr.R_z(math.radians(123.0)),
                       t_WL=np.array([0.31, -0.22, 0.07])))]
-    measured = "/mnt/d/distill_self/_stage/calib.json"
+    measured = _P.CALIB
     if os.path.exists(measured):
         d = json.load(open(measured))
         cals.insert(0, ("MEASURED (the calibration the flights used)",

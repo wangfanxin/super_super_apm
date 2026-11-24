@@ -14,6 +14,9 @@ A corner-stop explanation cannot cover those, so this script isolates them:
 
     python3 scripts/midleg_stops.py --tag kn3-01-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -24,7 +27,7 @@ import yaml
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="kn3-01-01")
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 ap.add_argument("--v-stop", type=float, default=0.25)
 ap.add_argument("--d-min", type=float, default=1.5)
 ap.add_argument("--world", default="worlds/forest_hex12.yaml")

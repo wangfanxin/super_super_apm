@@ -7,11 +7,14 @@ applies the objective's own validity test to each: H1..H5 PASS and W1b PASS and 
 
     python3 scripts/two_sortie_report.py v3d-01-01 v3h17-01-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import json
 import os
 import sys
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 IDS = ["H1", "H2", "H3", "H4", "H5", "W0", "W0b", "W1", "W1b", "W2", "W3", "W4", "W5", "W6"]
 
 

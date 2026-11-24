@@ -14,13 +14,16 @@ invisible.  Each case has a deliberately wrong variant that must fail.
 usage: tools/selftest-bridge.py
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import math
 import sys
 
 import numpy as np
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src")
+sys.path.insert(0, _P.HARNESS_SRC)
 from common import frames                        # noqa: E402
 from bridge import mavlink_impl as mi            # noqa: E402
 from planner import cmd_stream                   # noqa: E402

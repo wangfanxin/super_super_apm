@@ -27,6 +27,9 @@ usage:
   sim/lidar_imu.py --port 14561 --scan-hz 10 --imu-hz 200 --burst 3     # 3 scans, then report
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import math
@@ -454,7 +457,7 @@ def main() -> int:
     if pattern is None and not args.allow_synth:
         print("REFUSING to run: the real MID-360 pattern was not found.\n"
               "  looked in: $LIO_PATTERN, <sim>/mid360_pattern.csv, <sim>/scan_mode/mid360.csv,\n"
-              "             /home/fanxin/lio_avoid/sim/mid360_pattern.csv\n"
+              "             " + _P.HARNESS + "/sim/mid360_pattern.csv\n"
               "  it is 17 MB of vendor data and is not tracked in the repo (.gitignore).\n"
               "  pass --pattern, or --allow-synth for a smoke test only (a synthesised pattern has a\n"
               "  different blind zone and repeats, so no measurement may be taken with it).")

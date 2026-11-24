@@ -34,6 +34,9 @@ raw radius crossing) -- which must fail assertion 4 and nothing else.
 usage: tools/test-cmd-stream.py [--no-self-test]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import importlib.util
@@ -448,7 +451,7 @@ def main() -> int:
     cals = [frames.Calib.predicted(spawn_heading_deg=0.0, world_axes="body"),
             frames.Calib.predicted(spawn_heading_deg=37.0, world_axes="body"),
             frames.Calib(R_WL=frames.R_z(math.radians(123.0)), t_WL=np.array([0.31, -0.22, 0.07]))]
-    measured = "/mnt/d/distill_self/_stage/calib.json"
+    measured = _P.CALIB
     if os.path.exists(measured):
         import json
         d = json.load(open(measured))

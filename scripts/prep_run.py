@@ -12,7 +12,7 @@ around is slow and wasteful, so this writes three compact files a figure script 
 `cmd_*` is in W (the bridge's log; velocity columns are W too since the round-82 fix -- for OLDER runs pass
 --cmd-vel-frame l and the figure scripts will rotate them).  `lio_*` is the estimator pose in L on purpose.
 
-    python3 scripts/prep_run.py --run /home/fanxin/lio_avoid/logs/missionA-d84-01-01 --out logs/d84-01-01
+    python3 scripts/prep_run.py --run <LIO_LOGS>/missionA-<tag> --out .runs/<tag>
 """
 import argparse
 import csv

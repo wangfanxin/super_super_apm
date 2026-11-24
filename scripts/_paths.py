@@ -2,7 +2,8 @@
 """_paths.py -- the ONE place that resolves the paths the analysis tools default to.
 
 Every tool in scripts/ (and the historical tools under harness/src/) used to hard-code the author's
-absolute layout, e.g. "/home/fanxin/lio_avoid/logs".  A published repository cannot carry that: a reader
+absolute layout, e.g. the owner's pre-2026-11-24 flight-log directory.  A published repository cannot
+carry that: a reader
 who clones it gets defaults that point at nothing.  From round 21 on, defaults come from here:
 
     import _paths as _P
@@ -23,8 +24,38 @@ import os
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+
+def _runtime_env():
+    """Read the machine-local overrides that setup/env.sh also sources (setup/runtime.env).
+
+    A plain parser rather than `source`: this module must work from any python, and the file only ever
+    contains `export KEY=value` lines.  Environment variables still win over the file.
+    """
+    root = os.environ.get("DSH_ROOT") or os.path.dirname(_HERE)
+    out = {}
+    p = os.path.join(root, "setup", "runtime.env")
+    try:
+        with open(p, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or not line.startswith("export "):
+                    continue
+                k, _, v = line[len("export "):].partition("=")
+                out[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return out
+
+
+_RT = _runtime_env()
+
+
+def _pick(name, default):
+    return os.environ.get(name) or _RT.get(name) or default
+
+
 # --- the repository -------------------------------------------------------------------------
-ROOT = os.environ.get("DSH_ROOT") or os.path.dirname(_HERE)      # <repo> (scripts/ is at the top)
+ROOT = os.environ.get("DSH_ROOT") or _RT.get("DSH_ROOT") or os.path.dirname(_HERE)
 WORKSPACE = os.path.dirname(ROOT)                                # the folder that holds <repo>
 
 HARNESS = os.path.join(ROOT, "harness")
@@ -37,16 +68,16 @@ PARAMS = os.path.join(ROOT, "params")
 DOCS = os.path.join(ROOT, "docs")
 EVIDENCE = os.path.join(DOCS, "evidence")
 THIRD_PARTY = os.path.join(ROOT, "third_party")
-SUPER = os.environ.get("SUPER_PLANNER_ROOT") or os.path.join(THIRD_PARTY, "SUPER")
-CALIB = os.environ.get("CALIB_FILE") or os.path.join(ROOT, "calib", "calib.json")
-MID360_PATTERN = os.environ.get("MID360_PATTERN") or os.path.join(HARNESS_SIM, "mid360_pattern.csv")
+SUPER = _pick("SUPER_PLANNER_ROOT", os.path.join(THIRD_PARTY, "SUPER"))
+CALIB = _pick("CALIB_FILE", os.path.join(ROOT, "calib", "calib.json"))
+MID360_PATTERN = _pick("MID360_PATTERN", os.path.join(HARNESS_SIM, "mid360_pattern.csv"))
 
 # --- builds and recordings (outside git) -----------------------------------------------------
 BUILD = os.path.join(ROOT, ".build")
-WS_SUPER = os.environ.get("WS_SUPER") or os.path.join(BUILD, "ws_super")
-LIO_WS = os.environ.get("LIO_WS") or os.path.join(BUILD, "lio_ws")
-ARDUPILOT = os.environ.get("ARDUPILOT_ROOT") or os.path.join(BUILD, "ardupilot")
-LOGS = os.environ.get("LIO_LOGS") or os.path.join(ROOT, ".runs")
+WS_SUPER = _pick("WS_SUPER", os.path.join(BUILD, "ws_super"))
+LIO_WS = _pick("LIO_WS", os.path.join(BUILD, "lio_ws"))
+ARDUPILOT = _pick("ARDUPILOT_ROOT", os.path.join(BUILD, "ardupilot"))
+LOGS = _pick("LIO_LOGS", os.path.join(ROOT, ".runs"))
 
 # --- documented legacy locations (pre-2026-11-24 layout; read-only, may not exist) -------------
 LEGACY_STAGE = os.path.join(BUILD, "stage")          # was <workspace>/_stage

@@ -16,13 +16,16 @@ This script reads the log and prints the distribution, plus what fraction of att
 
     python3 scripts/minco_penalty_stats.py v3d-01-01 [--max-acc 8.0] [--margin 0.05]
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import os
 import re
 
 import numpy as np
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def main():

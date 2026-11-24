@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # S3 gate, part 3: does the receiver publish what S4-S7 will consume?
 #
 # Starts SITL parked, runs sim/truth_rx.py in ROS mode, and then measures the topics from outside:
@@ -7,15 +14,15 @@
 #
 # usage: tools/sim-ros-check.sh [SECONDS]
 set -u
-AP=/home/fanxin/lio_avoid/src/ardupilot
+AP=${ARDUPILOT_ROOT}
 BIN="$AP/build/sitl/bin/arducopter"
-ROOT=/mnt/d/distill_self/lio_avoid        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
+ROOT=${DSH_ROOT}/harness        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
 REPO="$ROOT/src"                          # the code: bridge/, common/, lio/, planner/, sim/, supervisor/, tools/
 PORT=14560
 HOME_POS=-35.363261,149.165230,584,0
 SECS="${1:-40}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUT="/home/fanxin/lio_avoid/logs/s3-ros-$STAMP"
+OUT="${LIO_LOGS}/s3-ros-$STAMP"
 mkdir -p "$OUT"
 
 export ROS_LOCALHOST_ONLY=1

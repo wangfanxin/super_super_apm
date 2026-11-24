@@ -9,7 +9,7 @@ S1 要的三件事，各自有独立证据：
   S1c PVA     薄层发给 SUPER 的每个 goal 是否带 v = 4.0 m/s、方向指向下一航点（`traj.log` 的 GOAL 行）
 S3 平均地速   真值路径长度 / 路线时间（与 scripts/speed_audit.py 同口径），并给参考均速与 >4 m/s 占比。
 
-    python3 scripts/spec_flight.py --run /home/fanxin/lio_avoid/logs/missionA-h81-01-01 \\
+    python3 scripts/spec_flight.py --run <LIO_LOGS>/missionA-<tag> \\
         --world worlds/forest_v2_hex.yaml
 """
 import argparse

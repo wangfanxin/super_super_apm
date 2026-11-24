@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # 把 hku-mars/SUPER 拉下来。直连 github.com 超时，所以按可达性排序试三条路：
 #   ① codeload.github.com 的 tarball（实测可达，301/200）
 #   ② ghfast.top 代理 clone（实测 200）
 #   ③ gitee 镜像（实测 200）
 set -u
-DEST=/home/fanxin/super_super_apm/upstream
+DEST=${DSH_ROOT}/upstream
 mkdir -p "$DEST"
 TMP=/tmp/superfetch
 rm -rf "$TMP"; mkdir -p "$TMP"

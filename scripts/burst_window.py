@@ -7,6 +7,9 @@ following a moving reference (and overshooting it) or chasing a stalled one.
 
     python3 scripts/burst_window.py --tag ke1-01-01 --t 78.0 --span 1.2
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -15,7 +18,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="ke1-01-01")
-ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+ap.add_argument("--root", default=_P.LOGS)
 ap.add_argument("--t", type=float, default=78.0)
 ap.add_argument("--span", type=float, default=1.2)
 a = ap.parse_args()

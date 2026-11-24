@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # Hunt for TWO valid sorties (SPEC S6 + round-87 objective item 3), back to back.
 #
 # A "valid" sortie is the objective's own definition, read from the scorer's own JSON:
@@ -13,14 +20,14 @@
 #
 #   bash scripts/hunt_two_laps.sh [FIRST_TAG_INDEX] [MAX_ATTEMPTS]
 set -u
-ROOT=/mnt/d/distill_self/super_super_apm
+ROOT=${DSH_ROOT}
 cd "$ROOT" || exit 1
 START=${1:-1}
 MAXN=${2:-8}
 # NEED: how many VALID sorties this batch must find before it stops.  Round 87 already has one
 # (`v3d-01-01`, H1-H5 PASS + W1b 13/13), so a later batch can be started with NEED=1.
 NEED=${NEED:-2}
-LOGS=/home/fanxin/lio_avoid/logs
+LOGS=${LIO_LOGS}
 SUM=/tmp/hunt_two_laps.txt
 : > "$SUM"
 good=0

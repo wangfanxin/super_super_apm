@@ -7,13 +7,16 @@ asked for it and the aircraft merely obeyed.
 
     python3 scripts/z_plan_audit.py pv1-02-02 pva1-01-01 pva1-02-02 soft-02-02
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import csv
 import os
 import sys
 
 import numpy as np
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def main():

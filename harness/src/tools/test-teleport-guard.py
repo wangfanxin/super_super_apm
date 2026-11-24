@@ -12,6 +12,9 @@ now suppresses the geofence for `--geo-grace-s` after a jump whose implied speed
 
 No ROS, no MAVLink: `TapTruth.on_odom` is called with a stub that has the four attributes it reads.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import importlib.util
 import os
 import sys
@@ -20,7 +23,7 @@ import types
 
 import numpy as np
 
-SRC = "/mnt/d/distill_self/lio_avoid/src/supervisor/supervisor.py"
+SRC = _P.HARNESS_SRC + "/supervisor/supervisor.py"
 
 
 def load():

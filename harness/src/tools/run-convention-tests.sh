@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# --- repo path bootstrap (round 21) ------------------------------------------
+if [ -z "${DSH_ROOT:-}" ]; then
+  _dsh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_dsh" != "/" ] && [ ! -f "$_dsh/setup/env.sh" ]; do _dsh="$(dirname "$_dsh")"; done
+  [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
+fi
+# -----------------------------------------------------------------------------
 # S5 gate, live: the convention tests at three spawn headings, plus a mutation run that must FAIL.
 #
 # Nothing here arms or flies: the simulator is restarted per heading, the tests read the truth tap and
@@ -6,15 +13,15 @@
 #
 # usage: tools/run-convention-tests.sh
 set -u
-AP=/home/fanxin/lio_avoid/src/ardupilot
+AP=${ARDUPILOT_ROOT}
 BIN="$AP/build/sitl/bin/arducopter"
-ROOT=/mnt/d/distill_self/lio_avoid        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
+ROOT=${DSH_ROOT}/harness        # the project: params/, worlds/, docs/, frozen/, rviz/, firmware/
 REPO="$ROOT/src"                          # the code: bridge/, common/, lio/, planner/, sim/, supervisor/, tools/
 TAP_PORT=14560
 FAN_PORT=14561
 LATLON=-35.363261,149.165230,584
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUT="/home/fanxin/lio_avoid/logs/s5-conventions-$STAMP"
+OUT="${LIO_LOGS}/s5-conventions-$STAMP"
 mkdir -p "$OUT"
 
 pkill -f "sim/truth_rx.py" 2>/dev/null

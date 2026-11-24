@@ -9,12 +9,15 @@ because on a busy host H1 alone can invalidate a sortie that the aircraft flew f
     python3 scripts/hunt_stats.py v3d v3e v3h
     python3 scripts/hunt_stats.py --all        # every v3*/mx8* sortie that has an accept.json
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import glob
 import json
 import os
 import sys
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 NEED = ("H1", "H2", "H3", "H4", "H5", "W1b")
 
 

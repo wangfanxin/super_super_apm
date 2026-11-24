@@ -33,7 +33,7 @@ THE CLAIMS, and where each number comes from:
   W6 tracking         cmd vs truth                       setpoints.csv cmd_* vs tap.csv
 
 Usage:
-  accept.py --run /home/fanxin/lio_avoid/logs/missionA-sf-01 \
+  accept.py --run <LIO_LOGS>/missionA-<tag> \
             --world .../worlds/square15_forest.yaml [--alt 2.0] [--json out.json]
 """
 import argparse

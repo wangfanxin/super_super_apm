@@ -18,6 +18,9 @@ Columns
     python3 scripts/round87_ledger.py v3l2-01-01 v3l2-01-02 ...
     python3 scripts/round87_ledger.py --all          # every v3l2/v3c5/v3pv/v3p sortie
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import glob
@@ -25,7 +28,7 @@ import math
 import os
 import re
 
-MISSION = "/home/fanxin/lio_avoid/logs"
+MISSION = _P.LOGS
 
 
 def one(tag):

@@ -29,6 +29,9 @@ VARIANTS (one per airborne session; each starts from disarmed, on the pad):
 usage: tools/test-takeoff-contract.py --variant clean|datum|setpoint|clean_sp [--alt 2.5]
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 
 import argparse
 import json
@@ -39,7 +42,7 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, "/mnt/d/distill_self/lio_avoid/src")
+sys.path.insert(0, _P.HARNESS_SRC)
 from common import frames               # noqa: E402
 from bridge.base import Mode            # noqa: E402
 from bridge.mavlink_impl import MavlinkBridge   # noqa: E402

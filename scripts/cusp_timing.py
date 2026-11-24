@@ -11,6 +11,9 @@ into `setpoints.csv`/`wire.csv`, so a fold can be located exactly:
 
     python3 scripts/cusp_timing.py kx5-01-01
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _paths as _P  # noqa: E402  (repo path authority, round 21)
 import argparse
 import csv
 import os
@@ -25,7 +28,7 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tag")
-    ap.add_argument("--root", default="/home/fanxin/lio_avoid/logs")
+    ap.add_argument("--root", default=_P.LOGS)
     a = ap.parse_args()
     d = os.path.join(a.root, "missionA-" + a.tag)
 
