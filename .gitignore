@@ -15,3 +15,10 @@ eeprom.bin
 .DS_Store
 Thumbs.db
 setup/runtime.env
+
+# vendor sensor data: the real MID-360 ray pattern (~16 MB, 800 001 rows).
+# Not ours to redistribute, and the simulator REFUSES to run without it -- see harness/sim/README.md
+# for the one command that fetches it from Livox-SDK/livox_laser_simulation.
+harness/sim/*.csv
+harness/sim/*.csv.part
+harness/sim/scan_mode/

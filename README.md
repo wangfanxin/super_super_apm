@@ -136,5 +136,18 @@ KNOWN=W4 bash scripts/run_accept.sh <tag> forest_hex12.yaml 2.0 10.0 box 0.5 2
 * **一次完整的飞行 + 评分**（需要上面两项）—— 因此仓库里的数字来自作者机器上同一套源码与配置的实测记录，
   而不是本轮在克隆里重飞的。
 
+**2026-11-24 之后补记（本机迁移到"仓库 + 运行根"分离之后）**
+
+* 运行根 `/home/fanxin/super_super_apm/{.build,.runs}`（ArduPilot / lio_ws / ws_super / 记录）与仓库
+  `D:\distill_self\super_super_apm` 分离，`setup/runtime.env` 记录本机路径（不入库）。
+* 迁移后实测：`scripts/check_static.sh` PASS；`scripts/install_config_hex.sh` 三份配置 md5 一致；
+  `run-mission.sh` 干跑路径全解析；**真飞了一趟**（`smoke3-01-01`）：H1–H5 全过、W1 13/13、
+  W2 p90 1.46、W6 p90 0.374、W4 −0.090 —— 飞行动力学与评分链均正常（这一趟的 W4/W6 落在正常分布里，
+  不是迁移引入的）。
+
+**一个必须知道的依赖（不是代码问题，是数据）**：LiDAR 仿真需要真实 MID-360 射线图案
+（`harness/sim/mid360_pattern.csv`，≈16 MB，800 001 行，供应商数据，不入库）。没有它飞行脚本会**拒绝启动**。
+获取与校验见 `harness/sim/README.md` 与 `bash scripts/check_pattern.sh`。
+
 如果你要"克隆 → 编译 → 飞一趟"全部在本机复现，按第 4、5 节依次执行即可；任何一步的输出都会打印它用了哪个
 路径（`setup/env.sh` 的 `dsh_env_summary`），便于核对。
