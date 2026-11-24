@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""check_bag_pipeline.py -- the Phase 2 gate, no flight required.
+
+Publishes a KNOWN Odometry stream and a KNOWN PositionCommand stream, records them with
+`scripts/record_bag.sh` (split writers, the same script the flight uses), derives the CSV layer with
+`scripts/bag_to_csv.py`, and checks the derived rows against the published values.
+
+This is what makes the Phase 2 claim testable in `tests/run_all.sh`: the derivation is exercised on every
+gate run, so a change to either side of the pipeline cannot silently break the CSVs the analysis reads.
+
+  python3 tests/check_bag_pipeline.py            # PASS/FAIL + a one-line summary
+  python3 tests/check_bag_pipeline.py --keep     # leave /tmp/sp_bagtest for inspection
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+R = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = "/tmp/sp_bagtest"
+
+PUB = r'''
+import time
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from nav_msgs.msg import Odometry
+from quadrotor_msgs.msg import PositionCommand
+
+rclpy.init()
+n = Node("bagtest_pub")
+qos_be = QoSProfile(depth=200, history=HistoryPolicy.KEEP_LAST,
+                    reliability=ReliabilityPolicy.BEST_EFFORT)
+qos_rel = QoSProfile(depth=5, history=HistoryPolicy.KEEP_LAST,
+                     reliability=ReliabilityPolicy.RELIABLE,
+                     durability=DurabilityPolicy.TRANSIENT_LOCAL)
+pub_o = n.create_publisher(Odometry, "/lio/robo/odom", qos_be)
+pub_c = n.create_publisher(PositionCommand, "/plan/cmd", qos_rel)
+t0 = time.monotonic()
+k = 0
+while time.monotonic() - t0 < 12.0:
+    t = n.get_clock().now().to_msg()
+    o = Odometry()
+    o.header.stamp = t
+    o.header.frame_id = "lio_world"
+    o.child_frame_id = "base_link"
+    o.pose.pose.position.x = 0.01 * k
+    o.pose.pose.position.y = 0.02 * k
+    o.pose.pose.position.z = 1.5
+    o.pose.pose.orientation.w = 1.0
+    o.twist.twist.linear.x = 1.0
+    pub_o.publish(o)
+    c = PositionCommand()
+    c.header.stamp = t
+    c.header.frame_id = "lio_world"
+    c.position.x = 0.01 * k
+    c.position.y = 0.02 * k
+    c.position.z = 2.0
+    c.velocity.x = 1.0
+    c.yaw = 0.5
+    c.yaw_dot = 0.1
+    c.trajectory_id = k % 5
+    c.trajectory_flag = 1
+    pub_c.publish(c)
+    k += 1
+    time.sleep(0.01)
+print("PUBLISHED", k, flush=True)
+'''
+
+ROS_ENV = (". %s/setup/env.sh; set +u; . /opt/ros/humble/setup.bash; "
+           ". \"$LIO_WS/install/setup.bash\" 2>/dev/null; "
+           ". \"$WS_SUPER/install/setup.bash\" 2>/dev/null; " % R)
+
+
+def shell(cmd, log=None):
+    out = open(log, "w") if log else subprocess.DEVNULL
+    return subprocess.Popen(["bash", "-lc", ROS_ENV + cmd], cwd=R,
+                            stdout=out, stderr=subprocess.STDOUT,
+                            start_new_session=True)
+
+
+def main():
+    keep = "--keep" in sys.argv
+    shutil.rmtree(OUT, ignore_errors=True)
+    os.makedirs(OUT, exist_ok=True)
+    shutil.rmtree("/dev/shm/sp_bagtest", ignore_errors=True)
+    with open(os.path.join(OUT, "pub.py"), "w") as fh:
+        fh.write(PUB)
+    pub = shell("python3 %s/pub.py" % OUT, log=os.path.join(OUT, "pub.log"))
+    time.sleep(1.0)
+    bag = shell("bash %s/scripts/record_bag.sh %s /dev/shm/sp_bagtest" % (R, OUT),
+                log=os.path.join(OUT, "bag.log"))
+    time.sleep(11.0)
+    pub.send_signal(signal.SIGINT)
+    bag.send_signal(signal.SIGINT)
+    # wait for the recorder to CLOSE the bag (metadata.yaml appears when the storage is finalised)
+    meta = "/dev/shm/sp_bagtest/bag/metadata.yaml"
+    for _ in range(100):
+        if os.path.isfile(meta):
+            break
+        time.sleep(0.1)
+    for p in (pub, bag):
+        if p.poll() is None:
+            p.kill()
+    time.sleep(0.5)
+    shmbag = "/dev/shm/sp_bagtest/bag"
+    listing = sorted(os.listdir(shmbag)) if os.path.isdir(shmbag) else ["<no bag dir>"]
+    print("bag dir contents:", listing, flush=True)
+    log = os.path.join(OUT, "derive.log")
+    with open(log, "w") as fh:
+        rc = subprocess.call(["bash", "-lc", ROS_ENV +
+                              "python3 %s/scripts/bag_to_csv.py --bag /dev/shm/sp_bagtest/bag "
+                              "--derive-all --outdir %s/csv" % (R, OUT)], cwd=R,
+                             stdout=fh, stderr=subprocess.STDOUT)
+    ok = rc == 0
+    details = []
+    for name, header, checks in (
+        ("lio.csv", "t_us,x,y,z,qw,qx,qy,qz,vx,vy,vz,wx,wy,wz,frame_id,child_frame_id",
+         lambda r: abs(float(r[2]) - 2.0 * float(r[1])) < 1e-6 and r[4] == "1.000000000"),
+        ("traj.csv.cmd.csv", "t_us,x_l,y_l,z_l,vx_l,vy_l,vz_l,ax_l,ay_l,az_l,yaw,yaw_dot,"
+                             "trajectory_id,trajectory_flag,frame_id",
+         lambda r: abs(float(r[2]) - 2.0 * float(r[1])) < 1e-6 and float(r[11]) == 0.1),
+    ):
+        path = os.path.join(OUT, "csv", name)
+        if not os.path.isfile(path):
+            ok = False
+            details.append("%s missing" % name)
+            continue
+        lines = open(path).read().splitlines()
+        good = lines and lines[0] == header and len(lines) > 20 and checks(lines[1].split(","))
+        ok = ok and bool(good)
+        details.append("%s %d rows %s" % (name, len(lines) - 1, "ok" if good else "BAD"))
+    if not ok:
+        tail = open(os.path.join(OUT, "derive.log")).read().strip().splitlines()[-3:]
+        details.append("derive: " + " | ".join(tail))
+    print("bag pipeline: %s (%s)" % ("PASS" if ok else "FAIL", ", ".join(details)))
+    shutil.rmtree("/dev/shm/sp_bagtest", ignore_errors=True)
+    if not keep:
+        shutil.rmtree(OUT, ignore_errors=True)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

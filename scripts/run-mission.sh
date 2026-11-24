@@ -905,6 +905,43 @@ if [ "$TRUTH_SRC" = "simstate" ]; then
         echo "   truth    : WARNING no SIM_STATE within 60 s -- flying anyway (the sensor will report)"
     fi
     sleep 1
+    # ---- PHASE 2 RECORDING BASE, STARTED BEFORE THE PUBLISHERS -------------------------------
+    # Launch the bag and the old odometry CSV recorder HERE (before the LiDAR/LIO nodes publish) so the
+    # bag covers every LIO sample: rosbag2 subscribes to a topic that appears later (MEASURED 2026-11-25),
+    # and in the target state the CSVs are DERIVED from this bag.  Both start side by side, so the
+    # derived layer and the live layer describe the same recording window.
+    if [ "${BAG:-0}" = "1" ]; then
+        # BAGS GO TO TMPFS FIRST.  MEASURED 2026-11-25: recording the bag onto the ext4 virtual disk turns into
+        # multi-second VM-wide stalls (LiDAR cast 15 ms -> 1.9-2.2 s, LIO dead-reckons, sortie aborts); tmpfs
+        # writes are RAM and the (tens of MB) bag is copied into the sortie directory afterwards by
+        # scripts/finalize_bag.sh.
+        if [ "${BAG_RAM:-1}" = "1" ] && [ -d /dev/shm ]; then
+            BAG_PARENT=/dev/shm/sp_bags/$(basename "$OUT")
+        else
+            BAG_PARENT=$OUT
+        fi
+        rm -rf "$BAG_PARENT" 2>/dev/null || true
+        mkdir -p "$BAG_PARENT"
+        if [ "${BAG_SPLIT:-0}" = "1" ]; then
+            BAG_GROUP=a $BAG_PREFIX bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" "$BAG_PARENT" > "$OUT/bag_a.log" 2>&1 &
+            BAG_PID=$!
+            BAG_GROUP=b $BAG_PREFIX2 bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" "$BAG_PARENT" > "$OUT/bag_b.log" 2>&1 &
+            BAG_PID2=$!
+            echo "   recording : rosbag2 SPLIT -> $BAG_PARENT (BAG_SPLIT=1, cores ${BAG_CORES}/${BAG_CORES2})"
+        else
+            $BAG_PREFIX bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" "$BAG_PARENT" > "$OUT/bag.log" 2>&1 &
+            BAG_PID=$!
+            BAG_PID2=""
+            echo "   recording : rosbag2 -> $BAG_PARENT (BAG=1, topics ${BAG_TOPICS:-core}, cores ${BAG_CORES})"
+        fi
+else
+        BAG_PARENT=""
+        BAG_PID=""
+        BAG_PID2=""
+fi
+    $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-odom.py" --topic /lio/robo/odom --csv "$OUT/lio.csv" \
+        --seconds 0 > "$OUT/rec.log" 2>&1 &
+    REC_PID=$!
 else
 python3 "$SIM/src/truth_rx.py" --ros --moving --duration 0 --port $TAP --fanout $FAN \
     --fanout-decimate 6 --csv "$OUT/tap.csv" --save "$OUT/truth_report.txt" \
@@ -966,9 +1003,11 @@ LIO_PID=$!
 sleep 5
 kill -0 "$LIO_PID" 2>/dev/null || { echo "the LIO died:"; tail -20 "$OUT/lio.log"; exit 1; }
 
-$AUX_PREFIX python3 "$DSH_ROOT/scripts/record-odom.py" --topic /lio/robo/odom --csv "$OUT/lio.csv" \
-    --seconds 0 > "$OUT/rec.log" 2>&1 &
-REC_PID=$!
+if [ "$TRUTH_SRC" != "simstate" ]; then
+    $AUX_PREFIX python3 "$DSH_ROOT/scripts/record-odom.py" --topic /lio/robo/odom --csv "$OUT/lio.csv" \
+        --seconds 0 > "$OUT/rec.log" 2>&1 &
+    REC_PID=$!
+fi
 # The LIO's own registered map is recorded next to the odometry, so a flight's clearance number can be
 # checked against the map the trajectory was built from rather than taken on trust.
 # WITH BAG=1 THE CLOUD CSV IS SKIPPED: it is not read by scripts/accept.py (which uses tap/phase/lio/
@@ -1014,23 +1053,6 @@ fi
 # PHASE 2 (round 24): the recording BASE.  With BAG=1 the whole sortie is also recorded as one rosbag2
 # (QoS-aware, see scripts/bag_qos.yaml); scripts/bag_to_csv.py derives the CSV layer from it, so the
 # analysis/acceptance code keeps reading the same files.  Both are recorded during the transition.
-if [ "${BAG:-0}" = "1" ]; then
-    if [ "${BAG_SPLIT:-0}" = "1" ]; then
-        BAG_GROUP=a $BAG_PREFIX bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag_a.log" 2>&1 &
-        BAG_PID=$!
-        BAG_GROUP=b $BAG_PREFIX2 bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag_b.log" 2>&1 &
-        BAG_PID2=$!
-        echo "   recording : rosbag2 SPLIT -> $OUT/bag_a + $OUT/bag_b (BAG_SPLIT=1, cores ${BAG_CORES})"
-    else
-        $BAG_PREFIX bash "$DSH_ROOT/scripts/record_bag.sh" "$OUT" > "$OUT/bag.log" 2>&1 &
-        BAG_PID=$!
-        BAG_PID2=""
-        echo "   recording : rosbag2 -> $OUT/bag (BAG=1, topics ${BAG_TOPICS:-core}, cores ${BAG_CORES})"
-    fi
-else
-    BAG_PID=""
-    BAG_PID2=""
-fi
 sleep 3
 
 echo "== flying =="
@@ -1144,6 +1166,12 @@ FSM_RC=$SUP_RC
 # This is the whole fix: after it, tap.csv, the FCU's BIN and lio.csv are FROZEN, so the file this script
 # writes and the file a reader can re-run against are the same file.
 stop_stack
+if [ "${BAG:-0}" = "1" ]; then
+    echo
+    echo "== bag -> csv (Phase 2: move the bag out of tmpfs and derive the CSV layer) =="
+    bash "$DSH_ROOT/scripts/finalize_bag.sh" "$OUT" "$BAG_PARENT" "${BAG_SPLIT:-0}" \
+        | sed 's/^/   /' || echo "   WARNING: bag finalize failed"
+fi
 echo
 echo "== metrics =="
 BINFILE=$(ls "$OUT"/logs/*.BIN 2>/dev/null | tail -1)

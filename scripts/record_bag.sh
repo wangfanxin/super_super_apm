@@ -16,13 +16,19 @@ fi
 # Writes <run-dir>/bag/ and <run-dir>/bag.log.  Stops on SIGINT/SIGTERM (ros2 bag flushes on SIGINT).
 set -u
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT=${1:?usage: record_bag.sh <run-dir>}
+OUT=${1:?usage: record_bag.sh <run-dir> [bag-parent]}
+BAGPARENT=${2:-$OUT}          # e.g. /dev/shm/sp_bags/<tag>: tmpfs, see finalize_bag.sh for why
 [ -f "$R/setup/env.sh" ] && . "$R/setup/env.sh"
-set +u
-[ -f /opt/ros/humble/setup.bash ] && . /opt/ros/humble/setup.bash
-[ -f "${LIO_WS:-}/install/setup.bash" ] && . "$LIO_WS/install/setup.bash"
-[ -f "${WS_SUPER:-}/install/setup.bash" ] && . "$WS_SUPER/install/setup.bash"
-set -u
+# FAST START WHEN THE CALLER ALREADY HAS THE ROS ENVIRONMENT: re-sourcing two workspaces costs ~2-4 s, and
+# that delay is exactly the recording window the bag loses at the start of a sortie (the derived layer then
+# cannot match the old CSV recorders row-for-row).  The launcher sources everything before starting us.
+if [ -z "${ROS_VERSION:-}" ] || [ "${BAG_FORCE_SOURCE:-0}" = "1" ]; then
+    set +u
+    [ -f /opt/ros/humble/setup.bash ] && . /opt/ros/humble/setup.bash
+    [ -f "${LIO_WS:-}/install/setup.bash" ] && . "$LIO_WS/install/setup.bash"
+    [ -f "${WS_SUPER:-}/install/setup.bash" ] && . "$WS_SUPER/install/setup.bash"
+    set -u
+fi
 
 # TWO TOPIC SETS.  `core` is what scripts/bag_to_csv.py needs for the CSV layer and is small enough to run
 # while the CSV recorders are still on (MEASURED 2026-11-25: the full set plus 4 CSV recorders on 4 shared
@@ -52,13 +58,13 @@ if [ "${BAG_SPLIT:-0}" = "1" ]; then
     b) TOPICS=(/sim/truth/odom /plan/cmd /fcu/odom) ;;
     *) echo "BAG_GROUP must be a or b" >&2; exit 2 ;;
   esac
-  OUT="$OUT/bag_${BAG_GROUP}"
 fi
 # NOTE: do NOT create the bag directory yourself -- `ros2 bag record -o DIR` refuses to start when DIR
 # already exists (MEASURED: "[ERROR] [ros2bag]: Output folder ... already exists"), so the parent only.
-mkdir -p "$OUT"
-echo "record_bag: ${#TOPICS[@]} topics -> $OUT/bag"
-exec ros2 bag record -o "$OUT/bag" \
+if [ "${BAG_SPLIT:-0}" = "1" ]; then BAGDIR="$BAGPARENT/bag_${BAG_GROUP:-a}"; else BAGDIR="$BAGPARENT/bag"; fi
+mkdir -p "$BAGPARENT"
+echo "record_bag: ${#TOPICS[@]} topics -> $BAGDIR ($(df -h "$BAGPARENT" | tail -1 | awk '{print $4}') free)"
+exec ros2 bag record -o "$BAGDIR" \
   --qos-profile-overrides-path "$R/scripts/bag_qos.yaml" \
   --max-bag-size 2147483648 \
   "${TOPICS[@]}"

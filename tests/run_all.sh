@@ -39,6 +39,9 @@ step "unit tests"
 python3 scripts/test_ref_lp.py || note_fail "test_ref_lp.py"
 python3 scripts/archive/harness/test-stall-gate.py || note_fail "test-stall-gate.py"
 
+step "Phase 2 recording base: rosbag2 -> CSV derivation (synthetic, no flight)"
+python3 tests/check_bag_pipeline.py || note_fail "check_bag_pipeline.py (rosbag2 -> CSV derivation)"
+
 step "path policy"
 bash tests/no_abs_paths.sh || note_fail "no_abs_paths.sh"
 

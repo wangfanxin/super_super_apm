@@ -342,6 +342,30 @@ phase1a/1d 传感器 H6 也偶发（cast 尖峰）。每趟都能拿到 pre-dive
 
 ---
 
+## 2026-11-25 07:45（第 15 条，Phase 2 完成：bag 全量录制 + 派生层与现采逐字节一致）
+
+**根因修复**
+- bag 写 ext4 虚拟盘会触发 **VM 级 2 s 停顿**（LiDAR raycast 15 ms → 1861–2249 ms，LIO 失锁，sortie abort；
+  phase2g/2h/2i 复现）。改为先写 **tmpfs（/dev/shm）**、飞行后由 `scripts/finalize_bag.sh` 拷回仓库 → phase2j/2k 两趟完整通过。
+- 单 writer 在飞行负载下抓不全（35–128 Hz vs 应 200 Hz）；隔离基准显示单 writer 能到 438 Hz，问题是运行时被抢。
+  `BAG_SPLIT=1` 双 writer（A: 200 Hz odom；B: 三个 100 Hz topic）+ 分核（15/19）+ bag **先于发布者启动**
+  （rosbag2 会订阅后出现的 topic）+ `record_bag.sh` 跳过重复 source（省 2–4 s）→ 全量。
+
+**实测（missionA-phase2k-01-01，完整两圈、正常 LAND+disarm）**
+- bag：`/lio/robo/odom` 30310 行 @200.0 Hz、`/sim/truth/odom` 100.0 Hz、`/plan/cmd` 100.0 Hz、`/fcu/odom` 49.6 Hz（发布率）。
+- `bag_compare.txt`：live lio.csv 30268 行**全部**在派生 30310 行中逐字节存在；traj cmd 14456 = 14456 全相同。
+- 同趟新旧 accept：**14/15 行完全一致**；唯一 H3 差异是派生层比旧记录器多 42 个样本（旧记录器丢的），
+  把派生层裁到同一窗口后 **15/15 完全一致**。
+- accept（phase2k）：H1/H3/H4/H5/H6 + W0b/W1(13/13)/W1b/W2/W3/W5/W6 全过，仅 H2（P0 门槛）与 W4（已知缺陷）。
+- 新门禁 `tests/check_bag_pipeline.py`（合成 → bag → 派生 → 校验）已接入 `tests/run_all.sh`，GATE PASS。
+
+**下一步（Phase 3/4）**
+1. Phase 2 目标态收尾：去掉唯一保留的 record-odom，让 `derived/` 直接成为 lio.csv/traj.csv.cmd.csv（finalize 已支持）；
+2. Phase 3：bridge+supervisor 合并成单个自建 MAVLink 客户端（extnav 年龄门/质量/reset、wire liveness、yaw 单点转换）；
+3. Phase 4：轻量 sim 的图案窗口/1200→60 ms 突发、每帧 CSV、rviz 回放。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

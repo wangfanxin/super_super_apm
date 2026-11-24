@@ -155,6 +155,12 @@
 **风险**：SIM_STATE 在 AC 4.5 的字段/频率与文档有差异 → 用 `compare_truth` 先量再做。
 
 ### Phase 2 — 录制与派生（2–3 天）
+> **状态：[完成-待目标态收尾] 2026-11-25。** 证据见 [PHASE2-RECORDING.md](PHASE2-RECORDING.md)：`missionA-phase2k-01-01`
+> 一趟完整两圈飞行里，bag 全量录制（`/lio/robo/odom` 200.0 Hz、100 Hz topics 全量），bag→CSV 派生覆盖现采记录的
+> 每一行（逐字节相同），同趟新旧 accept 14/15 行完全一致，唯一差异（H3 录制窗口）在把派生层裁到同一窗口后
+> 15/15 完全一致。关键发现：bag 写 ext4 虚拟盘会造成 VM 级 2 s 停顿（LiDAR cast 2249 ms → LIO 失锁），
+> 改 tmpfs 后消失；单 writer 在飞行负载下抓不全，split writers 后全量。剩余：去掉唯一保留的 CSV 记录器（记到
+> 目标态）、H2 速率门槛随真值重定义（P0 延后）。
 
 **做什么**
 1. `scripts/record_bag.sh`：rosbag2 录 `/lio/*`、`/plan/cmd`、`/planning/*`、`/fcu/*`、`/sim/state/*`、`/bridge/status`、`/tf`、`/clock`、`/rosout`；QoS 显式（BEST_EFFORT 的 topic 用 `--qos-profile-overrides-file`）。
