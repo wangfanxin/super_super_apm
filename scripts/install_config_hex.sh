@@ -18,9 +18,13 @@ fi
 #   * ws_super/src/super_planner/config     -- what fsm_node ACTUALLY loads (it prints the path)
 set -eu
 ROOT=${DSH_ROOT}
-USER_HOME=${DSH_ROOT}/.build
 CFG=super_planner_hex.yaml
-DIRS="$USER_HOME/upstream/SUPER/super_planner/config $USER_HOME/ws_super/src/super_planner/config"
+# Two loader copies, both named by setup/env.sh so a build outside the repo (or a WSL build root) works:
+#   * SUPER_PLANNER_ROOT/super_planner/config -- what the thin layer's --super-config existence check reads
+#   * WS_SUPER/src/super_planner/config       -- what fsm_node ACTUALLY loads (it prints the path)
+# When WS_SUPER/src/super_planner is a symlink into SUPER_PLANNER_ROOT (the normal layout) these are the
+# same directory and the second cp is a no-op -- the compare below still proves both sides agree.
+DIRS="${SUPER_PLANNER_ROOT:?}/super_planner/config ${WS_SUPER:?}/src/super_planner/config"
 
 for d in $DIRS; do
   [ -d "$d" ] || { echo "MISSING config dir: $d" >&2; exit 1; }
@@ -36,9 +40,9 @@ for d in $DIRS; do
 done
 
 echo "== checksums (repo vs the two loaded copies must agree)"
-md5sum "$ROOT/config/$CFG" "$USER_HOME/upstream/SUPER/super_planner/config/$CFG" \
-       "$USER_HOME/ws_super/src/super_planner/config/$CFG" 2>/dev/null | sed 's/^/   /' || true
+md5sum "$ROOT/config/$CFG" "${SUPER_PLANNER_ROOT:?}/super_planner/config/$CFG" \
+       "${WS_SUPER:?}/src/super_planner/config/$CFG" 2>/dev/null | sed 's/^/   /' || true
 
-# audit F7: hard comparison of the three copies
-cmp -s "$ROOT/config/$CFG" "$USER_HOME/upstream/SUPER/super_planner/config/$CFG" || { echo "MISMATCH upstream copy" >&2; exit 1; }
-cmp -s "$ROOT/config/$CFG" "$USER_HOME/ws_super/src/super_planner/config/$CFG" || { echo "MISMATCH ws copy" >&2; exit 1; }
+# audit F7: hard comparison of the copies
+cmp -s "$ROOT/config/$CFG" "${SUPER_PLANNER_ROOT:?}/super_planner/config/$CFG" || { echo "MISMATCH planner copy" >&2; exit 1; }
+cmp -s "$ROOT/config/$CFG" "${WS_SUPER:?}/src/super_planner/config/$CFG" || { echo "MISMATCH ws copy" >&2; exit 1; }

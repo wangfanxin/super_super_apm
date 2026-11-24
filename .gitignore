@@ -14,3 +14,4 @@ eeprom.bin
 .idea/
 .DS_Store
 Thumbs.db
+setup/runtime.env

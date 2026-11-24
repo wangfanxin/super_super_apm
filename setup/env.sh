@@ -28,6 +28,15 @@ export LIO_WS="${LIO_WS:-$DSH_ROOT/.build/lio_ws}"
 export LIO_LOGS="${LIO_LOGS:-$DSH_ROOT/.runs}"                # sortie recordings
 export ARDUPILOT_ROOT="${ARDUPILOT_ROOT:-$DSH_ROOT/.build/ardupilot}"
 
+# ---- optional machine-local overrides -------------------------------------------
+# On this machine the repo lives on the Windows drive (D:) but the builds and the recordings deliberately
+# stay on the WSL ext4 filesystem (fast, and ArduPilot's 1.5 GB clone does not belong on /mnt/d).
+# setup/runtime.env is NOT committed (see .gitignore); a fresh clone simply has none and uses .build/.
+if [ -f "$DSH_ROOT/setup/runtime.env" ]; then
+  # shellcheck disable=SC1090,SC1091
+  . "$DSH_ROOT/setup/runtime.env"
+fi
+
 # ---- ROS 2 ---------------------------------------------------------------------
 if [ -f /opt/ros/humble/setup.bash ] && [ -z "${ROS_DISTRO:-}" ]; then
   set +u
