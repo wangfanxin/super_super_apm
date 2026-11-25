@@ -64,8 +64,26 @@ namespace fsm {
 
         TimeConsuming replan_once_time("replan_once_time", false);
 
-        RET_CODE ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, gi_.new_goal,
-                                                     gi_.goal_v, gi_.goal_a);
+        RET_CODE ret_code;
+        if (gi_.new_goal) {
+            /// WHTF-SMOOTH-HANDOVER (patch 14, 2026-11-26).  A NEW GOAL is first handed to the ordinary
+            /// CONTINUOUS replan (new_goal=false): that path uses the WHOLE committed trajectory as the
+            /// guide instead of receding 1 m along it and splicing, which is what fails at corner turns
+            /// (44-82 GenerateExpTrajectory failures / sortie, each one ending in a Traj finish ->
+            /// PlanFromRest -> commanded-speed collapse and an aircraft loop).  The historical new-goal
+            /// attempt is kept as the fallback, so a regression is bounded to today's behaviour.
+            RET_CODE smooth = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, false,
+                                                       gi_.goal_v, gi_.goal_a);
+            if (smooth == SUCCESS || smooth == FINISH || smooth == NO_NEED) {
+                ret_code = smooth;
+            } else {
+                ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, true,
+                                                    gi_.goal_v, gi_.goal_a);
+            }
+        } else {
+            ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, gi_.new_goal,
+                                                gi_.goal_v, gi_.goal_a);
+        }
         if (ret_code == FAILED) {
 //            cout << YELLOW << " -- [Fsm] ReplanOnce failed." << RESET << endl;
         } else { cout << GREEN << " -- [Fsm] ReplanOnce succeed." << RESET << endl; }

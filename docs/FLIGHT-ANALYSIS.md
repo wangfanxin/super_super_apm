@@ -551,3 +551,26 @@ z 误差 ≤0.10 m（PSC_NE_POS/VEL 加硬、PSC_D 垂直环、ATC 姿态环、�
 2. 把 plan box 改成轨迹流：订阅 SUPER 多项式轨迹，自己拼接/前移末端，不依赖 FSM 的收尾语义。
 两个方案都保持 W1b/pacer 记账不变。
 
+### 16. **patch 14（SMOOTH-HANDOVER）**：换目标先走连续重规划 —— 首次做到绕圈 = 0（04:00–04:15）
+
+**patch 14**（`hku_super/patches/patch_super_smooth_handover.py`，已 apply 且进门禁）：
+`Fsm::callReplanOnce` 里新目标先调用 `ReplanOnce(..., new_goal=false)` —— 走 SUPER 的**连续重规划**路径
+（用整条已提交轨迹做 guide、再 A* 到新目标），只有硬失败（FAILED/EMER/NEW_TRAJ）才回退到原来的
+`new_goal=true` 行为。于是换目标不再必然"从静止重新规划"。
+
+| 趟 | 配置 | W1 | W1b | W6 | 绕圈 | 中段停顿 | ExpTraj failed | Traj finish |
+|---|---|---|---|---|---|---|---|---|
+| 8d（基线） | corner 0.8 / arrive 0.3 | 13/13 | ✅ | ✅ | 2 | 2 次 0.7 s | 44 | 11 |
+| **8n** | + patch 14 | 13/13 | ✅ | ✅ | **0** | 4 次 1.4 s | 58 | 25 |
+| **8o** | + patch 14 + REF_DEADRECKON 0.6/stale 0.15 | 13/13 | ✅ | ✅ | 2 | 3 次 1.3 s | **30** | 20 |
+
+（停顿统计已剔除停机坪上的正常 pre-takeoff hold。）
+
+**结论**：
+- patch 14 首次把绕圈降到 **0**（8n）且 W1/W1b/W6 全过——方向成立：**换目标必须走连续重规划**；
+- 但 `GenerateExpTrajectory failed` 仍偏多（30–58），说明连续重规划在角点仍会失败并回退到旧路径，
+  绕圈数在 0–2 之间波动（8o 又出现 2 个）；还剩 1.3–1.4 s 的短停顿；
+- 下一步：在 patch 14 基础上继续压 `GenerateExpTrajectory failed`（失败分支定位：A* 还是 MINCO 边界），
+  以及把"连续重规划失败时的回退"从 `new_goal=true` 改为"保持旧轨迹继续、下拍再试"，目标是
+  **绕圈=0、停顿=0** 稳定复现，然后才提速。
+

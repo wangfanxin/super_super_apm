@@ -71,6 +71,12 @@ def main() -> int:
     t, P = load_truth(run)
     tc, VC = load_cmd(run)
     cs = np.hypot(VC[:, 0], VC[:, 1])
+    crows = _rows(os.path.join(run, "setpoints.csv"))
+    tcx = np.array([float(x["t_sim_us"]) * 1e-6 for x in crows])
+    cx = np.array([float(x["cmd_x"]) for x in crows])
+    cy = np.array([float(x["cmd_y"]) for x in crows])
+    o = np.argsort(tcx)
+    tcx, cx, cy = tcx[o], cx[o], cy[o]
     in_air = (tc >= t[0] + 2.0) & (tc <= t[-1] - 2.0)
     # Q2: command holds inside the flight.  The pad hold is excluded by requiring that the aircraft has
     # already moved >0.6 m from the pad AND the tour has not finished; t[0]/t[-1] already trim.
@@ -84,7 +90,11 @@ def main() -> int:
         j = i
         while j + 1 < len(tc) and low[j + 1]:
             j += 1
-        if tc[j] - tc[i] > 0.2:
+        # THE PAD HOLD IS NOT A FLYING DEFECT: the tour legitimately holds at the pad before the first leg
+        # (the plan box's pre-take-off hold) and the final hold happens after the tour is complete.  A hold
+        # only counts when the command is away from the pad (>1.5 m), i.e. inside the route.
+        _on_pad = (abs(cx[i]) < 1.5 and abs(cy[i]) < 1.5)
+        if tc[j] - tc[i] > 0.2 and not _on_pad:
             holds.append((float(tc[i]), float(tc[j])))
         i = j + 1
     hold_s = sum(b - a2 for a2, b in holds)
@@ -101,12 +111,6 @@ def main() -> int:
         c = np.column_stack([np.interp(t + lag, tc, VC[:, 0]) * 0 + 0, np.zeros_like(t)])
         # position is not in VC; use cmd positions
         break
-    crows = _rows(os.path.join(run, "setpoints.csv"))
-    tcx = np.array([float(x["t_sim_us"]) * 1e-6 for x in crows])
-    cx = np.array([float(x["cmd_x"]) for x in crows])
-    cy = np.array([float(x["cmd_y"]) for x in crows])
-    o = np.argsort(tcx)
-    tcx, cx, cy = tcx[o], cx[o], cy[o]
     for lag in np.arange(-0.6, 0.6 + 1e-9, 0.02):
         ex = np.interp(t + lag, tcx, cx)
         ey = np.interp(t + lag, tcx, cy)
