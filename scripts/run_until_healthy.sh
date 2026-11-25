@@ -204,6 +204,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-lead-s ${REF_LEAD_S:-0} \
 --ref-v-slew ${REF_V_SLEW:-0} --ref-deadreckon-s ${REF_DEADRECKON_S:-0} \
 --stale-s ${REF_STALE_S:-1.0} \
+--stale-fail-s ${REF_STALE_FAIL_S:-3.0} \
 --ref-lp-tau ${REF_LP_TAU:-0} \
 --ref-ff-acc-max ${REF_FF_ACC_MAX:-0} \
 --ref-lead-turn-rad-s ${REF_LEAD_TURN_RAD_S:-1.5} \

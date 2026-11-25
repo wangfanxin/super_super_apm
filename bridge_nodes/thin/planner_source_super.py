@@ -459,6 +459,11 @@ def main() -> int:
                          "(the hexagon arm uses this, so the waypoints and the map have one source)")
     ap.add_argument("--no-super", action="store_true", help="不自己起 fsm_node（调试用）")
     ap.add_argument("--stale-s", type=float, default=1.0, help="SUPER 断流多久后改发 hold")
+    ap.add_argument("--stale-fail-s", type=float, default=3.0,
+                    help="★ 参考断流多久后**退出**（让 supervisor 按名字中止）. MEASURED phase10a: SUPER had a "
+                         "PlannerFromRest stall (repeated PathSearch start dbg, aircraft holding 3.1 m from the "
+                         "next corner) and this 3.0 s threshold killed the sortie (W1 6/13).  A stall is not a "
+                         "reason to abandon a good tour: raise it to give the planner time to escape.")
     ap.add_argument("--ref-v-slew", type=float, default=0.0,
                     help="★ WHTF-REF-VSLEW (2026-11-26) ★ slew limit on the commanded VELOCITY (m/s^2).  0 = off."
                          " MEASURED flight_quality Q3: the reference VELOCITY steps by up to 0.40-0.53 m/s in"

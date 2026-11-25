@@ -628,3 +628,25 @@ W1/W1b/W2/W3/W4/W5/W6 全过，仅剩已知 P0 H2。剩余 Q3 max 0.32 与 Q4 0.
 - corner 0.8 / arrive 0.3 仍是最优组合；把 arrive 提前会破坏 W1b；
 - 下一步：以 9f 配置为主，先复飞 3 趟确认统计（目标绕圈 ≤1、停顿 0），然后进入速度阶梯。
 
+## 18. round 12：9f 配置复飞确认 + 4 m/s 首试（06:05–06:20）
+
+### 18.1 确认复飞（slew 3.0 / corner 0.8 / arrive 0.3，patch 14）
+
+| 趟 | 绕圈 | 中段停顿 | 验收 | 备注 |
+|---|---|---|---|---|
+| 10a | 0 | 4 次 6.8 s | W1 6/13（abort） | SUPER PlanFromRest 卡住（PathSearch start 反复失败），plan box 3 s 断流后**主动退出**导致 abort |
+| 10b | 3 | 5 次 1.5 s | 除 H2/W4 外全过 | 把 `--stale-fail-s` 提到 8 s，同样的卡顿被容忍、飞机悬停等 planner 恢复后继续飞 |
+
+**修正**：`--stale-fail-s` 已暴露为 `REF_STALE_FAIL_S`（默认 3.0）——"planner 卡几秒"不该处死整趟任务。
+但 1.35 的绕圈/停顿仍在 0–3 / 1.5–6.8 s 间波动，说明还有随机性；先接受为"接近干净"，进入阶梯验证。
+
+### 18.2 4 m/s 首试（frozen forest，race4 配置，corner 2.0，REF_V_SLEW 6，NAV_GATE 15）
+
+结果 **W1 7/13、W1b 8/13、W4 CONTACT（-0.098 m）、W6 挂；绕圈 13、跟踪 p90 4.59 m、真值峰值 9.09 m/s**。
+结论：**10 m 边长的冻结森林装不下 4 m/s**（飞机以 9 m/s 冲进柱子）。按 objective"地图不够大时新建更大世界"，
+下一轮：
+1. 修 `scripts/make_world_v2_hex.py` 的 HALF 常量（大场地时 audit 网格越界，之前 `IndexError: 540/441`）；
+2. 生成并冻结 **forest_hex16/20**（保持 pitch 1.0 柱距、radius 16–20 m、arena 22–26 m），
+   同时把 `check_frozen.py` 改成按 world 的指纹表；
+3. 在 16 m 边长世界上重跑 4 m/s，再 6 → 8 m/s（8 必须达成）。
+
