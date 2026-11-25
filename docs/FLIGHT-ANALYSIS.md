@@ -650,3 +650,31 @@ W1/W1b/W2/W3/W4/W5/W6 全过，仅剩已知 P0 H2。剩余 Q3 max 0.32 与 Q4 0.
    同时把 `check_frozen.py` 改成按 world 的指纹表；
 3. 在 16 m 边长世界上重跑 4 m/s，再 6 → 8 m/s（8 必须达成）。
 
+## 19. round 13：大世界生成（修 bug）+ 4 m/s 在大世界的首轮（06:25–06:40）
+
+### 19.1 生成器修复与新世界
+
+- `scripts/make_world_v2_hex.py` 的 audit 网格 `HALF` 原本写死 11.0 m：`--cols 20` 的 40 m 场地会让航点/
+  路线格越界（`IndexError: 540/441`）。改为 `HALF = max(11.0, half_field + 3.0)`。
+- 新世界（保持 SPEC 柱距 **pitch 1.0 m**、柱半径 0.1、keepout 3×3）：
+  - `sim/worlds/forest_hex16.yaml`：radius 16 m、arena ±22、**1546 柱**、54 空格；
+  - `sim/worlds/forest_hex12w.yaml`：radius 12 m、arena ±18、**970 柱**、54 空格（seed 20241101）。
+  指纹用 `scripts/fingerprint.py` 记录（见 `docs/evidence/`）。
+
+### 19.2 4 m/s 三趟结果
+
+| 趟 | 世界 | 关键结果 | 结论 |
+|---|---|---|---|
+| 11a | hex16（1546 柱，10k 点） | H6 挂（raycast max 1803 ms、47 scans skipped）、H5 挂（EKF/真值不一致）、W1 1/13 | **大世界把 lidar 模拟器压垮**，LIO 断流 |
+| 11b | hex16 + 6000 点 | H6 仍挂（max 1053 ms、22 skipped）、W2 真值速度 p90 0.08（飞机基本没动） | 仍然 starvation，tour 没起来 |
+| **11c** | **hex12w（970 柱，6000 点）** | **H6 过（p50 10.8 ms、max 33.5、skipped 4）**、H5 过、**W2 过（巡航 p90 3.09、max 7.91 m/s）**；但 W1 4/13、W1b 5/13、W4 CONTACT、W6 挂 | 世界可用了，**4 m/s 的跟踪/超调仍是问题** |
+
+**11c 的关键发现**：参考 max_vel=4，但真值峰值 **7.91 m/s**（超调 ~2×），W4 出现 -0.083 m 接触柱子；
+W1 只有 4/13——飞机在角点/换目标处大幅超调，走廊被突破。
+
+### 19.3 下一步（round 14）
+1. 4 m/s 的固件/参考匹配：`WP_SPD/WP_ACC` 与 `REF_V_SLEW` 要按速度重标定（现在是 1.35 m/s 的
+   slew 6 和 8 m/s 的 bench5 增益混用）；先做 4 m/s 的台架 PVA 跟踪（bench_source ω 调大），再上路径；
+2. 把 W4 接触压回正余量后再试 4 m/s 完整趟；
+3. 大世界固定用 `forest_hex12w`（H6 已过），需要更长边时再回 hex16 并用更低的 lidar 点数/更快的 raycast。
+

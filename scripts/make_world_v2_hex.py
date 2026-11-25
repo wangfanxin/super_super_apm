@@ -201,7 +201,9 @@ assert a.z < a.z_split, ("the mission altitude %.2f m is in the cylinder part (z
                          "box geometry would be wrong -- pass --z below --z-split" % (a.z, a.z_split))
 
 g = 0.05
-HALF = 11.0                                        # the audit grid: the field is +-8, routes may bow out
+# the audit grid must COVER the field, not the frozen 12 m world: with cols=20 the old 11.0 m constant put
+# waypoints and route cells outside the array (IndexError: 540/441) -- that is the bigger-world bug.
+HALF = max(11.0, half_field + 3.0)                 # audit grid: field +-half_field, routes may bow out 3 m
 N = int(round(2 * HALF / g)) + 1
 ax = np.arange(N) * g - HALF
 X, Y = np.meshgrid(ax, ax, indexing="ij")
