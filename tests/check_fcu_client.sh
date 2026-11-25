@@ -52,12 +52,13 @@ path = sys.argv[1] + "/nav.csv"
 rows = list(csv.DictReader(open(path))) if os.path.isfile(path) else []
 if rows:
     feeds = [int(r["t_feed_us"]) for r in rows if int(r["t_feed_us"])]
-    # the fake inputs are stamped with the ROS SYSTEM clock, so t_feed (FCU boot clock) can only be
-    # sanity-checked as "present and in the FCU's boot range" -- a real sortie is checked by nav.csv itself
-    print("nav.csv: %d rows; %d stamped in the FCU boot clock (first t_feed=%s us, i.e. %s)"
-          % (len(rows), len(feeds),
-             (min(feeds) if feeds else "n/a"),
-             "OK" if feeds and 0 < min(feeds) < 10**9 else "BAD"))
+    # t_feed must be REAL time (monotonic, microseconds) and strictly increasing -- the owner's rule is that
+    # nothing in the flight path is stamped with simulation or FCU time
+    mono = len(feeds) > 10 and all(b > a for a, b in zip(feeds, feeds[1:]))
+    print("nav.csv: %d rows; %d stamped in real (monotonic) time, first=%s us, strictly increasing=%s"
+          % (len(rows), len(feeds), (min(feeds) if feeds else "n/a"), mono))
+    if not mono:
+        raise SystemExit(1)
 else:
     print("nav.csv: MISSING")
 INNER

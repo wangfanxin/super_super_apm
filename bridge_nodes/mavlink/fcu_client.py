@@ -110,6 +110,28 @@ def main(argv=None) -> int:
     if args.bench:
         return _bench(args, bridge, node, bp)
 
+    # BLOCKING COMMAND WAITS MUST KEEP THE ESTIMATOR FEED ALIVE.  In legacy mode the bridge process has its own
+    # loop, so a 25 s `arm()` wait does not stop #331; in the merged client the supervisor's pump is the only
+    # driver, and without this hook the FCU sees no external nav during the wait and refuses to arm
+    # ("Arm: VisOdom: not healthy", MEASURED `missionA-phase3i-01-01`).
+    _hook = {"err": None}
+
+    def _wait_hook():
+        import rclpy as _rclpy
+        import time as _time
+        try:
+            _rclpy.spin_once(node, timeout_sec=0.0)
+            bp.step(_time.monotonic())
+        except Exception as exc:                                     # noqa: BLE001
+            if _hook["err"] is None:
+                _hook["err"] = repr(exc)
+                print("fcu_client: wait hook EXCEPTION %r" % (exc,), flush=True)
+
+
+    bridge.on_wait = _wait_hook
+    if bridge_sup is not bridge:
+        bridge_sup.on_wait = _wait_hook
+
     # The supervisor drives the shared link: its pump loop calls bp.step() every iteration.
     sv = Supervisor(args, bridge=bridge_sup, node=node, tick_hook=lambda now: bp.step(now))
     print("fcu_client: merged client up -- ONE link %s; 84/331 by the bridge half, class-76 + guards by the "

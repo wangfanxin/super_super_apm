@@ -469,6 +469,25 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 10:40（第 22 条，★ owner 指令：飞行路径只用真实时钟 ★ + merged 喂数存活修复）
+
+- **owner 指令**："不能按照 FCU 时间，要上真机，必须用真实 time.time/mono 给的时间，即使仿真也要尽量实时"。
+  → 撤销"用 SYSTEM_TIME 把 #331 时间戳改写成 FCU boot 时钟"的做法；`#331` 现在用
+  `time.monotonic()*1e6 − 样本年龄`，严格单调（停更时 +1 ms）。删除 SYSTEM_TIME 请求/解析。
+- **修正上一轮的误读**：`VISP.RTimeUS` 的差不是"EKF 看到的陈旧度"，ArduPilot 用 `JitterCorrection`
+  （AP_RTC）学习任意 offboard 时间基与 FCU 到达时间的最小滞后偏移（只要求不来自未来、滞后 <500 ms）。
+  所以 0.63 s/1.61 s 只是时钟基差；真实时钟戳才是正确接口。
+- **merged 喂数存活**：supervisor 有两处 `poll()+sleep` 等待绕过 pump，在 merged 里停掉 #331 与 ROS 回调
+  （实测量化：`phase3n` nav.csv 出现 2.0 s 空洞、age 2.0 s，FCU 报 "Arm: VisOdom: not healthy"）：
+  `check_own_link` 与 `check_position_stream` 都改为 `self.pump(period)`；并给 `MavlinkBridge` 加 `on_wait`
+  钩子，让 `_command`/`calibrate_accel_simple`/`set_mode` 的 ACK 等待也驱动 `bp.step()`。
+  每条 class-76 命令带调用者日志、FCU armed/mode 变化也打印。
+- `phase3o`：2.0 s 空洞消失；残余 0.48 s 空洞在 accel 校准后、arm 前，仍超 FCU 的 300 ms extnav 健康阈。
+  下一步把该间隙也归零，再飞完整 merged 趟。
+- 验证：`tests/run_all.sh` GATE: PASS（bench 断言 `t_feed` 为真实单调时钟且严格递增）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

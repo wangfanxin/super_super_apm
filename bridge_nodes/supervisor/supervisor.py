@@ -606,11 +606,14 @@ class Supervisor:
         st = self.bridge.state()
         t0 = time.monotonic()
         while time.monotonic() - t0 < self.args.link_wait_s:
-            self.bridge.poll()
+            # PHASE 3: WAIT THROUGH `pump`, NOT `poll`+`sleep`.  In the merged client the bridge half's estimator
+            # feed (#331) is driven from this pump; a raw poll+sleep loop stops the feed dead, and 300 ms of
+            # silence makes the FCU report "VisOdom: not healthy" (MEASURED: `phase3n` waited 2.0 s in
+            # `check_position_stream` this way, then refused to arm).
+            self.pump(0.05)
             st = self.bridge.state()
             if st.last_heartbeat_us:
                 break
-            time.sleep(0.05)
         if not st.last_heartbeat_us:
             self.log("REFUSING: no heartbeat on %s (this process's OWN endpoint)" % self.args.mav)
             return False
@@ -632,11 +635,12 @@ class Supervisor:
             n0 = self.bridge.state().last_position_us
             n, t0 = 0, time.monotonic()
             while time.monotonic() - t0 < 2.0:
-                self.bridge.poll()
+                # PHASE 3: same rule as `check_own_link` -- the wait runs THROUGH the pump, so the merged
+                # client's estimator feed keeps flowing (this loop used to starve it for 2 s).
+                self.pump(0.002)
                 if self.bridge.state().last_position_us != n0:
                     n0 = self.bridge.state().last_position_us
                     n += 1
-                time.sleep(0.002)
             hz = n / (time.monotonic() - t0)
             self.log("supervisor: stage 2 attempt %d/%d (%s) -- LOCAL_POSITION_NED %.1f Hz MEASURED on "
                      "this endpoint (floor %.1f Hz)"
@@ -647,7 +651,7 @@ class Supervisor:
                 self.log("      re-asking this endpoint for its rates (a 511 sent into the FCU's boot is "
                          "accepted by nobody -- MEASURED)")
                 self.bridge.request_rates()
-                time.sleep(1.0)
+                self.pump(1.0)
         self.log("REFUSING TO CONTINUE: this endpoint's own position stream is still below the %.1f Hz "
                  "floor after %d attempts.  MEASURED on the bench, a 511 request can be ACCEPTED, read back "
                  "exactly as asked, and deliver nothing -- so 'I asked for it' is not evidence."

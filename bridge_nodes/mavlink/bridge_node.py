@@ -610,21 +610,19 @@ class BridgeProcess:
             if self.lio["n"]:
                 _ok = self.nav_gate_ok(self.lio["t_us"], self.lio["p"], self.lio["q"])
                 if _ok:
-                    t_feed = int(self.lio["t_us"])
-                    # ★ STAMP THE FEED IN THE FCU'S OWN BOOT CLOCK (PHASE 3) ★
-                    #   The EKF compares ODOMETRY.time_usec with its boot clock.  Our samples are in
-                    #   simulation time, and the offset between the two bases is not constant: the FCU's
-                    #   own BIN showed 0.63 s on a healthy legacy sortie and 1.61 s on the merged client.
-                    #   Re-stamping the SAME sample as "boot-now minus how old it is" removes the base offset
-                    #   entirely, so the EKF sees fresh external nav instead of 1.6 s-old data.
-                    boot_now = self.bridge.fcu_boot_now_us() if self.bridge is not None else None
-                    if boot_now is not None and self.lio["last_wall"]:
-                        age_wall = max(0.0, now - self.lio["last_wall"])
-                        t_feed = int(boot_now - age_wall * 1e6)
-                    # STRICTLY MONOTONIC: the boot-clock conversion plus a jittering sample age can step the
-                    # stamp back by a few ms between two sends, and an extnav sample stamped older than the
-                    # previous one is a sample EKF3 throws away (MEASURED 2026-11-25 phase3f: 878 of 4658
-                    # sends stepped backwards by up to 7 ms).
+                    # ★ THE ESTIMATOR FEED IS STAMPED WITH REAL TIME, NEVER WITH SIMULATION OR FCU TIME ★
+                    #   OWNER DIRECTIVE 2026-11-25: "必须用真实 time.time/mono 给的时间，即使是仿真也要尽量实时"
+                    #   -- the flight path must be identical to the real aircraft's, so the timestamp of an
+                    #   ODOMETRY sample is OUR clock (monotonic) at the moment the data exists, minus its age.
+                    #   AND THAT IS THE CORRECT INTERFACE FOR ARDUPILOT: `JitterCorrection` maps an offboard
+                    #   timestamp into the FCU's own time domain by learning the least-lag offset between our
+                    #   stamps and the FCU's arrival time (max lag 500 ms).  So the base of our clock does not
+                    #   matter to the FCU at all -- only that it advances at 1x real time and that a sample is
+                    #   never "from the future".  An earlier version of this code stamped the feed in the FCU's
+                    #   boot clock (read from SYSTEM_TIME); that works in the lab but would need the FCU's
+                    #   clock on the aircraft for no reason, so it is removed.
+                    age_wall = max(0.0, now - self.lio["last_wall"]) if self.lio["last_wall"] else 0.0
+                    t_feed = int(time.monotonic() * 1e6) - int(age_wall * 1e6)
                     t_feed = max(t_feed, self._last_feed_us + 1000)
                     self._last_feed_us = t_feed
                     self.bridge.send_external_nav_l(t_feed, self.lio["p"], self.lio["q"],

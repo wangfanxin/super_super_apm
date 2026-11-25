@@ -191,3 +191,39 @@ run-mission 自动带 `--nav-log $OUT/nav.csv`）。同时把 LIO 位置差分�
    "合并进程"里改变了 EKF 看到的输入；
 3. 注意 legacy 在本轮之前从未用 `--feed-clock fcu` 飞过：需要一趟 legacy 复飞来确认 extnav 时间戳改写成
    boot 时钟对已验收链路无害（BIN 的 VISP 年龄应为 ~ms 级、13 段飞行正常）。
+
+
+## 第 4 步（2026-11-25 10:00–10:40）：★ 只许用真实时钟（owner 指令）★ + 修正上一节的误读
+
+### owner 指令
+> "你不能按照 FCU 时间，我最后要上真机的！！！必须用真实 time.time/mono 给的时间，即使是仿真也要尽量实时"
+
+据此**撤销**了上一节"用 SYSTEM_TIME 把 #331 时间戳改写成 FCU boot 时钟"的做法：飞行路径里的时间戳一律用
+**本机真实时间**（`time.monotonic()`，µs），不再依赖 FCU 时钟，也不依赖仿真时间。
+
+### 同时修正上一节的误读（重要）
+上一节把 `flight.BIN` 的 `VISP.RTimeUS` 差的绝对值当成"EKF 看到的 extnav 年龄"，**这是错的**：
+ArduPilot 收到 ODOMETRY 后走 `GCS_MAVLINK::handle_odometry` → `correct_offboard_timestamp_usec_to_ms()` →
+`JitterCorrection`（`libraries/AP_RTC/JitterCorrection.{h,cpp}`）：它**学习我们的时间基与 FCU 到达时间之间的
+最小滞后偏移**，把任意 base 的 offboard 时间戳映射到 FCU 本地时间，只要求"不来自未来、滞后不超过 500 ms"。
+因此 `VISP` 里显示的 0.63 s / 1.61 s 只是**两个时钟基的差**，不是数据陈旧；legacy 0.63 s 恰好说明那一版的
+喂数本来就慢半秒但仍在 500 ms 门限内。正确做法就是 owner 说的：用真实时钟，让 FCU 自己对齐。
+
+### 本轮代码（真实时钟 + merged 的喂数存活）
+- `bridge_node`：`#331` 的 `time_usec = int(time.monotonic()*1e6) − 该样本的年龄`，并加严格单调下限
+  （样本停更时每次 +1 ms，绝不倒退）；删除 SYSTEM_TIME 请求/解析与 `fcu_boot_now_us`。
+- `tests/check_fcu_client.sh`：断言 `t_feed` 是真实单调时钟且严格递增。
+- **merged 模式的喂数存活**（这是"VisOdom: not healthy"的真正原因）：supervisor 里有两处 `poll()+sleep`
+  等待**绕过了 pump**，在 merged 里就停掉 #331 和 ROS 回调：
+  * `check_own_link` 的心跳等待；
+  * `check_position_stream` 的 2.0 s 吞吐测量（实测 `phase3n`：nav.csv 出现 2.0 s 空洞，age 涨到 2.0 s，
+    随后 FCU 拒绝解锁 "Arm: VisOdom: not healthy"）。
+  两处都改为 `self.pump(period)`，并给 `MavlinkBridge` 加了 `on_wait` 钩子：`_command` / `calibrate_accel_simple`
+  / `set_mode` 的 ACK 等待里也驱动 `bp.step()`（Phase 3 的合并客户端里，pump 是 #331 的唯一驱动者）。
+- 每一条 class-76 命令现在都带调用者日志（`SENDING command N ... (from arm <- preflight)`），FCU 的
+  armed/mode 变化也会打印——上一轮 `phase3g` 里那条"意外的 LAND（Rsn=2 GCS_COMMAND）"就靠这个抓。
+
+### 现状
+`phase3o`：2.0 s 的喂数空洞已消失；剩余 0.48 s 的空洞出现在 `calibrate_accel_simple` 之后、`arm` 命令发出前，
+仍足以让 FCU 判 "VisOdom: not healthy"（阈值 300 ms，`AP_VISUALODOM_TIMEOUT_MS`）。下一步是把这段间隙也
+归零（`arm` 调用前的 `pump(0.5)` 实测有空洞，需要查它为何不驱动 #331），然后再飞一次完整的 merged 趟。

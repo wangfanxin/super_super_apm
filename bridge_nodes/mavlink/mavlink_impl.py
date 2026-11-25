@@ -78,6 +78,9 @@ class MavlinkBridge(Bridge):
         self.attitude_hz = attitude_hz
         self.request_rates()
 
+        # PHASE 3: merged-mode hook run during blocking command waits (see _command)
+        self.on_wait = None
+
     def request_rates(self):
         """Ask THIS link for the messages it needs (511), and let a caller ask AGAIN.
 
@@ -91,15 +94,6 @@ class MavlinkBridge(Bridge):
         """
         # ask for what we need; SR*_* defaults are ~0 in SITL
         self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_LOCAL_POSITION_NED, self.position_hz)
-        # PHASE 3: THE FCU'S OWN BOOT CLOCK.  ODOMETRY #331 carries a time_usec that EKF3 compares with its
-        # own boot time; our samples are stamped in SIMULATION time, so the age the EKF sees is whatever the
-        # offset between the two bases happens to be (MEASURED on the FCU's BIN: 0.63 s on a healthy legacy
-        # sortie, 1.61 s on the merged client -- and at 1.6 s the position loop diverged).  SYSTEM_TIME gives
-        # that offset directly, so the estimator feed can be stamped in the clock the EKF actually uses.
-        try:
-            self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_SYSTEM_TIME, 2.0)
-        except Exception:
-            pass
         self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE, self.attitude_hz)
         self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_EKF_STATUS_REPORT, 5.0)
         self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT, 1.0)
@@ -115,21 +109,6 @@ class MavlinkBridge(Bridge):
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
             msg_id, int(1e6 / hz), 0, 0, 0, 0, 0)
 
-    def fcu_boot_now_us(self):
-        """The FCU's own boot clock, extrapolated to NOW, or None if SYSTEM_TIME has not been seen/ is stale.
-
-        THE ESTIMATOR FEED IS STAMPED WITH THIS (see request_rates): EKF3 compares ODOMETRY's time_usec with
-        the boot clock, and stamping the samples in simulation time leaves a base offset that varies per
-        sortie (0.63 s healthy, 1.61 s on the merged client -> divergence).
-        """
-        st = self._state
-        if not getattr(st, "fcu_boot_us", 0) or not getattr(st, "fcu_boot_wall", 0.0):
-            return None
-        age = time.monotonic() - st.fcu_boot_wall
-        if age > 3.0:
-            return None
-        return int(st.fcu_boot_us + age * 1e6)
-
     def poll(self):
         while True:
             m = self.mav.recv_match(blocking=False)
@@ -143,14 +122,13 @@ class MavlinkBridge(Bridge):
                 self._state.last_position_us = int(time.monotonic() * 1e6)
                 self._state.t_us = self._state.last_position_us
             elif t == "HEARTBEAT":
+                _was = (self._state.armed, self._state.mode)
                 self._state.armed = bool(m.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
                 self._state.mode = MODE_NAME.get(m.custom_mode, "mode%d" % m.custom_mode)
+                if _was != (self._state.armed, self._state.mode):
+                    self.log("bridge/mavlink: FCU state %s armed=%s -> %s armed=%s"
+                             % (_was[1], _was[0], self._state.mode, self._state.armed))
                 self._state.last_heartbeat_us = int(time.monotonic() * 1e6)
-            elif t == "SYSTEM_TIME":
-                # time_boot_ms is the FCU's own scheduler clock; remember when WE saw it so the bridge can
-                # convert "now" into the FCU's boot base (see `fcu_boot_now_us`)
-                self._state.fcu_boot_us = int(getattr(m, "time_boot_ms", 0)) * 1000
-                self._state.fcu_boot_wall = time.monotonic()
             elif t == "EKF_STATUS_REPORT":
                 # the flags bit that matters here: EKF_OK / const pos mode.  Report what it says.
                 self._state.ekf_ok = bool(m.flags & mavutil.mavlink.EKF_POS_HORIZ_ABS) or \
@@ -206,15 +184,38 @@ class MavlinkBridge(Bridge):
 
     # ---- commands ---------------------------------------------------------------------------
     def _command(self, cmd: int, *params, timeout=6.0) -> bool:
+        """Send one COMMAND_LONG and wait for its ACK.
+
+        PHASE 3: `on_wait`, when set, runs on every poll of that wait.  In the merged client the supervisor's
+        pump is what drives the estimator feed (#331), and these waits can last up to 25 s (arm) -- without
+        the hook the FCU sees NO external nav for the whole wait and then refuses to arm with
+        "Arm: VisOdom: not healthy" (MEASURED 2026-11-25 `missionA-phase3i-01-01`: armed=False at 10.7 s).
+        """
         p = list(params) + [0.0] * (7 - len(params))
         self._last_ack = None
         t_sent = time.monotonic()
+        # PHASE 3: EVERY CLASS-76 COMMAND GETS A LINE, WITH ITS CALLER.  A merged flight was found in LAND
+        # mode 3 s before it hit the ground with no LAND line in the supervisor log (`missionA-phase3g`:
+        # MODE Rsn=2 = GCS_COMMAND); "who sent it" must be answerable from the record, not by re-reading code.
+        try:
+            import inspect as _inspect
+            _stack = _inspect.stack()
+            _who = " <- ".join(f.function for f in _stack[1:3])
+        except Exception:
+            _who = "?"
+        self.log("bridge/mavlink: SENDING command %d params=%s (from %s)"
+                 % (cmd, ["%.3f" % x for x in p], _who))
         self.mav.mav.command_long_send(self.mav.target_system, self.mav.target_component,
                                        cmd, 0, *p)
         t_end = time.monotonic() + timeout
         while time.monotonic() < t_end:
             self.poll()
             ack = getattr(self, "_last_ack", None)
+            if self.on_wait is not None:
+                try:
+                    self.on_wait()
+                except Exception:
+                    pass
             if ack is not None and ack[0] == cmd:
                 ok = ack[1] == mavutil.mavlink.MAV_RESULT_ACCEPTED
                 self.log("bridge/mavlink: command %d -> %s" % (cmd, "ACCEPTED" if ok else ack[1]))
@@ -257,6 +258,11 @@ class MavlinkBridge(Bridge):
         t_end = time.monotonic() + 15.0
         while time.monotonic() < t_end:
             self.poll()
+            if self.on_wait is not None:
+                try:
+                    self.on_wait()
+                except Exception:
+                    pass
             ack = getattr(self, "_last_ack", None)
             if ack is not None and ack[0] == mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION:
                 ok = ack[1] in (mavutil.mavlink.MAV_RESULT_ACCEPTED,
@@ -281,6 +287,11 @@ class MavlinkBridge(Bridge):
         t_end = time.monotonic() + 5.0
         while time.monotonic() < t_end:
             self.poll()
+            if self.on_wait is not None:
+                try:
+                    self.on_wait()
+                except Exception:
+                    pass
             if self._state.mode == mode.value:
                 self.log("bridge/mavlink: mode -> %s" % mode.value)
                 return True
