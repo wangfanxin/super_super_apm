@@ -502,6 +502,18 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 11:30（第 24 条，门禁卫生：bag 测试的 rosbag2 残留进程）
+
+- `tests/run_all.sh` 一度**间歇性 FAIL**：`check_bag_pipeline.py` 每次运行都留下一个 `ros2 bag record` 子进程
+  （它被 `start_new_session` 的 shell 包着，SIGINT 打给 shell 不一定会传到 rosbag2），四次之后门禁被干扰。
+- 修复：测试现在 (a) 启动时按 **argv[0..3] 签名**（`python3 …/ros2 bag record` + 本测试的 bag 路径）清理残留，
+  (b) 结束时用 `os.killpg(spawn_pid, SIGKILL)` 杀整个进程组再补一次扫描。
+  **注意**：不能用"命令行子串匹配"（gate 自己的 shell 命令行里就包含测试源码文本，子串匹配会杀掉 gate 本身，
+  实测 exit 9）。
+- 门禁连续两次 PASS；跑完后 `argv` 级检查无残留 recorder。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

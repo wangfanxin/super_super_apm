@@ -83,8 +83,50 @@ def shell(cmd, log=None):
                             start_new_session=True)
 
 
+def _kill_stale():
+    """Kill recorders left by an earlier run of this test (they write to the same tmpfs path).
+
+    MEASURED 2026-11-25: four `ros2 bag record` processes from previous gate runs were still alive and
+    subscribing to /lio/robo/odom etc.; the gate then failed intermittently.  The test must own and reap
+    its own processes -- including their process group, because `ros2 bag record` is a child of the shell
+    we start.
+    """
+    import signal
+
+    def _ancestors():
+        out, pid = set(), os.getpid()
+        while pid > 1:
+            out.add(pid)
+            try:
+                fields = open("/proc/%d/status" % pid).read().split()
+                pid = int(fields[fields.index("PPid:") + 1])
+            except Exception:
+                break
+        return out
+
+    skip = _ancestors()
+    pat = "/dev/shm/sp_bagtest/bag"
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit() or int(pid) in skip:
+            continue
+        try:
+            argv = open("/proc/%s/cmdline" % pid, "rb").read().decode("utf-8", "replace").split("\x00")
+        except Exception:
+            continue
+        # ONLY a rosbag2 recorder writing THIS test's bag -- checked on argv, not on the joined command line:
+        # the shell that launched the gate carries this test's own source text in ITS command line, and a
+        # substring match there killed the gate itself (MEASURED 2026-11-25, exit 9).
+        if (len(argv) > 3 and argv[0].endswith("python3") and argv[1].endswith("/ros2")
+                and argv[2] == "bag" and argv[3] == "record" and pat in argv):
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+            except Exception:
+                pass
+
+
 def main():
     keep = "--keep" in sys.argv
+    _kill_stale()
     shutil.rmtree(OUT, ignore_errors=True)
     os.makedirs(OUT, exist_ok=True)
     shutil.rmtree("/dev/shm/sp_bagtest", ignore_errors=True)
@@ -103,9 +145,20 @@ def main():
         if os.path.isfile(meta):
             break
         time.sleep(0.1)
+    # KILL THE PROCESS GROUP: `ros2 bag record` is a child of the shell we started, and a SIGINT to that shell
+    # does not reliably reach it -- MEASURED 2026-11-25: every gate run left one recorder alive, subscribing
+    # to the topics and writing into the tmpfs path, and after four of them the gate itself went flaky.
+    import signal as _signal
     for p in (pub, bag):
-        if p.poll() is None:
+        try:
+            os.killpg(p.pid, _signal.SIGKILL)      # start_new_session=True => the group id IS the pid
+        except Exception:
+            pass
+        try:
             p.kill()
+        except Exception:
+            pass
+    _kill_stale()                               # and sweep for anything that escaped the group
     time.sleep(0.5)
     shmbag = "/dev/shm/sp_bagtest/bag"
     listing = sorted(os.listdir(shmbag)) if os.path.isdir(shmbag) else ["<no bag dir>"]
