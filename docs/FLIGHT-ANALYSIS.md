@@ -678,3 +678,24 @@ W1 只有 4/13——飞机在角点/换目标处大幅超调，走廊被突破�
 2. 把 W4 接触压回正余量后再试 4 m/s 完整趟；
 3. 大世界固定用 `forest_hex12w`（H6 已过），需要更长边时再回 hex16 并用更低的 lidar 点数/更快的 raycast。
 
+## 20. round 14：4 m/s 的瓶颈在 SUPER 规划器，不在飞机（06:45–07:00）
+
+| 趟 | 世界/配置 | H6 | W2 真值速度 | ExpTraj failed | 结论 |
+|---|---|---|---|---|---|
+| 11c | hex12w / race4(corner2.0,slew6) | 过 | p90 3.09 / max 7.91 | 2703 | 飞机能动但乱 |
+| 12a | hex12w / race4b(corner1.0,slew8) | 过 | p90 2.34 / max 6.56 | 2078 | W1 6/13、停顿 72 s |
+| 12b | hex16 / race4b（4000 点） | 过 | p90 0.05 | 2426 | **飞机基本没动**，规划从起飞就失败 |
+| 12c | hex16 / race4b + pose goal（无 PVA） | 挂 | p90 0.05 | — | 同样卡住 |
+
+**诊断**：4 m/s 时 `GenerateExpTrajectory failed` **2078–2703 次/趟**（1.35 m/s 只有 44 次），
+失败类型：`Opt failed, Omg or thr or Pos violation` / `Minco exp_traj opt failed` / `NaN`。
+即 **SUPER 的 MINCO 在 1 m 柱距走廊里给不出可行的 4 m/s 轨迹**（转弯半径 v/omg 与走廊宽度矛盾），
+FSM 于是长时间停在 WAIT_GOAL/GENERATE_TRAJ，plan box 发 hold —— 12a 里累计 **72 s 指令 hold**。
+
+**结论**：
+- 速度阶梯的下一道坎是**规划器可行性**，不是飞机（8 m/s 飞机能力台架已证明）；
+- 需要（下一轮）：把 4 m/s 的规划参数按可达性重做 —— 降低走廊内速度上限/角点速度（corner 0.3–0.5），
+  或提高 `max_omg`、放大 `planning_horizon`，并先用 2.5 m/s 找到"新世界可用"的阈值；
+- hex16 的 lidar 模拟器在本机仍不稳（H6 时好时坏），高速度档建议先用 hex12w（H6 稳定），
+  leg 不够时再优化 raycast。
+
