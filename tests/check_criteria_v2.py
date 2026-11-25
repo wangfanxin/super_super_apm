@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check_criteria_v2.py -- the opt-in P0 criteria switch must not move the DEFAULT verdicts.
 
-Phase: P0 preparation (docs/P0-CRITERIA-PROPOSAL.md).  `accept.py --criteria-v2` exists so the owner can be
+Phase: P0 preparation (docs/ACCEPTANCE.md).  `accept.py --criteria-v2` exists so the owner can be
 shown exactly what the proposed semantics would change, but the delivered criterion must stay v1 until it is
 approved.  This test pins that:
 

@@ -1193,6 +1193,12 @@ fi
 #   criterion, and the known W4 variance differ).  `FCU_CLIENT=legacy` IS THE ONLY OTHER MODE and it is the
 #   rollback (the historical two processes); the Phase-3 bisect modes were removed in round 20.
 FCU_CLIENT="${FCU_CLIENT:-merged}"
+# NAV_HZ (2026-11-25, owner: "nav hz 直接 100"): the ODOMETRY #331 feed is the freshness of the state the
+#   FCU's EKF fuses; measured at 48 Hz the pose the EKF holds trails the SITL truth by 60 ms on cruise
+#   (LIO filter 35 ms + fusion ~25 ms), which at 8-10 m/s would be 0.5-0.6 m of apparent tracking lag.  The
+#   rate alone cannot fix the LIO filter's own 35 ms, but it removes the SAMPLE-AGE part (nav.csv age p90
+#   was 35 ms at 48 Hz).  100 Hz x ~100 B = ~10 kB/s on the MAVLink link, which is not a bandwidth concern.
+#   Evidence: docs/HIGH-SPEED-PLAN.md; the rate is measured and printed by fcu_client ("nav #331 ... Hz").
 case "$FCU_CLIENT" in
 merged)
     # PHASE 3, THE ONE CONTROL IMPLEMENTATION.  bridge_nodes/mavlink/fcu_client.py runs both halves in ONE
@@ -1201,7 +1207,7 @@ merged)
     # were removed in round 20; this is the only path the acceptance flights use.
     $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" \
         --mav-supervisor "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
-        --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
+        --nav-hz "${NAV_HZ:-48}" --wire-hz "${WIRE_HZ:-50}" $YAW_ARG ${BRIDGE_ARGS:-} \
         --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
         --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
         --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
@@ -1217,7 +1223,7 @@ legacy)
     # Kept runnable so a merged-client regression can be bisected against the delivered shape; not a
     # supported acceptance path any more (docs/LEGACY_PATHS.md).
     $BRIDGE_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
-        --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
+        --nav-hz "${NAV_HZ:-48}" --wire-hz "${WIRE_HZ:-50}" $YAW_ARG ${BRIDGE_ARGS:-} \
         --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
         > "$OUT/bridge.log" 2>&1 &
     BRIDGE_PID=$!

@@ -21,7 +21,7 @@ fi
 # plus the map review figure and this README.  Nothing else belongs in docs/evidence.
 set -u
 E=${DSH_ROOT}/docs/evidence
-REQUIRED="README.md world-hex12.png lap1-paths.png lap2-paths.png vxyz-t.png lio-err-t.png"
+REQUIRED="INDEX.txt world-hex12.png lap1-paths.png lap2-paths.png vxyz-t.png lio-err-t.png"
 LEGACY_PATTERNS='pv1-* d84-* d85-* r15b-* v4a-01-* i1a-* v3pv-* v3d-* v3h132-* cmp1-* cmp2-* frontier.png deviation.png pipeline-states.png *-lap1-paths.png *-lap2-paths.png *-vxyz-t.png *-lio-err-t.png mx8-* pm-01-* pgf-* hx*-* hy0-* hz*-* ja1-01-* jb1-* jc1-*'
 
 echo "== evidence directory"

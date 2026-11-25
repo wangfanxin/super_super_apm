@@ -599,7 +599,15 @@ def main() -> int:
 
     state = {"p_l": None, "v_l": None, "n": 0, "prev_p": None, "prev_wall": 0.0,
              "ref": None, "ref_wall": 0.0, "n_ref": 0, "goal_i": -1,
-             "last_pub": None, "last_pub_t": None, "last_pace_wall": 0.0, "hold_yaw": 0.0}
+             "last_pub": None, "last_pub_t": None, "last_pace_wall": 0.0, "hold_yaw": 0.0,
+             # WHTF-PREGOAL-LATCH (2026-11-25): the leg for which --pre-goal-m has already advanced the
+             # goal to i_leg+1.  Without this latch the choice was re-evaluated EVERY tick against a moving,
+             # noisy LIO distance and the goal alternated A/B/A/B (measured phase4v: 30 straight-away
+             # goal sends alternating between corner 1 and corner 2, then 2 and 3, ...; only 6 of 13
+             # waypoints were reached and W1b fell to 3/13 with 0.58 m misses).  The latch makes the
+             # advance MONOTONIC per leg: once the current corner has been handed over as an interior
+             # point, the next corner stays the goal until the pacer really advances.
+             "pre_goal_leg": -1}
 
     def here_w():
         if state["p_l"] is None:
@@ -838,12 +846,17 @@ def main() -> int:
         #   旧记录已覆盖），距停机坪 0 m < 2 m 立刻把目标换成角点 1 → 竖直腿被跳过 → 飞机没爬升，
         #   truth 最高 0.389 m、setpoints.csv 为空。
         if pre > 0.0 and pacer.i_leg >= 1 and pacer.i_leg < len(corners_l) - 1:
-            p_w_now = here_w()
-            if p_w_now is not None:
-                d_now = float(np.linalg.norm(np.asarray(p_w_now, float)[:2]
-                                             - corners_w[pacer.i_leg][:2]))
-                if d_now < pre:
-                    sent_i = pacer.i_leg + 1
+            if state["pre_goal_leg"] == pacer.i_leg:
+                # already advanced for THIS leg: keep the next corner as the goal (monotonic, no A/B flip)
+                sent_i = pacer.i_leg + 1
+            else:
+                p_w_now = here_w()
+                if p_w_now is not None:
+                    d_now = float(np.linalg.norm(np.asarray(p_w_now, float)[:2]
+                                                 - corners_w[pacer.i_leg][:2]))
+                    if d_now < pre:
+                        sent_i = pacer.i_leg + 1
+                        state["pre_goal_leg"] = pacer.i_leg
         if sent_i == state["goal_i"] and not force:
             return
         if sent_i == state["goal_i"] and force and (now_goal() - state["last_goal_t"]) < 1.0:
@@ -973,7 +986,27 @@ def main() -> int:
 
     def on_timer():
         # 还没收到过任何参考 → 每秒重发 goal（否则首个 goal 在 fsm_node 建好订阅前就丢了，永不唤醒）
-        publish_goal_if_needed(force=(state["n_ref"] == 0))
+        # ★ WHTF-STALE-GOAL-RESEND (2026-11-25) ★ ALSO resend when a reference HAS been seen but the stream
+        #   has gone quiet for >0.8 s.  MEASURED phase4w (PRE_GOAL_M=1.5 + latching): SUPER reached the
+        #   goal of the last dispatched corner, logged "Traj finish." and went WAIT_GOAL; the pacer had not
+        #   declared arrival (LIO distance was just outside the 0.5 m gate) so no new goal was sent, the
+        #   reference stayed silent >3 s and the plan box rejected the sortie ("SUPER 参考断流 3.0 s") at
+        #   153 s -> the tour died mid-way (4/13 waypoints).  A goal message is what wakes the FSM out of
+        #   WAIT_GOAL, so after a stale period the SAME goal is re-sent (the existing 1 s throttle keeps it
+        #   from flooding).  The distance/speed of that last-metre standoff are printed so the next flight
+        #   says WHY the gate was missed instead of only that it was.
+        _stale_force = bool(state["n_ref"] > 0 and state["ref_wall"]
+                            and (time.monotonic() - state["ref_wall"]) > 0.8)
+        if _stale_force and state["n_ref"] > 0:
+            _pw = here_w()
+            if _pw is not None and pacer.i_leg < len(corners_l):
+                _d = float(np.linalg.norm(np.asarray(_pw, float)[:2] - corners_w[pacer.i_leg][:2]))
+                _v = None if state["v_l"] is None else float(np.linalg.norm(np.asarray(state["v_l"])[:2]))
+                print("GOAL RESEND after stale reference: leg %d, |p-target| %.3f m (gate %.2f), |v| %s, "
+                      "goal_i %d" % (pacer.i_leg + 1, _d, pacer.arrive_m,
+                                     "n/a" if _v is None else "%.2f m/s" % _v, state["goal_i"]),
+                      flush=True)
+        publish_goal_if_needed(force=(state["n_ref"] == 0 or _stale_force))
         # ★ P0：SUPER 死了要大声说，不能静默继续发 hold ★
         #   但收尾阶段（stop.flag）是先杀子进程再退出的，那时看到 rc=-15 是正常的，不要误报。
         if child is not None and child.poll() is not None and not stop["flag"]:

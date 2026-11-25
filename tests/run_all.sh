@@ -49,7 +49,7 @@ python3 tests/check_criteria_v2.py || note_fail "check_criteria_v2.py (P0 v2 swi
 # /viz topics + the world_w->lio_world TF).  MEASURED 2026-11-25: in a full gate run the ROS graph probes
 # intermittently lose the (heavy, 3x bag playback) graph while the replay itself is healthy -- a flaky test
 # is worse than no test because it hides real regressions.  The replay entry point is still verified by
-# hand and recorded in docs/PHASE4-SIM.md §9; run the test when touching the rviz/TF adapter:
+# hand and recorded in docs/PIPELINE.md §Phase 4; run the test when touching the rviz/TF adapter:
 #     bash tests/check_rviz_replay.sh            # SKIPs when there is no bag
 # (it is kept out of the gate deliberately; do not add it back without making the probes deterministic.)
 

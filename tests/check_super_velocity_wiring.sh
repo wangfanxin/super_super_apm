@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check_super_velocity_wiring.sh -- the vehicle VELOCITY has to reach the planner (2026-11-25 fix).
 #
-# MEASURED defect (docs/FLIGHT-LOOP-ANALYSIS.md, phase4p): SUPER's replanner injects `robot_state_.v` as the
+# MEASURED defect (docs/FLIGHT-ANALYSIS.md, phase4p): SUPER's replanner injects `robot_state_.v` as the
 # initial velocity of every rest2rest replan (config `hot_start_en: true`) so the reference does not brake to a
 # stop at each goal handover.  The velocity never arrived:
 #   * Super-LIO's robot state had `// todo: v,w,a` -> /lio/robo/odom twist was all zeros;

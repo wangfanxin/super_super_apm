@@ -6,7 +6,7 @@
 > SITL and graded offline from the recordings by a fixed acceptance table. The value of this repo is the
 > **measurement chain**, not the demo: every number in `docs/` can be regenerated from a recording with
 > one command, and every configuration change was adopted only after a measured A/B — the rejected ideas
-> are recorded with their numbers too (`docs/INTEGRATION.md` §99–§112).
+> are recorded with their numbers too (`docs/CHANGELOG.md` 与 git 历史中的 INTEGRATION.md).
 
 任务：**10 m 半径正六边形、2 圈、13 个目标**，在 ±12 m 场地里穿过 **522 根柱**（柱距 1.0 m、柱截面
 0.2 m）；规划器是 **SUPER**（原版编译，本仓库内置已打补丁的源码），状态源只有 **Super-LIO**（飞控
@@ -30,7 +30,7 @@
 | — | 估计器（LIO 对真值） | 水平 p50 0.039 / p90 0.089 m |
 
 同一巡航档共飞 6 趟：**W2 全部通过**（1.41–1.46）；W6 p90 均值 **0.31 m**；W4 有 3 趟干净（另外 3 趟
-接触 −0.007…−0.072 m，作为**显式已知缺陷 `W4`** 记账，见 `docs/INTEGRATION.md` §99、§112）。
+接触 −0.007…−0.072 m，作为**显式已知缺陷 `W4`** 记账，见 `docs/ACCEPTANCE.md`（W4 缺陷记账））。
 
 图：`docs/evidence/`（分圈俯视图、vxyz-时间、估计器误差），一条命令重出：
 `bash scripts/render_evidence.sh kx6-03-01-01`。
@@ -51,7 +51,7 @@ scripts/          跨模块编排：飞行臂 fly_*、评分器 accept.py、记�
                   scripts/archive/ 是历史工具（harness 旧工具 + 旧 offline 工具），不参与现行链路
 setup/            env.sh（唯一知道路径的地方）、build.sh、fetch_ardupilot.sh、run_hex.sh
 calib/            L→W 标定（calib.json，实测量）
-docs/             SPEC.md（需求）、DATA_PIPELINE.md（数据管线）、INTEGRATION.md（测量记录）、evidence/
+docs/             只有 5 篇文档（README/PIPELINE/ACCEPTANCE/FLIGHT-ANALYSIS/CHANGELOG）+ evidence/（图与数据）
 tests/            无飞行自检 run_all.sh（CI 同款）
 PINS.env          第三方源码的 commit 与补丁说明
 ```
@@ -117,10 +117,12 @@ KNOWN=W4 bash scripts/run_accept.sh <tag> forest_hex12.yaml 2.0 10.0 box 0.5 2
 
 ## 8. 继续读
 
-* `docs/SPEC.md` —— 需求与每一次修改记录（谁提的、为什么）。
-* `docs/INTEGRATION.md` —— 9000 行、112 节的测量记录：试过什么、数字多少、为什么否掉。
-* `docs/evidence/README.md` —— 每张图是什么、怎么重画。
-* `docs/LEGACY_PATHS.md` —— 哪些分析工具仍假设作者的绝对路径（编译与飞行链不假设）。
+* `docs/README.md` —— 入口、快速开始、当前状态、证据图索引。
+* `docs/PIPELINE.md` —— 架构/数据链/坐标系/时钟/五阶段证据（全部技术细节）。
+* `docs/ACCEPTANCE.md` —— 15 行判据、v2 提案、交付清单、真机清单、路径政策、已知缺陷。
+* `docs/FLIGHT-ANALYSIS.md` —— 绕圈机理、跟踪/滞后分解、角点 A/B、高速竞速方案。
+* `docs/CHANGELOG.md` —— 按轮次的改动与测量记录（历史集成记录摘要；原文在 git 历史）。
+* `docs/evidence/INDEX.txt` —— 每张图是什么、怎么重画。
 
 ## 9. 打包时验证了什么（可复现）
 

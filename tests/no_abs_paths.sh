@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Path policy: the flight/grade chain must not contain the author's absolute paths; historical analysis
-# tools are reported but do not fail the gate (they are listed in docs/PATHS.md §4).
+# tools are reported but do not fail the gate (they are listed in docs/ACCEPTANCE.md §路径政策).
 #   bash tests/no_abs_paths.sh
 set -u
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,7 +49,7 @@ for f in scripts/*.py scripts/*.sh scripts/archive/harness/*.py bridge_nodes/mav
   [ -f "$f" ] || continue
   if grep -q "$PAT" "$f" 2>/dev/null; then n=$((n + 1)); fi
 done
-echo "   $n file(s) (see docs/PATHS.md §4)"
+echo "   $n file(s) (see docs/ACCEPTANCE.md §路径政策)"
 
 if [ "$bad" -ne 0 ]; then echo; echo "PATH POLICY: FAIL"; exit 1; fi
 echo
