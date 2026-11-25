@@ -23,16 +23,27 @@
      `AC_PosControl::NE_set_max_speed_accel_m`（`AC_PosControl.cpp:468`）里
      `_jerk_max_ne_msss = _shaping_jerk_ne_msss;`，而 `_shaping_jerk_ne_msss` 就是 `PSC_NE_JERK`
      （同文件:136）。`WP_JERK` 只影响"只发位置"的航点导航路径。
-   - **主因排序（实测 + 源码）**：
-     1. **总延迟 ≈ 0.13 s**（最优滞后 −0.13 s；1.35 m/s 时 = 0.18 m 沿航迹误差，正好对上 p50 0.155 m）。
-        组成：LIO 200 Hz + extnav 送飞控 ~48 Hz（`--nav-hz 48`）+ 84 setpoint 50 Hz + 姿态内环；
-     2. **位置环增益偏低**（`PSC_NE_POS_P 1.2`，4.7 默认 3.0 附近；前几轮 A/B 里 2.4/3.0 更紧但会牺牲角点净空）；
-     3. **参考本身加速度需求已接近修正能力**：参考 |a_xy| p90 1.45 / p99 2.81 / max 4.02 m/s²，
-        当前 **0%** 超过 WP_ACC 4.0（所以 1.35 m/s 下修正限幅还没饱和）；
-        但参考加速度 ≈ v²/R 随速度平方增长：到 4 m/s 同一批角点就是 ~13 m/s²，**必然被 WP_ACC 4.0 削平**
-        —— 这就是"现在看起来只是软、高速会直接跟不上"的机理；
-     4. 参考的停-走/角点刹停（`docs/FLIGHT-LOOP-ANALYSIS.md`）周期性制造大误差。
-     4.7 的 `limit_output=false` 只保证**前馈不被削**，修正仍受 `WP_SPD/WP_ACC/ATC_ANGLE_MAX` 约束。
+   - **主因排序（实测细化，2026-11-25 22:10）**：先把"0.13 s"拆开——在**匀速直线段**（|v_cmd|>1.1、
+     |a_cmd|<0.3）上分别对齐，结果完全不同：
+     | 比较 | 最优滞后（cruise） | 含义 |
+     |---|---|---|
+     | 真值 ↔ LIO 里程计 | **35 ms** | LIO 滤波输出本身的估计滞后（nav 送出时 age p50 只有 2 ms，说明不是传输） |
+     | 真值 ↔ 飞控 EKF 估计 | **60 ms** | LIO 35 ms + EKF 视觉融合 ~25 ms（VISO 48 Hz + `VISO_DELAY_MS 10` + 平滑） |
+     | 真值 ↔ 指令 | **110 ms** | 评分用的"表观滞后"（含上面 60 ms 估计滞后 + 路径/瞬态） |
+     | 飞控 EKF 估计 ↔ 指令（**同一时钟**） | **~10 ms**（沿航迹平均偏 ~3-4 cm ≈ 30 ms） | **控制闭环本身**：84 setpoint 50 Hz + 参考 100 Hz + 姿态内环，很快 |
+     ⇒ 修正结论：**不是 PID 慢、也不是前馈缺失**（见下）；是"控制器看到的状态比真值旧 60 ms"
+     （LIO 滤波 35 ms + EKF 融合 25 ms），评分用的真值在那之后 0.08 m（1.35 m/s）——高速时 8 m/s 就是 0.5 m。
+     这是竞速的第一瓶颈，比调 PSC 增益重要。
+   - 其余贡献：`PSC_NE_POS_P 1.2` 偏低（位置环在估计域里收敛慢）；参考角点停-走瞬态；
+     LIO 位置相对真值本身 p90 ~7 cm。
+   - **前馈是存在的、且被飞控使用**：`wire.csv` 实测 |v| p50 1.23 m/s（95% 非零）、|a| p50 0.70 / p90 1.42 /
+     max 4.08 m/s²，与 `setpoints.csv` 完全一致；ArduPilot 4.7 `shape_pos_vel_accel_xy`
+     （`AP_Math/control.cpp:389-403`）把 `vel_desired` 加进 `vel_target`、把 `accel_desired` 加在限幅之后；
+     历史 A/B（`scripts/fly_hex.sh` 头注释）：`pos` 只到 3/19 航点，`posvel/posvelacc` 19/19。
+     如果真是"没有前馈"，误差会随速度成比例放大、且 1.35 m/s 下直线段不会只有 −0.12 m 的沿航迹偏。
+   - 参考加速度需求：|a_xy| p90 1.45 / p99 2.81 / max 4.02 m/s²，1.35 m/s 时 **0%** 超过 WP_ACC 4.0
+     （所以现在只是"信息旧"，还没到修正饱和）；但参考加速度 ≈ v²/R 随速度平方增长，
+     4 m/s 的同一批角点 ~13 m/s²，**必然被 WP_ACC 4.0 削平** —— 高速必须同时改控制参数。
    - 参考本身的停-走/角点刹停（`docs/FLIGHT-LOOP-ANALYSIS.md`）让误差周期性变大，进一步放大这种印象。
 4. **SUPER 原论文的能力远高于我们当前设置**：280 mm 轴距、推重比 >5、70 m 3D LiDAR，报道 **>20 m/s** 穿越细障碍
    （[Science Robotics 2025](https://www.science.org/doi/10.1126/scirobotics.ado6187)、
@@ -65,11 +76,12 @@
 - 产出：tracking-vs-speed 表 → 得到 ArduPilot 在当前参数下的"拐点速度"。
 
 ### 阶段 1：先补延迟、再调硬（每项单变量 A/B）
-- **延迟补偿（优先，因为主因）**：
-  `REF_LEAD_S=0.13`（适配器已有 `--ref-lead-s`：把目标沿 SUPER 速度方向外推 T 秒，注释里就是给
-  "参考滞后"用的）、`--ref-lead-turn-rad-s` 配合弯道；
-  提高环路频率：`--nav-hz 48 → 60`（ODOMETRY #331，桥有 35–60 Hz 的健康区间判断）、
-  84 setpoint `--wire-hz 50 → 100`；LIO 输出频率/`VISO_DELAY_MS` 标定。
+- **延迟补偿（优先，因为主因是"状态旧 60 ms"）**：
+  `REF_LEAD_S=0.05–0.06`（不是 0.13：0.13 是表观值，其中 0.06 是估计滞后、其余是路径/瞬态）；
+  适配器已有 `--ref-lead-s`（沿 SUPER 速度方向外推）与 `--ref-lead-turn-rad-s`（弯道限幅）；
+  **降估计滞后**（真正的杠杆）：`--nav-hz 48 → 60`（age 尾部 p90 35 ms 要压下去）、84 `--wire-hz 50 → 100`、
+  LIO 处理延迟/时间戳补偿、`VISO_DELAY_MS` 按实测链路延迟重标定、EKF 视觉融合频率；
+  每项都用 `scripts/track_quality.py` 的"同一时钟控制滞后"回归。
 - **参数调硬（每次一趟）**：
   `WP_ACC 4 → 6`、`WP_SPD 1.5 → 3`、`PSC_NE_POS_P 1.2 → 2.0 → 3.0`、
   `PSC_NE_VEL_P 2.0 → 3.0`、`PSC_NE_JERK 80 → 120`（先看 0.5–2 Hz 增益）、
