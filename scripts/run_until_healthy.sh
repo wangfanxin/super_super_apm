@@ -208,6 +208,12 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-ff-gain ${REF_FF_GAIN:-1.0} \
 --super-odom /lio/robo/odom --super-cloud /lio/cloud_world \
 --world "$SIM_ROOT/worlds/${WORLD_NAME:-square15_forest.yaml}" $CALIB_ARG"
+  elif [ "$WHAT" = "pvabench" ]; then
+    # TRACKING BENCH: a known analytic PVA reference (sines of increasing amplitude) with NO planner and NO
+    # obstacles.  Peak speed = A*omega (1..8 m/s) and peak accel = A*omega^2 (1..8 m/s^2).  This is the arm
+    # the firmware's FF/PID is tuned on ("先有一个几乎完美的飞机设置").
+    PLANNER="$ROOT/bridge_nodes/planner/bench_source.py"
+    CMD_ARGS="$CALIB_ARG --z ${Z_M:-2.0} --omega ${BENCH_OMEGA:-1.0} --amps ${BENCH_AMPS:-1,2,3,4,5,6,8}"
   elif [ "$WHAT" = "bench" ]; then
     # AIRCRAFT-CAPABILITY BENCH (2026-11-26, owner: "先有一个几乎完美的飞机设置，再考虑飞路径"):
     # the BUILT-IN rectangle plan box on an OPEN world (bench_open.yaml, 30 m square, no pillars) with the
@@ -329,7 +335,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
   # The "SUPER ref" counter only exists for the SUPER arm (planner_source_super's status line).  The
   # rectangle bench plan box never prints it, so requiring it would mark every capability-bench sortie
   # ungradeable for a reason that says nothing about the aircraft (measured phase6e/6f).
-  if [ "$WHAT" = "bench" ]; then
+  if [ "$WHAT" = "bench" ] || [ "$WHAT" = "pvabench" ]; then
     [ "$SET" -ge 100 ] || { echo "  NO: the bench plan box produced fewer than 100 setpoint rows"; OK=0; }
   else
     [ "$REF" -ge 1 ] || { echo "  NO: SUPER published NO reference -- everything on the wire was my hold fallback"; OK=0; }
