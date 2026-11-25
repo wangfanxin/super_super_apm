@@ -1,0 +1,28 @@
+# 2.5 m/s SPEED-LADDER PROFILE for the 1 kg/250 mm airframe (2026-11-26).
+# bench5 is the 8 m/s race profile (WP_SPD 8 / ACC 8 / ANGLE 55) and at 2.5 m/s path references it OVERSHOOTS
+# (measured phase14c: reference 2.5, truth p95 4.64, max 6.54 m/s, 14 loops, W4 contact).  This profile sits
+# between the 1.35 delivery profile and the race profile: WP 3.0/4.0, ANGLE 40, moderate PSC/ATC.
+WP_SPD       3.0
+WP_ACC       4.0
+WP_JERK      15.0
+WP_RADIUS_M  0.5
+ATC_ANGLE_MAX 40.0
+ATC_ANG_RLL_P 10.0
+ATC_ANG_PIT_P 10.0
+ATC_RAT_RLL_P 0.15
+ATC_RAT_RLL_I 0.15
+ATC_RAT_RLL_D 0.005
+ATC_RAT_PIT_P 0.15
+ATC_RAT_PIT_I 0.15
+ATC_RAT_PIT_D 0.005
+ATC_RAT_YAW_P 0.32
+ATC_RAT_YAW_I 0.032
+PSC_NE_POS_P 1.9
+PSC_NE_VEL_P 2.6
+PSC_NE_VEL_I 1.2
+PSC_NE_VEL_D 0.24
+PSC_NE_JERK  100.0
+PSC_D_POS_P 1.0
+PSC_D_VEL_P 5.0
+MOT_THST_HOVER 0.39
+MOT_THST_EXPO 0.65
