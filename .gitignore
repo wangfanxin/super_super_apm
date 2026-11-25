@@ -26,3 +26,7 @@ harness/sim/scan_mode/
 .runs
 .runs_on_d_backup/
 .build/ardupilot_on_d_backup/
+# SITL runtime byproduct: running the SITL binary with CWD = repo root (bench tests do) creates
+# terrain/S36E149.DAT (an empty SRTM tile placeholder for home -35.36,149.16).  Nothing reads it;
+# the flight-path SITL runs with CWD = the sortie directory, so its terrain/ lands there.
+/terrain/
