@@ -474,3 +474,26 @@ z 误差 ≤0.10 m（PSC_NE_POS/VEL 加硬、PSC_D 垂直环、ATC 姿态环、�
    继续压缩需要更高带宽的控制/更低延迟，先按现状进入路径验证，后续再迭代。
    图：`docs/evidence/bench-final-1kg.png`；参数：`fcu_interface/params/guided_limits_bench5.parm`。
 
+## 15. 1 kg 飞机 + 1.35 m/s 路径：绕圈仍在，根因是 SUPER 换目标时的 replan 失败（2026-11-26 02:25–02:50）
+
+用新飞机设置（1 kg/250 mm + guided_limits_bench5.parm）飞交付森林 1.35 m/s 路径，三组角点/到点参数：
+
+| 趟 | 参数 | W1 | W1b | W6 | 绕圈 | 中段指令停顿 | 参考 Δv max |
+|---|---|---|---|---|---|---|---|
+| phase8a | arrive 0.3 + corner 1.2（bisector） | 13/13 | ✅ | ✅ | **7** | 9 次 / 8.6 s | 0.48 m/s |
+| phase8b | arrive 1.2 + corner 1.2 | 13/13 | ❌ 12/13 | ✅ | **0** | 6 次 / 5.9 s | 0.32 m/s |
+| phase8c | arrive 0.3 + corner 1.35 | 13/13 | ✅ | ❌ | 6 | 12 次 / 10.9 s | 0.40 m/s |
+
+**根因定位（planner 日志三趟一致）**：
+- `ReplanOnce succeed` 1100–1200 次，但 **`GenerateExpTrajectory failed` 64–82 次**；
+- 每次到点 ⇒ `Traj finish` 15–26 次 ⇒ FSM 进 `WAIT_GOAL`/`GENERATE_TRAJ` ⇒ `PlanFromRest`（还会 failed 5–18 次）；
+- 也就是说：**换目标时 SUPER 的 ReplanOnce（用旧轨迹做 guide 的平滑重规划）经常失败**，退回"轨迹结束→从静止重规划"，
+  wrapper 在这段时间发 hold ⇒ 指令速度掉 0 ⇒ 飞机冲过头/绕圈。根因不在飞机，也不在到点半径本身。
+
+**下一版修复（planner 侧，不再是 plan box 调参）**：
+1. 在 SUPER 的 `generateExpTraj`/`ReplanOnce` 的 new_goal 路径上放宽/修掉换目标时的失败原因（拿到具体失败分支：
+   corridor/A* 还是 MINCO 边界），并保持"旧轨迹做 guide"的连续性；
+2. 若 new_goal 的 ReplanOnce 失败，**不要**让 committed 轨迹自然结束（patch 9 的发布继续），而是用
+   "旧轨迹终点作为 guide 的延长段 + 新目标"重新规划一次；
+3. 到点判定改为单调 route-progress（角点之后才推进），配合 1.2 m 的提前目标（phase8b 已证明可把绕圈降到 0）。
+
