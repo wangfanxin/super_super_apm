@@ -380,6 +380,13 @@ class BridgeProcess:
         self._nav_prev = None
         self.nav_skipped = 0
         self.nav_skip_run = 0
+        #: how many step-velocities were clamped / how often the stamps and the wall clock disagreed
+        self.nav_v_clamped = 0
+        self.nav_dt_mismatch = 0
+        #: THE ESTIMATOR FEED'S OWN RECORD (--nav-log): one row per #331 actually sent, so a corrupted feed can
+        #: be read back instead of guessed at.  Added in PHASE 3 after `phase3a` and the FCU's runway.
+        self.nav_log = None
+        self._nav_log_n = 0
         #: the re-ask loop for the FCU's own streams (see `tick()`): without it a request sent before the EKF has
         #: an origin is dropped and the FCU never sends LOCAL_POSITION_NED at all
         self._reask_t = 0.0
@@ -532,8 +539,36 @@ class BridgeProcess:
         self.lio["rate_slow"] = 0.0 if self.lio["n"] == 0 else \
             (0.9 * self.lio.get("rate_slow", 0.0) + 0.1 * (1.0 / dt))
         if self.lio["v_source"] == "diff":
-            if self.lio["prev_p"] is not None and dt > 1e-3:
-                self.lio["v"] = 0.8 * self.lio["v"] + 0.2 * ((p - self.lio["prev_p"]) / dt)
+            # ★ THE DIFFERENCE'S dt COMES FROM THE MESSAGE STAMPS, NOT THE WALL CLOCK (PHASE 3) ★
+            #   PHASE 3 measured the failure this prevents: with the bridge half and the supervisor half sharing
+            #   ONE rclpy node, the LIO callbacks can be delivered in a BURST after a slow loop iteration.  Two
+            #   messages 5 ms apart in the LIO's own stamps then arrive ~0.2 ms apart on the wall clock, and
+            #   `(p - p_prev) / dt_wall` turns a 5 mm step into a 25 m/s "velocity".  That number goes straight
+            #   into ODOMETRY #331's velocity field, which EKF3 fuses: on `missionA-phase3a-01-01` the FCU's own
+            #   altitude estimate ran to +4.75 m while the model was on the ground.  The stamps are the stream's
+            #   own time base (D4) and they do not jitter with OUR scheduling, so they are what the difference
+            #   must use; the wall clock is only the fallback when a producer sends no stamps.
+            t_us = int(self.lio["t_us"])
+            prev_t = self.lio.get("prev_t_us")
+            dt_st = None if not prev_t else (t_us - int(prev_t)) * 1e-6
+            self.lio["prev_t_us"] = t_us
+            if self.lio["prev_p"] is not None and dt_st is not None and 1e-4 < dt_st < 0.2:
+                dt_use = float(dt_st)
+                if abs(dt_use - dt) > 2.0 * dt and dt > 0.0:
+                    self.nav_dt_mismatch += 1
+                v_step = (p - self.lio["prev_p"]) / dt_use
+                # the airframe cannot move faster than --nav-vmax (default 15 m/s); a step beyond that is a
+                # measurement glitch, and forwarding it corrupts the EKF's velocity state
+                vmax = float(getattr(self.args, "nav_vmax", 15.0))
+                step_speed = float(np.linalg.norm(v_step))
+                if vmax > 0.0 and step_speed > vmax:
+                    self.nav_v_clamped += 1
+                    if self.nav_v_clamped in (1, 10, 100) or self.nav_v_clamped % 500 == 0:
+                        self.log("bridge/lio-v: CLAMPED a %.1f m/s step-velocity (gate %.1f); %d clamped, "
+                                 "%d stamp/wall dt mismatches so far"
+                                 % (step_speed, vmax, self.nav_v_clamped, self.nav_dt_mismatch))
+                    v_step = v_step * (vmax / step_speed)
+                self.lio["v"] = 0.8 * self.lio["v"] + 0.2 * v_step
             self.lio["prev_p"] = p.copy()
 
     def on_lio_vel(self, m):
@@ -570,11 +605,22 @@ class BridgeProcess:
         if now >= self.next_nav:
             self.next_nav = now + 1.0 / self.args.nav_hz
             if self.lio["n"]:
-                if self.nav_gate_ok(self.lio["t_us"], self.lio["p"], self.lio["q"]):
+                _ok = self.nav_gate_ok(self.lio["t_us"], self.lio["p"], self.lio["q"])
+                if _ok:
                     self.bridge.send_external_nav_l(self.lio["t_us"], self.lio["p"], self.lio["q"],
                                                     self.lio["v"], self.calib,
                                                     z_trim=getattr(self.args, "nav_z_trim_m", 0.0))
                     self.nav_sent += 1
+                if self.nav_log is not None:
+                    p_, q_, v_ = self.lio["p"], self.lio["q"], self.lio["v"]
+                    age = now - self.lio["last_wall"] if self.lio["last_wall"] else 0.0
+                    self.nav_log.write(
+                        "%.4f,%d,%.4f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.6f,%.6f,%.6f,%.6f,%d\n"
+                        % (now, int(self.lio["t_us"]), age, p_[0], p_[1], p_[2], v_[0], v_[1], v_[2],
+                           q_[0], q_[1], q_[2], q_[3], 0 if _ok else 1))
+                    self._nav_log_n += 1
+                    if self._nav_log_n % 100 == 0:
+                        self.nav_log.flush()
                 if self._nav_t0 is None:
                     self._nav_t0, self._nav_n = now, 0
                 self._nav_n += 1
@@ -743,6 +789,9 @@ class BridgeProcess:
             # log records what was placed).  lio_* is L on purpose -- it is the raw estimator pose.
             self.sp_log.write("t_wall,t_sim_us,cmd_x,cmd_y,cmd_z,vel_x,vel_y,vel_z,acc_x,acc_y,acc_z,"
                               "fcu_x,fcu_y,fcu_z,fcu_vx,fcu_vy,fcu_vz,lio_x,lio_y,lio_z,yaw_cmd\n")
+        if getattr(self.args, "nav_log", ""):
+            self.nav_log = open(self.args.nav_log, "w")
+            self.nav_log.write("t_wall,t_us,age_s,px,py,pz,vx,vy,vz,qw,qx,qy,qz,refused\n")
         if getattr(self.args, "wire_log", ""):
             self.wire_log = open(self.args.wire_log, "w")
             # `frame_id` = the MAVLink frame the setpoint goes out in (1 = LOCAL_NED, the only one
@@ -755,7 +804,7 @@ class BridgeProcess:
                                 "yaw_out,trajectory_id,trajectory_flag\n")
     def close_logs(self):
         """Close the wire records (the merged client owns the process lifetime)."""
-        for attr in ("sp_log", "wire_log"):
+        for attr in ("sp_log", "wire_log", "nav_log"):
             fh = getattr(self, attr, None)
             if fh is not None:
                 try:
@@ -816,7 +865,12 @@ class BridgeProcess:
             if now - self.last_status > 0.2:
                 self.last_status = now
                 if self.status_pub is not None:
-                    msg = String()
+                    # PHASE 3 regression fix: `String` used to be imported in this function's scope; the
+                    # publish moved into `step()` (merged mode) and this copy lost the name -- MEASURED on
+                    # `missionA-phase3c-01-01`: NameError on the FIRST status tick killed the bridge, the FCU
+                    # then refused to arm ("Arm: VisOdom: not healthy") and the sortie aborted at 11 s.
+                    from std_msgs.msg import String as _String
+                    msg = _String()
                     msg.data = self.status_line()
                     self.status_pub.publish(msg)
             time.sleep(0.0005)
@@ -896,6 +950,12 @@ def add_bridge_arguments(ap):
                     help="publish the FCU'S OWN estimate (MAVLink LOCAL_POSITION_NED #32, W frame) on this "
                          "topic; empty = off.  NOT the SITL truth tap: that one is the simulator's model state")
     ap.add_argument("--setpoint-log", default="")
+    ap.add_argument("--nav-log", default="",
+                    help="one row per ODOMETRY #331 actually sent (THE ESTIMATOR FEED's own record); "
+                         "empty = off")
+    ap.add_argument("--nav-vmax", type=float, default=15.0,
+                    help="clamp on the step-velocity that goes into #331 (m/s); a larger step is a "
+                         "measurement glitch, not flight")
     ap.add_argument("--wire-log", default="",
                     help="one row per setpoint PUT ON MESSAGE 84: the L input beside the W/wire "
                          "output and the field mask.  Without it, \"the plan published a clean "

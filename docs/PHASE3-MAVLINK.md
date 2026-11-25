@@ -103,3 +103,28 @@
 3. 合并后 EKF 收到的 extnav 与 legacy 的逐行对比（可用同一 arm 的 legacy 飞行 `wire.csv` + `#331` 序列）。
 
 在查清之前 `FCU_CLIENT` 保持 `legacy` 默认；下一次修好后同一 arm A/B 复飞。
+
+
+## 第 2 步（2026-11-25 08:30–08:50）：修好 legacy 回归、给 331 加"黑匣子"，merged 仍待修
+
+### 修掉的回归（我的 Phase 3 重构造成的）
+`BridgeProcess.run_loop()` 的状态发布在重构时丢了 `String` 的导入，**legacy bridge 在第一个 200 ms 状态 tick
+就 NameError 死掉** → FCU "Arm: VisOdom: not healthy" 拒绝解锁（`missionA-phase3c-01-01` 11.4 s abort）。
+修复后 legacy 复飞 `missionA-phase3d-01-01`：完整 13 段、正常 LAND+disarm，FCU 估计与 truth 偏差
+**p99 0.30 m / max 0.45 m**（全程），H1/H3/H4/H6 + W0b/W1(13/13)/W1b/W2/W3/W5/W6 全过。
+（H5 这一趟 FAIL 是**判据窗口伪影**：落地后 tap 又录了 ~95 s，中位数从 (0,0) 漂到 (5.2,−8.1)，
+"H5 span" 因此 19.73 vs 10.13；FCU 与 truth 的逐点对比只有 0.3 m。属于 P0 判据类，暂不修改。）
+
+### 831 号黑匣子：`--nav-log`（nav.csv）
+每条真正发出去的 ODOMETRY #331 记录 `t_wall,t_us,age,px,py,pz,vx,vy,vz,q*,refused`（两种模式都记录，
+run-mission 自动带 `--nav-log $OUT/nav.csv`）。同时把 LIO 位置差分速度改为**用消息时间戳做 dt**（墙钟只在没有
+时间戳时兜底）并加 `--nav-vmax`（默认 15 m/s）限幅：合并模式下同一个 rclpy node 的 LIO 回调可能成串到达，
+墙钟 dt 会把 5 mm/5 ms 的步长算成几十 m/s，而那个数字直接进 EKF。
+
+### merged 模式的现状（仍是实验性，默认 legacy）
+两趟（phase3a/3b）都能 arm/起飞/GO/leg1/leg2，但之后 **EKF 自己的估计向上跑飞**（leg 内从 2.6 m 线性涨到
+70 m，速度 0.9 m/s²），真值模型被自己的位置环压到地面（`SIM Hit ground`、`EKF variance`/`EKF Failsafe`）。
+`nav.csv` 显示 merged 在起飞前有一次 **2.5 s 的 331 断流**（legacy 同一段无断流），飞行中还有 0.1–0.2 s 的
+多次小断流；而 331 的位置/姿态/限幅速度在跑飞期间本身是**合理**的（|v| ≤3.3 m/s、四元数归一）。
+下一步查：这些断流是否让 EKF 进入 dead-reckoning（加速度计零偏 → 估计以 ~0.9 m/s² 发散），
+以及断流根因（merged 的 supervisor pump 在 preflight/arm 期间的分支阻塞）。

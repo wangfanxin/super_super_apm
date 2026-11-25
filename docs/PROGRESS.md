@@ -434,6 +434,24 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 08:50（第 20 条，Phase 3 第二步：修 legacy 回归 + 331 黑匣子，merged 仍待修）
+
+- **修回归**：Phase 3 重构让 legacy `run_loop()` 的状态发布丢了 `String` 导入 → bridge 第一个状态 tick
+  NameError 死掉、FCU 拒绝解锁（phase3c 11.4 s abort）。修复后 legacy `phase3d` 完整 13 段、正常 LAND+disarm，
+  FCU 与 truth 偏差 p99 0.30 m / max 0.45 m；H1/H3/H4/H6 + W0b/W1 13/13/W1b/W2/W3/W5/W6 全过。
+  H5 的 FAIL 是**判据窗口伪影**（落地后 tap 又录 ~95 s，中位数漂移把 span 从 10 撑到 19.7），属 P0 类，记录不改。
+- **331 黑匣子**：`--nav-log`（两种模式自动 `--nav-log $OUT/nav.csv`），逐条记录发出去的 ODOMETRY (#331)
+  的 t_us/age/位置/速度/姿态/是否被 nav gate 拒绝；同时把 LIO 位置差分速度改为**消息时间戳 dt**（墙钟兜底）
+  + `--nav-vmax` 15 m/s 限幅（合并模式回调成串时墙钟 dt 会算出几十 m/s 的假速度）。
+- **merged 模式仍实验性**（默认 legacy）：phase3a/3b 能起飞/GO/leg1/leg2，之后 EKF 估计向上跑飞
+  （2.6→70 m，~0.9 m/s²），模型 `SIM Hit ground`/`EKF variance`。nav.csv 显示 merged 起飞前有 **2.5 s 的 331 断流**
+  且飞行中多次 0.1–0.2 s 小断流（legacy 无），跑飞期间 331 内容本身合理。下一步查断流根因与 EKF
+  dead-reckoning 关系。
+
+**下一步**：merged 断流根因（pump 阻塞分支）→ 复飞 A/B → 默认切 merged；然后 Phase 4。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

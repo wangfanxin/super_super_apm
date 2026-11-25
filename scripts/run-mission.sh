@@ -1164,7 +1164,7 @@ if [ "${FCU_CLIENT:-legacy}" = "merged" ]; then
     # phase log and the guards, and its pump loop drives the shared link.
     $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
         --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
-        --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" \
+        --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
         --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
         --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
         --fcu-odom-topic /fcu/odom \
@@ -1176,7 +1176,7 @@ if [ "${FCU_CLIENT:-legacy}" = "merged" ]; then
 else
 $BRIDGE_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
     --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
-    --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" \
+    --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
     > "$OUT/bridge.log" 2>&1 &
 BRIDGE_PID=$!
 sleep 2
