@@ -96,3 +96,34 @@ LIO/bridge/supervisor/FCU 都不读 `LIDAR_POINTS`（run-mission 的横幅里也
 **为什么 10000 可以接受**：实测 LIO 相对真值的漂移很小（`scripts/lio_drift.py`，两圈 130 s 飞行）：
 `phase4kB` 误差 0.10–0.37 m、`phase4g` 0.04–0.20 m，没有 >0.25 m 的跳变；降低点数主要影响点云密度，
 需要飞行 A/B 确认 W1b/W6 不退化。
+
+
+## 7. 2026-11-25 16:20 A/B 结论：默认 = 10000 点 + **legacy 调度**（整窗均匀调度改为 opt-in）
+
+owner 指示"改成 10000 点 + 均匀采"后，先按指示把默认切到 `LIDAR_POINTS=10000` + `LIDAR_SCHEDULER=new`，
+然后做了 A/B（固定 10000 点，只切换调度；全部单趟、BAG=1、merged 客户端、同一 world）：
+
+| 趟 | 调度/窗口 | H6 | W1 | W1b | W6 | W6 spread |
+|---|---|---|---|---|---|---|
+| `phase4oA` | legacy | T | 13/13 | T | **T** | 0.077 |
+| `phase4oB` | **new**/0.100 | T | 13/13 | T | **T** | 0.129 |
+| `phase4n` | **new**/0.100 | T | 13/13 | T | F | 0.250（Q2 −0.177） |
+| `phase4oC` | **new**/0.100 | T | 13/13 | T | F | 0.469（Q2 −0.374） |
+| `phase4oD` | new/0.060（窗内均匀） | **F**（cast MAX 580 ms、skipped 43 = 主机停顿） | 13/13 | T | F | 0.516（污染，不计） |
+| `phase4oE` | legacy | T | 13/13 | T | F | 0.000，**四个季度全部 +0.600（搜索边界）** |
+
+A/B 统计（干净的趟）：new 调度 4 趟里 1 趟过 W6；legacy 6 趟里 5 趟过（`4oA/4d/4g/4h/4kA` 过，`4oE` 不过）。
+
+**但 `phase4oE` 的失败暴露了 W6 自身的另一个问题（比调度更重要）**：该趟的
+`cmd vs truth` 偏移是 **常数 +1.35 s / 四个季度一致**，`lio vs truth` 也是常数 **+1.45 s（quarter 间 spread 0.03）**
+—— 这是**录制时间基准**的问题（`setpoints.csv` 的 `t_sim_us` 来自 LIO 消息时间戳，`tap.csv` 是 SIM_STATE 真值时间，
+两者在这一趟差了 ~1.4 s），不是跟踪问题；W6 的 ±0.6 s 搜索窗因此全部顶在边界。`accept.py` 自己就有注释指出
+W6 记录两套时钟、在好趟上只剩 2 ms 余量、**"de-trending 是判据改动（P0）不是 bug fix，所以没做"**。
+
+结论（按计划"先 A/B 再切默认"的规则）：
+1. **默认保持 legacy 调度 + 10000 点**（`LIDAR_SCHEDULER=legacy`）；新调度用 `LIDAR_SCHEDULER=new`
+   或 `--new-lidar` 显式开启。它是可用的（H6 更好：p50 12–13 ms；13/13 航点），但当前 W6 判据下通过率更低。
+2. 10000 点本身没问题：legacy@10000 的 `4oA` H6 p50 13.5 ms / skipped 6 / W6 过；比 12000 更省 CPU。
+3. **下一个真问题**：`setpoints.csv t_sim_us`（LIO 时间戳）与 `tap.csv`（SIM_STATE 时间）之间的时间基准差
+   在某些趟里是 0.15 s、某些趟是 1.4 s —— 属于 D4（显式时钟映射）范畴，应在 W6 判据改造（P0）之前先把
+   录制时间基准统一/标定，否则 W6 会周期性假失败。

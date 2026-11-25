@@ -260,7 +260,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
       echo "          would die as 'THE PLAN BOX IS NOT TALKING'; see docs/INTEGRATION.md §89)" >&2
       exit 2
     }
-    echo "  launch         : PLANNER=$PLANNER LIDAR_POINTS=${LIDAR_POINTS:-10000} LIDAR_SCHEDULER=${LIDAR_SCHEDULER:-new} tag=$TAG"
+    echo "  launch         : PLANNER=$PLANNER LIDAR_POINTS=${LIDAR_POINTS:-10000} LIDAR_SCHEDULER=${LIDAR_SCHEDULER:-legacy} tag=$TAG"
     timeout "$TIMEOUT_S" env NAV_SOURCE="$NAV" ALT_MODE="$ALT" PLANNER="$PLANNER" \
       TAP="$TAP" FAN="$FAN" PORT0="$PORT0" PORT1="$PORT1" PORT2="$PORT2" PORT3="$PORT3" LOCK="$LOCK" \
       WORLD="$SIM_ROOT/worlds/$WORLD_NAME" \

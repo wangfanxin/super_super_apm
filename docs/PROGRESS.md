@@ -617,6 +617,19 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 16:25（第 32 条，Phase 4 收尾：默认 10000 点 + legacy 调度；发现 W6 的时间基准问题）
+
+- 按 owner 指示先切了 10000 点 + 整窗均匀调度，随后做 A/B（固定 10000 点，只切调度）：new 调度 4 趟干净趟里
+  1 趟过 W6（0.129），3 趟失败（0.250/0.469，另一趟主机停顿污染）；legacy 6 趟 5 趟过（0.077 等）。
+- **发现更根本的问题**：`phase4oE`（legacy）W6 失败不是跟踪问题——`cmd vs truth` 是**常数 +1.35 s**（四季度一致），
+  `lio vs truth` 是**常数 +1.45 s**，即 `setpoints.csv t_sim_us`（LIO 时间戳）与 `tap.csv`（SIM_STATE 时间）
+  这一趟差了 ~1.4 s；W6 的 ±0.6 s 搜索窗全部顶边。W6 代码注释本就说明它是两套时钟的记录、好趟只剩 2 ms 余量，
+  de-trending 属 P0 判据改动。→ 列入下一步：D4 时间基准统一/标定（在 P0 之前）。
+- 结论：Phase 4 完成（per-scan CSV/H6、rviz 回放、图案窗口修正已实现且可 opt-in），**默认 = 10000 点 + legacy 调度**；
+  `LIDAR_SCHEDULER=new` 保留为实验开关。证据 `phase4oA/4oB/4n/4oC/4oE`，docs/PHASE4-SIM.md §7。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

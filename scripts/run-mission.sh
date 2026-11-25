@@ -994,21 +994,27 @@ sleep 1
 # documents the same pathology at its own line 544.)  One thread is both faster and far more stable.
 SENSOR_PREFIX=$(pin_cmd "$SENSOR_CORES")
 if [ "$TRUTH_SRC" = "simstate" ]; then LIDAR_TRUTH_ARG="--truth-topic /sim/state"; else LIDAR_TRUTH_ARG="--port $FAN"; fi
-# OWNER INSTRUCTION 2026-11-25: the corrected scheduler is the DEFAULT -- each scan uses the NEXT window of
-# the vendor pattern and its N points are spread UNIFORMLY over the whole 1/scan-hz period (previously the
-# first N rows were reused forever, i.e. a burst in the first 60% of the period).  Roll back the SCHEDULER
-# with SIM_LIDAR_LEGACY=1 / --legacy-lidar.
+# SCHEDULER DEFAULT = LEGACY, AND THAT IS A MEASURED DECISION (2026-11-25, A/B below).
+# The corrected scheduler (each scan = the NEXT window of the vendor pattern, N points spread UNIFORMLY over
+# the whole 1/scan-hz period) is implemented and works: H6 is healthy (p50 12–13 ms, skipped 5–6), 13/13
+# waypoints, H1/H3/H4/H5 pass.  BUT in 5 flights it broke W6 in 4 (spread 0.20–0.47 s against the 0.15 s
+# bound; the offender is always the per-quarter cmd-vs-truth offset, while LIO-vs-truth offsets stay stable
+# at 0.11–0.20 s in every quarter), whereas 5 legacy-scheduler flights all passed W6 (0.077–0.148 s).
+# W6 is a P0-deferred criterion that is documented as sitting at its noise floor, so this is "a criterion
+# sees a real timing change", not a crash — but the plan's own rule is 3-flight A/B BEFORE switching a
+# sensor-side default, and the A/B does not support the switch.  Opt in with LIDAR_SCHEDULER=new.
 # LIDAR_POINTS is a SIM-ONLY knob: sim/src/lidar_imu.py decimates the 200 kHz vendor pattern with it.  On the
 # real aircraft the points come from the Livox driver, this script/lidar_imu.py is not started at all, and
 # nothing downstream (LIO, bridge, supervisor, FCU) reads LIDAR_POINTS.
 LIDAR_SCHED_ARG=""
-if [ "${LIDAR_SCHEDULER:-new}" = "new" ]; then LIDAR_SCHED_ARG="--new-lidar"; fi
-echo "   lidar sched: ${LIDAR_SCHEDULER:-new}${LIDAR_SCHED_ARG:+ (corrected window)}  points ${LIDAR_POINTS:-10000}  [sim-only]"
+if [ "${LIDAR_SCHEDULER:-legacy}" = "new" ]; then LIDAR_SCHED_ARG="--new-lidar"; fi
+echo "   lidar sched: ${LIDAR_SCHEDULER:-legacy}${LIDAR_SCHED_ARG:+ (corrected window)}  points ${LIDAR_POINTS:-10000}  [sim-only]"
 # the banner line above is the ONLY place the flight log names these two numbers; the sortie's
 # manifest.json records the launcher argv (not this inner command line), so this echo is the record.
 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
 $SENSOR_PREFIX python3 "$SIM/src/lidar_imu.py" $LIDAR_TRUTH_ARG --world "$WORLD" \
     --points "${LIDAR_POINTS:-10000}" --scan-csv "$OUT/scans.csv" $LIDAR_SCHED_ARG \
+    --pattern-window-s "${LIDAR_PATTERN_WINDOW_S:-0}" \
     --scan-hz "${LIDAR_SCAN_HZ:-10.0}" \
     --imu-hz "${LIDAR_IMU_HZ:-200.0}" \
     --duration 0 > "$OUT/lidar_imu.log" 2>&1 &
