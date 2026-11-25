@@ -383,3 +383,18 @@ Phase 3 清单里最后一项"extnav 年龄门/质量/reset"从"隐式行为"变
 - `tests/check_fcu_client.sh --bench`（SITL+合成输入，真实 MAVLink 链路）：nav.csv 出现 `quality,reset_counter`
   两列且生产默认全 pass-through，`nav #331 47.1 Hz`、relay 500 发、age-gate seen -> PASS；
 - `tests/run_all.sh` GATE: PASS。
+
+
+## ★ 第 11 步：清理与固化（2026-11-25 第 20 轮）★
+
+- **删除全部 Phase-3 bisect 形态**：`--bridge-only` / `--bridge-thread` / `--supervisor-only` /
+  `--legacy-shape` / `--dual-link` 从 `fcu_client.py` 移除；`scripts/run-mission.sh` 的 FCU 分派收缩为
+  `merged`（默认，一个进程两连接）与 `legacy`（回滚，两进程）；未知值直接 exit 2；
+- 新增 `tests/check_launch_matrix.sh` 入门禁（静态钉住上面的矩阵；见 docs/LEGACY_PATHS.md）；
+- **清理后飞行验证** `missionA-phase4p-01-01`（merged 默认路径）：H1/H3/H4/H5/H6 + W0b/W1(13/13)/W1b/W2/W3/W5 全过，
+  H6 p50 12.9 ms/skip 10，`truth_timebase.json` 正常；W4 CONTACT −0.016 m（已知 ±5 cm 缺陷）、
+  W6 FAIL（spread 0.427，Q4 偏移 −0.544 的单季度异常）。
+- **W6 的归因修正**：时间基准修复后，W6 失败表现为"某一个季度偏移大"（`phase4oE` legacy、`phase4oG` new、
+  `phase4p` legacy 都出现），与调度器/点云预算无稳定关联；这与 accept.py 注释里"W6 是两套时钟的记录、
+  好趟只剩 2 ms 余量"一致 —— **W6 判据本身是 P0 延后项**，需要 de-trending/残差门限改造，而不是继续
+  用飞行去追"哪个调度更好"。

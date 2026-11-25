@@ -658,6 +658,23 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 17:05（第 35 条，Phase 3 清理固化：bisect 形态删除、一套 FCU 实现 + legacy 回滚开关）
+
+- `bridge_nodes/mavlink/fcu_client.py`：删除 `--bridge-only/--bridge-thread/--supervisor-only/--legacy-shape/
+  --dual-link` 与对应分支；只保留 `merged`（默认：一进程、两连接、两 node、两 executor/线程）与 `--bench`。
+- `scripts/run-mission.sh`：FCU 分派收缩为 `merged`（默认）| `legacy`（回滚，两进程），未知值 exit 2；删除
+  bridge_thread/bridge_only/supervisor_only 分支及其对 supervisor 启动的影响。
+- 新增 `tests/check_launch_matrix.sh` 入门禁：静态断言启动矩阵、merged 两 endpoint、legacy 两进程、无残留
+  bisect 参数、`--bench` 存在、客户端可编译。
+- **清理后飞行验证** `phase4p`：H1/H3/H4/H5/H6 + W0b/W1(13/13)/W1b/W2/W3/W5 全过（H6 p50 12.9 ms/skip 10，
+  truth_timebase.json 正常）；W4 CONTACT −0.016（已知缺陷）、W6 FAIL（spread 0.427，Q4 −0.544 单季度异常）。
+- **W6 归因修正**：时间基准修复后 W6 失败在 legacy/new 两种调度都出现且都是"单季度偏移大"（4oE legacy、
+  4oG new、4p legacy），说明它与调度/点云预算无稳定关联，是 P0 判据本身的脆弱性（accept.py 注释已写明
+  两套时钟、好趟仅 2 ms 余量）。→ 下一步不再用飞行追调度差异，改为 P0 判据改造（de-trending/残差门限）。
+- 门禁 `tests/run_all.sh` GATE: PASS。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

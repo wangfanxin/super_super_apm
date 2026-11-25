@@ -23,3 +23,18 @@
 判断某个工具属于哪一类：如果它在 `setup/run_hex.sh`、`scripts/fly_hex*.sh`、
 `scripts/run_until_healthy.sh`、`scripts/run_accept.sh` 的调用链上，它已经位置无关；否则按上面的
 方式显式传参。
+
+
+## FCU 接口：一套实现 + 一个显式回滚开关（2026-11-25 第 20 轮）
+
+Phase 3 的 bisect 模式（`bridge_only` / `bridge_thread` / `supervisor_only` / `--legacy-shape` /
+`--dual-link`）已完成使命并被**删除**（`bridge_nodes/mavlink/fcu_client.py` 与 `scripts/run-mission.sh`
+里都不再存在）。现在只有两个值：
+
+| `FCU_CLIENT=` | 形态 | 用途 |
+|---|---|---|
+| `merged`（默认） | 一个进程 `fcu_client.py`：bridge 半边 serial0（84/331，自己的线程+node+executor），supervisor 半边 serial1（class-76/守卫，自己的线程+node+executor） | **唯一验收路径** |
+| `legacy` | 历史双进程：`bridge_node.py`（serial0）+ `supervisor.py`（serial1） | **回滚开关**：merged 出回归时用它 bisect/复飞；不再是验收路径 |
+
+`tests/check_launch_matrix.sh`（入门禁）静态钉住这件事：启动器只接受这两个值、merged 分支必须带两个
+endpoint、legacy 分支必须起两个进程、merged 客户端不得再出现已删除的 bisect 参数、`--bench` 必须保留。

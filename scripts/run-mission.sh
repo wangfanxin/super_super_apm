@@ -1190,36 +1190,15 @@ fi
 #   serial0 (84/331, its own thread+node+executor), the supervisor half on serial1 (class-76, guards, its own
 #   thread+node+executor).  `missionA-phase4g-01-01` is the acceptance flight: H1/H3/H4/H5/H6 +
 #   W0b/W1(13/13)/W1b/W2/W3/W4/W5/W6, i.e. row-for-row the legacy baseline (only H2, the P0-era 380 Hz rate
-#   criterion, and the known W4 variance differ).  `FCU_CLIENT=legacy` keeps the historical two-process shape for
-#   rollback; bridge_only/bridge_thread/supervisor_only are bisect/diagnostic modes.
+#   criterion, and the known W4 variance differ).  `FCU_CLIENT=legacy` IS THE ONLY OTHER MODE and it is the
+#   rollback (the historical two processes); the Phase-3 bisect modes were removed in round 20.
 FCU_CLIENT="${FCU_CLIENT:-merged}"
-if [ "$FCU_CLIENT" = "bridge_thread" ]; then
-    # BISECT: bridge half in this process, driven by a thread; supervisor is the legacy separate process.
-    $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --bridge-thread --mav "tcp:127.0.0.1:${PORT0:-5780}" \
-        $CALIB_ARG --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
-        --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
-        --phase-log "$OUT/phase.csv" \
-        > "$OUT/bridge.log" 2>&1 &
-    BRIDGE_PID=$!
-    sleep 2
-    kill -0 "$BRIDGE_PID" 2>/dev/null || { echo "the bridge process died:"; tail -20 "$OUT/bridge.log"; exit 1; }
-elif [ "$FCU_CLIENT" = "bridge_only" ]; then
-    # BISECT (Phase 3): the historical bridge, started from fcu_client.py, in the background; the supervisor
-    # below is the legacy separate process.  Tests "does this PROCESS change the estimator feed's behaviour".
-    $BAG_PREFIX echo >/dev/null 2>&1 || true
-    $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --bridge-only --mav "tcp:127.0.0.1:${PORT0:-5780}" \
-        $CALIB_ARG --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
-        --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
-        --phase-log "$OUT/phase.csv" \
-        > "$OUT/bridge.log" 2>&1 &
-    BRIDGE_PID=$!
-    sleep 2
-    kill -0 "$BRIDGE_PID" 2>/dev/null || { echo "the bridge process died:"; tail -20 "$OUT/bridge.log"; exit 1; }
-elif [ "$FCU_CLIENT" = "merged" ]; then
-    # PHASE 3: ONE process, ONE MAVLink link, ONE rclpy node (bridge_nodes/mavlink/fcu_client.py).
-    # The bridge half keeps 84/331 and the wire/setpoint CSVs; the supervisor half keeps class-76, the
-    # phase log and the guards, and its pump loop drives the shared link.
-    # the two halves use the two historical endpoints: serial0 for 84/331, serial1 for class-76
+case "$FCU_CLIENT" in
+merged)
+    # PHASE 3, THE ONE CONTROL IMPLEMENTATION.  bridge_nodes/mavlink/fcu_client.py runs both halves in ONE
+    # process: the bridge half on serial0 (84/331, its own thread + node + executor) and the supervisor half
+    # on serial1 (class-76, guards, phase log, its own thread + node + executor).  The Phase-3 bisect modes
+    # were removed in round 20; this is the only path the acceptance flights use.
     $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" \
         --mav-supervisor "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
         --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
@@ -1232,36 +1211,28 @@ elif [ "$FCU_CLIENT" = "merged" ]; then
     FSM_RC=$SUP_RC
     cat "$OUT/fcu_client.log"
     BRIDGE_PID=""
-else
-$BRIDGE_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
-    --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
-    --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
-    > "$OUT/bridge.log" 2>&1 &
-BRIDGE_PID=$!
-sleep 2
-kill -0 "$BRIDGE_PID" 2>/dev/null || { echo "the bridge process died:"; tail -20 "$OUT/bridge.log"; exit 1; }
-fi
+    ;;
+legacy)
+    # ROLLBACK ONLY: the historical TWO processes (bridge_node.py on serial0, supervisor.py on serial1).
+    # Kept runnable so a merged-client regression can be bisected against the delivered shape; not a
+    # supported acceptance path any more (docs/LEGACY_PATHS.md).
+    $BRIDGE_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
+        --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
+        --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
+        > "$OUT/bridge.log" 2>&1 &
+    BRIDGE_PID=$!
+    sleep 2
+    kill -0 "$BRIDGE_PID" 2>/dev/null || { echo "the bridge process died:"; tail -20 "$OUT/bridge.log"; exit 1; }
+    ;;
+*)
+    echo "run-mission: FCU_CLIENT='$FCU_CLIENT' is not a mode -- allowed: merged (default) | legacy (rollback)" >&2
+    exit 2
+    ;;
+esac
 
-# THE SUPERVISOR, ITS OWN PROCESS AND ITS OWN ENDPOINT (serial1).  Preflight, arm, take-off, the go, the
-# four gates, LAND and the NAMED abort.  Its inputs are the truth and the LINK, never the LIO in flight.
-# It is last because its exit is the sortie's result, and because the two processes it watches must already
-# be publishing when it starts.
-if [ "$FCU_CLIENT" = "supervisor_only" ]; then
-    # BISECT (Phase 3): the supervisor half inside this process (its OWN endpoint serial1), with the legacy
-    # bridge process above providing 84/331 on serial0.
-    $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --supervisor-only \
-        --mav "tcp:127.0.0.1:${PORT1:-5781}" \
-        --mav-supervisor "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
-        --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
-        --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
-        --fcu-odom-topic /fcu/odom \
-        --phase-log "$OUT/phase.csv" > "$OUT/fcu_client.log" 2>&1
-    SUP_RC=$?
-    FSM_RC=$SUP_RC
-    cat "$OUT/fcu_client.log"
-elif [ "$FCU_CLIENT" != "merged" ]; then
-# legacy supervisor: for FCU_CLIENT=legacy AND for bridge_only (the bisect that puts ONLY the bridge half
-# inside the merged process -- the supervisor must still exist, and as the historical separate process)
+# THE SUPERVISOR, ITS OWN PROCESS AND ITS OWN ENDPOINT (serial1) -- ONLY FOR THE LEGACY ROLLBACK PATH.
+# In merged mode the supervisor lives inside fcu_client.py and this block is skipped entirely.
+if [ "$FCU_CLIENT" = "legacy" ]; then
 $AUX_PREFIX python3 "$BRIDGE/supervisor/supervisor.py" --mav "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
     --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
     --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \

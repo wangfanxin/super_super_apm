@@ -180,7 +180,9 @@
 > 已是默认飞行路径，连飞 `missionA-phase4g/4h` 两趟：H1/H3/H4/H5/H6 + W0b/W1(13/13)/W1b/W2/W3/W5/W6 全过，
 > 与 legacy 基线行级一致；只有 H2（P0 延后）与 W4 已知缺陷不同。合并形态 = 一个程序、两个连接、两个 node、
 > 两个 executor/线程（bridge：serial0 84/331 自己的线程；supervisor：serial1 class-76+守卫）。
-> 遗留：extnav 年龄/质量阈值做成显式可配置门限、legacy 双进程路径在连飞达标后清理。
+> 遗留（2026-11-25 第 19/20 轮已关闭）：extnav 年龄/质量/reset 已做成显式可配门（`nav_gates.py` +
+> `--nav-quality/--nav-min-quality/--nav-max-age-s/--nav-reset-gap-s`，默认与交付行为等价）；legacy 双进程
+> 路径已收缩为 `FCU_CLIENT=legacy` 回滚开关，bisect 形态删除并由 `tests/check_launch_matrix.sh` 钉住。
 
 **做什么**
 1. bridge 与 supervisor 的**两个连接合并为一条**（一个进程或一个连接对象分派），消息按段分派：84/331/setpoint、76/mode、511 流控、SIM_STATE 108 真值；状态机统一（armed/mode/relay/方案）。不做多进程多连接。

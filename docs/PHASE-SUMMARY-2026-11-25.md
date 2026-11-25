@@ -75,7 +75,8 @@ planner → /plan/cmd → fcu_client 84 → FCU
 
 ## 6. 回滚点
 
-* `FCU_CLIENT=legacy`：回到历史双进程 FCU 接口；`bridge_only/bridge_thread/supervisor_only` 为诊断模式。
+* `FCU_CLIENT=legacy`：回到历史双进程 FCU 接口（唯一回滚开关）。Phase-3 的
+  `bridge_only/bridge_thread/supervisor_only` 诊断模式已于第 20 轮删除，由 `tests/check_launch_matrix.sh` 钉住。
 * `SIM_LIDAR_LEGACY=1` / `LIDAR_SCHEDULER=legacy`：回到旧图案调度（当前默认）。
 * tap 补丁与旧 `truth_rx.py`：`sim/legacy/`（含 README 与打/回补丁命令）。
 * 录制：`BAG=1` 用 bag 派生；不传 `BAG` 仍走实时 CSV 记录器（过渡期两条都保留）。

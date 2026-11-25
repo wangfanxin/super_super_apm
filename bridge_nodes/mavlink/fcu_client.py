@@ -50,29 +50,17 @@ def build_parser():
                                  conflict_handler="resolve")
     add_bridge_arguments(ap)
     add_supervisor_arguments(ap)
-    # THE ONE ENDPOINT: serial0, the link the bridge half has always used.  serial1 is no longer opened.
+    # PHASE 3 CLOSEOUT (round 20): `merged` (default) and `bench` are the only modes left.  The Phase-3
+    # bisect modes that lived here (bridge_only / bridge_thread / supervisor_only / legacy-shape) did their job
+    # -- they proved that the bridge half has to keep its own thread and that the supervisor must own its own
+    # node -- and have been REMOVED so there is exactly one control implementation in the flight path.
+    # `FCU_CLIENT=legacy` in scripts/run-mission.sh is the rollback (the historical TWO processes).
     ap.add_argument("--mav", default="tcp:127.0.0.1:5780",
-                    help="the SINGLE MAVLink endpoint both halves share (serial0)")
-    # BENCH MODE: run the bridge half only (ONE connection, 84/331, wire/setpoint logs) against SITL with
-    # synthetic ROS inputs, and check the rates + the extnav age gate.  No arming, no supervisor, no flight.
-    ap.add_argument("--dual-link", action="store_true",
-                    help="compatibility flag: merged mode ALWAYS uses two links now (see main())")
-    ap.add_argument("--legacy-shape", action="store_true",
-                    help="DIAGNOSTIC: merged mode with ONE shared node/connection (the shape that diverged)")
+                    help="the bridge half's MAVLink endpoint (serial0: 84/331)")
     ap.add_argument("--mav-supervisor", default="tcp:127.0.0.1:5781",
-                    help="the supervisor half's own endpoint (serial1)")
-    # BISECT MODES (diagnosis): run ONE half of the merged client in this process, the other half as the
-    # historical process.  Phase 3 needs to know WHICH half changes the FCU's behaviour when both live here.
-    ap.add_argument("--bridge-thread", action="store_true",
-                    help="bisect: only the bridge half in this process, driven by its OWN THREAD (poll+spin+"
-                         "tick); the supervisor stays the separate legacy process")
-    ap.add_argument("--bridge-only", action="store_true",
-                    help="bisect: run only the bridge half in this process (own loop); the supervisor stays a "
-                         "separate legacy process")
-    ap.add_argument("--supervisor-only", action="store_true",
-                    help="bisect: run only the supervisor half in this process (class-76 on --mav); the bridge "
-                         "stays the legacy separate process on serial0")
-    ap.add_argument("--bench", action="store_true", help="bench: bridge half only, print PASS/FAIL summary")
+                    help="the supervisor half's MAVLink endpoint (serial1: class-76 commands)")
+    ap.add_argument("--bench", action="store_true",
+                    help="bench: bridge half only against SITL with synthetic ROS inputs; prints PASS/FAIL")
     ap.add_argument("--bench-seconds", type=float, default=10.0)
     return ap
 
@@ -80,16 +68,7 @@ def build_parser():
 def main(argv=None) -> int:
     ap = build_parser()
     args = ap.parse_args(argv)
-    if getattr(args, "supervisor_only", False):
-        args.client_mode = "supervisor_only"
-    elif getattr(args, "bridge_thread", False):
-        args.client_mode = "bridge_thread"
-    elif getattr(args, "bridge_only", False):
-        args.client_mode = "bridge_only"
-    elif getattr(args, "bench", False):
-        args.client_mode = "bench"
-    else:
-        args.client_mode = "merged"
+    args.client_mode = "bench" if getattr(args, "bench", False) else "merged"
     if getattr(args, "mav", "") and not str(args.mav).startswith("tcp:127.0.0.1:5780"):
         print("fcu_client: NOTE -- merged mode expects the FCU endpoint on serial0 (5780); using %s"
               % args.mav, flush=True)
@@ -112,20 +91,15 @@ def main(argv=None) -> int:
         import time
         print("[%7.2f] %s" % (time.monotonic(), msg), flush=True)
 
-    # ONE MAVLink connection -- unless --dual-link, which is both a diagnostic (does the single shared link
-    # change the FCU's behaviour?) and the fallback if it does.
-    # the supervisor-only bisect owns serial1 and NOTHING on serial0 (the legacy bridge owns that); opening
-    # serial0 here as well would put a second client on the same SITL endpoint and starve both (MEASURED
-    # 2026-11-25 phase3s: "no heartbeat on ...:5781").
-    _url = args.mav_supervisor if args.supervisor_only else args.mav
-    bridge = MavlinkBridge(url=_url, log=log)
+    # TWO MAVLink connections, one per half (the layout the Phase-3 bisect proved necessary): serial0 carries
+    # 84/331, serial1 carries the class-76 commands.  In `--bench` only serial0 is opened.
+    bridge = MavlinkBridge(url=args.mav, log=log)
     # ★ TWO NODES, TWO CONNECTIONS, TWO THREADS — THE SHAPE THAT WORKS (PHASE 3, 2026-11-25) ★
-    #   `FCU_CLIENT=bridge_thread` (bridge half + its own thread + its own node, supervisor as the legacy
-    #   process) flew the whole tour; any shape where the supervisor and the bridge half SHARED a node did not
-    #   (single-link pump-driven, single-link threaded, dual-link threaded).  So the merged client keeps each
-    #   half's serial structure exactly as its legacy process had it: the bridge thread owns serial0 AND spins
-    #   the bridge's node; the supervisor owns serial1 AND spins its own node.  One program, one build, one
-    #   place for the FCU interface -- two transports.
+    #   The Phase-3 bisect established that the bridge half must keep its own cadence (its own thread) and
+    #   that it must NOT share an rclpy node with the supervisor: any shape with a shared node diverged in the
+    #   EKF (XKF4.SH 1-3 m) right after take-off.  The merged client therefore keeps each half's legacy serial
+    #   structure: the bridge thread owns serial0 AND spins the bridge's node; the supervisor owns serial1 AND
+    #   spins its own node.  One program, one build, one place for the FCU interface -- two transports.
     merged = args.client_mode == "merged"
     bridge_sup = bridge
     node_sup = node
@@ -134,76 +108,6 @@ def main(argv=None) -> int:
         node_sup = Node("fcu_client_sup")
         print("fcu_client: MERGED -- 84/331 on %s (bridge thread + its node), class-76 on %s (supervisor + its "
               "own node)" % (args.mav, args.mav_supervisor), flush=True)
-    if args.bridge_thread:
-        # BISECT: the bridge half's code, this process, its own thread, NO supervisor.  Discriminates
-        # "thread-driven bridge changes behaviour" from "supervisor-in-process changes behaviour".
-        import threading as _th
-        import time as _tm
-        bp = BridgeProcess(args, bridge=bridge, node=node)
-        bp.load_calib()
-        bp.start_ros(node=node)
-        bp.open_logs()
-        _st = {"stop": False}
-
-        def _loop():
-            while not _st["stop"]:
-                bridge.poll()
-                rclpy.spin_once(node, timeout_sec=0.0)
-                bp.step(_tm.monotonic())
-                _tm.sleep(0.0005)
-
-        _t = _th.Thread(target=_loop, name="bridge-half", daemon=True)
-        print("fcu_client: BRIDGE-THREAD (bisect) on %s -- supervisor is a separate legacy process" % args.mav,
-              flush=True)
-        _t.start()
-        try:
-            while True:
-                _tm.sleep(0.2)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            _st["stop"] = True
-            _t.join(timeout=2.0)
-            bp.close_logs()
-            return 0
-
-    if args.bridge_only:
-        # BISECT CONTROL: this is the historical bridge, just started from this file.  If a flight with this
-        # mode misbehaves, the problem is the PROCESS, not who drives the feed.
-        bp = BridgeProcess(args, bridge=bridge, node=node)
-        bp.load_calib()
-        bp.start_ros(node=node)
-        bp.open_logs()
-        print("fcu_client: BRIDGE-ONLY (bisect) on %s -- the supervisor is a separate legacy process" % args.mav,
-              flush=True)
-        try:
-            return bp.run_loop()
-        finally:
-            bp.close_logs()
-            try:
-                bridge.close()
-            except Exception:
-                pass
-
-    if args.supervisor_only:
-        # BISECT: only the supervisor half lives here.  It gets its OWN connection (class-76) and NO bridge
-        # half; the estimator feed comes from the legacy bridge process on serial0.
-        sv = Supervisor(args, bridge=bridge, node=node)
-        print("fcu_client: SUPERVISOR-ONLY (bisect) on %s -- the estimator feed is the legacy bridge process"
-              % args.mav, flush=True)
-        try:
-            return sv.run()
-        finally:
-            try:
-                bridge.close()
-            except Exception:
-                pass
-            try:
-                node.destroy_node()
-                rclpy.shutdown()
-            except Exception:
-                pass
-
     bp = BridgeProcess(args, bridge=bridge, node=node)
     bp.load_calib()
     bp.start_ros(node=node)
@@ -219,22 +123,19 @@ def main(argv=None) -> int:
     import time as _time
     from rclpy.executors import SingleThreadedExecutor as _Exec
     _run = {"stop": False, "err": None}
-    _legacy_shape = bool(args.legacy_shape)
     _node_for_bridge = node
     # ONE EXECUTOR PER THREAD: `rclpy.spin_once()` is process-global and not reentrant (phase4e crashed with
     # "generator already executing" when both threads used it).
-    _ex_bridge = None if _legacy_shape else _Exec()
-    _ex_sup = None if _legacy_shape else _Exec()
-    if _ex_bridge is not None:
-        _ex_bridge.add_node(node)
-        _ex_sup.add_node(node_sup)
+    _ex_bridge = _Exec()
+    _ex_sup = _Exec()
+    _ex_bridge.add_node(node)
+    _ex_sup.add_node(node_sup)
 
     def _bridge_loop():
         while not _run["stop"]:
             try:
-                if not _legacy_shape:
-                    bridge.poll()                       # this thread owns serial0's reads
-                    _ex_bridge.spin_once(timeout_sec=0.0)
+                bridge.poll()                           # this thread owns serial0's reads
+                _ex_bridge.spin_once(timeout_sec=0.0)
                 bp.step(_time.monotonic())
             except Exception as exc:                     # noqa: BLE001
                 if _run["err"] is None:
@@ -247,13 +148,10 @@ def main(argv=None) -> int:
     _bt = _threading.Thread(target=_bridge_loop, name="bridge-half", daemon=True)
     _bt.start()
 
-    # supervisOR half: its own node (and, unless --legacy-shape, its own connection)
+    # SUPERVISOR half: its own node and its own connection
     sv = Supervisor(args, bridge=bridge_sup, node=node_sup, executor=_ex_sup)
-    if _legacy_shape:
-        print("fcu_client: merged client (LEGACY ONE-NODE SHAPE) up -- diagnose only", flush=True)
-    else:
-        print("fcu_client: merged client up -- bridge thread owns 84/331 on %s; supervisor owns class-76 + "
-              "guards on %s" % (args.mav, args.mav_supervisor), flush=True)
+    print("fcu_client: merged client up -- bridge thread owns 84/331 on %s; supervisor owns class-76 + "
+          "guards on %s" % (args.mav, args.mav_supervisor), flush=True)
     try:
         return sv.run()
     finally:
