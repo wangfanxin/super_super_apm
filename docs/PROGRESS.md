@@ -528,6 +528,20 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 12:25（第 26 条，★ Phase 3 定位+修复：merged 的喂数必须由独立线程驱动 ★）
+
+- **bisect 定位**：`FCU_CLIENT=bridge_only`（bridge 半边在合并进程但跑自己的 loop，supervisor 仍 legacy）
+  飞了完整 **13/13 航点**（W0b 100%、W1b worst 0.10 m，H1/H3/H4/H5/H6 全过）；而 pump 驱动的 merged 会姿态发散。
+  `supervisor_only` 趟被主机卡顿污染无法判读。⇒ 问题不是 bridge 代码/进程，而是**它被 supervisor 的 pump 驱动**。
+- **修复**：merged 模式给 bridge 半边**独立线程**（1 kHz `bp.step()`），supervisor pump 只做 poll/spin/门限/class-76；
+  `MavlinkBridge` 把 pymavlink 的每个 `*_send` 包上 `_tx_lock`（一个连接两个写线程），读仍在 supervisor 线程。
+- `phase3x`（merged + 线程）：起飞正常、爬升到 2.38 m（目标 2.0）、无姿态发散，H1/H3/H4/H5/H6/W0b/W4/W5 全过；
+  29 s 因 "ESTIMATOR FEED IS STALE (1.61 s)" 正确中止——`super_lio` 进程活着但停止发布（主机侧问题，
+  legacy `phase3r` 77 s 也遇到同样 stale 中止），与改造无关。
+- 遗留：`bridge_only` 那趟 W6 p50 0.93 m lag 需在稳定主机复查；下一步安静主机复飞 merged（期望 13/13）并做 A/B。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

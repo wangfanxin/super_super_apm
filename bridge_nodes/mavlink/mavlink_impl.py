@@ -81,6 +81,32 @@ class MavlinkBridge(Bridge):
 
         # PHASE 3: merged-mode hook run during blocking command waits (see _command)
         self.on_wait = None
+        # PHASE 3: THE MERGED CLIENT SENDS FROM TWO THREADS.  `poll()` (reads) stays on the supervisor's thread;
+        # messages 84/331 are written by the bridge half's own thread, class-76 commands by the supervisor's.
+        # One lock makes those writes atomic w.r.t. each other (pymavlink's socket writes are not).
+        import threading as _threading
+        self._tx_lock = _threading.Lock()
+
+        # EVERY `*_send` ON THIS CONNECTION BECOMES ATOMIC.  The merged client drives messages 84/331 from the
+        # bridge half's own thread and class-76 commands from the supervisor's; pymavlink writes the frame into
+        # the socket buffer in one call, but two threads in that call at once can interleave.  Wrapping the
+        # generated method objects covers every current and future call site in one place.
+        def _locked(fn):
+            def _call(*a, **k):
+                with self._tx_lock:
+                    return fn(*a, **k)
+            return _call
+
+        for _n in dir(self.mav.mav):
+            if _n.endswith("_send"):
+                _fn = getattr(self.mav.mav, _n)
+                if callable(_fn):
+                    setattr(self.mav.mav, _n, _locked(_fn))
+
+    def _send(self, fn, *args):
+        """One atomic MAVLink write (see `_tx_lock`)."""
+        with self._tx_lock:
+            fn(*args)
 
     def request_rates(self):
         """Ask THIS link for the messages it needs (511), and let a caller ask AGAIN.

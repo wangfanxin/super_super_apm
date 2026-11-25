@@ -268,3 +268,32 @@ ArduPilot 收到 ODOMETRY 后走 `GCS_MAVLINK::handle_odometry` → `correct_off
 - 主线怀疑：**合并进程里 spin_once 只处理一个 callback / 单个 node 上挂了两半的订阅**，使某些 callback（尤其
   `/lio/robo/odom`、`/plan/cmd`）的处理顺序/延迟与 legacy 不同，从而 331 的"发送时刻 vs 数据时刻"关系变化。
   下一轮用 bridge_only / supervisor_only 的干净飞行把范围缩到一半，再决定是否给 bridge 半边单独线程。
+
+
+## 第 7 步（2026-11-25 12:00–12:25）：★ bisect 定位到"pump 驱动喂数"，改成独立线程后 merged 正常 ★
+
+### bisect 结果
+| 模式 | 进程结构 | 结果 |
+|---|---|---|
+| `bridge_only`（`phase3w`） | bridge 半边在合并进程里、跑**自己的 loop**；supervisor 仍是 legacy 进程 | **完整 13/13 航点**、W0b 100%、W1b worst 0.10 m、H1/H3/H4/H5/H6 全过（仅 W6 p50 0.93 超标，见下） |
+| `supervisor_only`（`phase3t`） | supervisor 半边在合并进程；84/331 由 legacy bridge | 连接/状态机/起降走通，但被主机卡顿污染（lidar skipped 86），无法判读 |
+| `merged`（`phase3p`，pump 驱动） | 两半共用一个 pump/线程 | **起飞后姿态发散**（ATT roll/pitch 10→40–50°→137°/425°），模型冲到 3.3 m 后坠地 |
+
+⇒ 结论：**bridge 半边的代码与进程都没问题；问题是它被 supervisor 的 pump 驱动**。pump 与 supervisor 的门限/命令/
+回调共享，导致 #331 的"发送时刻"随 supervisor 的工作抖动，而 FCU 的 EKF/控制是按 legacy 那种稳定 cadence 调过的。
+
+### 修复：bridge 半边在 merged 模式里跑自己的线程
+- `fcu_client` merged 模式：`bridge-half` 守护线程以 1 kHz 调 `bp.step()`（84/331/状态/fcu odom），
+  supervisor 的 pump 只负责 poll + spin + 门限 + class-76；`tick_hook` 不再使用；退出时停线程。
+- **写线程安全**：`MavlinkBridge.__init__` 把 pymavlink 的**每个 `*_send` 方法**包上 `_tx_lock`
+  （一个连接、两个线程写），读数（`poll`）仍只在 supervisor 线程。
+- `missionA-phase3x-01-01`（merged + 线程）：起飞正常、爬升 2.38 m（legacy 同目标 2.0 m）、无姿态发散，
+  H1/H3/H4/H5/H6/W0b/W4/W5 全过——**与 legacy 的行为一致了**。该趟在 29 s 因
+  "ESTIMATOR FEED IS STALE (1.61 s)" 正确中止：`lio.log` 显示 `super_lio` 进程活着但**停止发布**（主机侧再现性
+  问题，legacy `phase3r` 也在 77 s 遇到同样的 stale 中止），与本改造无关。
+- 遗留：`bridge_only` 那趟 W6 p50 0.93 m（lag），需在稳定主机上复飞确认是否与线程/录制负载相关。
+
+### 下一步
+1. 安静主机上复飞 merged（应完整 13/13）；再连飞一趟做 A/B；
+2. W6 lag 复查（bridge_only 0.93 vs legacy 0.17）；
+3. 之后把默认切到 merged、删掉 legacy 双进程路径。

@@ -1165,6 +1165,7 @@ if [ "${FCU_CLIENT:-legacy}" = "bridge_only" ]; then
     $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --bridge-only --mav "tcp:127.0.0.1:${PORT0:-5780}" \
         $CALIB_ARG --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
         --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
+        --phase-log "$OUT/phase.csv" \
         > "$OUT/bridge.log" 2>&1 &
     BRIDGE_PID=$!
     sleep 2
@@ -1213,7 +1214,9 @@ if [ "${FCU_CLIENT:-legacy}" = "supervisor_only" ]; then
     SUP_RC=$?
     FSM_RC=$SUP_RC
     cat "$OUT/fcu_client.log"
-elif [ "${FCU_CLIENT:-legacy}" != "merged" ] && [ "${FCU_CLIENT:-legacy}" != "bridge_only" ]; then
+elif [ "${FCU_CLIENT:-legacy}" != "merged" ]; then
+# legacy supervisor: for FCU_CLIENT=legacy AND for bridge_only (the bisect that puts ONLY the bridge half
+# inside the merged process -- the supervisor must still exist, and as the historical separate process)
 $AUX_PREFIX python3 "$BRIDGE/supervisor/supervisor.py" --mav "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
     --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
     --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
