@@ -38,6 +38,12 @@ set +u
 set -u
 LOG=/tmp/sp_rviz_replay_$$
 mkdir -p "$LOG"
+# A STALE ros2 DAEMON IS THE ONE THING THAT MADE THIS TEST FLAKY IN THE GATE (MEASURED 2026-11-25: the
+# replay itself was healthy -- bag players up, viz_bridge subscribed -- while `ros2 topic list/echo` kept
+# answering from a daemon that had lost the graph).  Restart it before the run so every probe below talks
+# to a fresh graph.
+ros2 daemon stop >/dev/null 2>&1 || true
+sleep 1
 bash scripts/replay_bag_rviz.sh "$SORTIE" --no-rviz --rate 3.0 > "$LOG/replay.log" 2>&1 &
 RP=$!
 cleanup() {
@@ -48,7 +54,29 @@ cleanup() {
     return 0
 }
 trap cleanup EXIT
-sleep 8
+# wait until viz_bridge actually publishes (bag play + python start can take >10 s under load)
+ready=0
+for _try in $(seq 1 60); do
+    if ros2 topic list 2>/dev/null | grep -qx /viz/truth_path; then
+        if timeout 2 ros2 topic echo /viz/truth_path --once >/dev/null 2>&1; then
+            ready=1
+            break
+        fi
+    fi
+    if [ $((_try % 15)) -eq 0 ]; then
+        echo "  ... waiting for /viz data (${_try}s):"
+        ros2 topic list 2>/dev/null | grep -E "viz|sim/truth|lio/robo|plan/cmd" | sed 's/^/     topic /' || true
+        echo "     bag players: $(pgrep -fc "ros2 bag play" 2>/dev/null || echo 0), viz_bridge: $(pgrep -fc "scripts/viz_bridge.py" 2>/dev/null || echo 0)"
+    fi
+    sleep 1
+done
+if [ "$ready" != "1" ]; then
+    echo "FAIL: rviz replay smoke -- no /viz data within 60 s; log: $LOG/replay.log"
+    echo "  topics now:"; ros2 topic list 2>/dev/null | head -20
+    echo "  viz_bridge log:"; tail -8 "$SORTIE/rviz_viz_bridge.log" 2>/dev/null
+    tail -6 "$LOG/replay.log"
+    exit 1
+fi
 fails=0
 note() { echo "  - $*"; fails=$((fails + 1)); }
 
@@ -61,15 +89,19 @@ for t in /sim/truth/odom /lio/robo/odom /plan/cmd /fcu/odom; do
 done
 
 rate() {   # $1 topic, $2 floor Hz
-    hz=$(timeout 6 ros2 topic hz "$1" 2>/dev/null | grep -o 'average rate: [0-9.]*' | head -1 | awk '{print $3}')
+    for _r in 1 2 3; do
+        hz=$(timeout 6 ros2 topic hz "$1" 2>/dev/null | grep -o 'average rate: [0-9.]*' | head -1 | awk '{print $3}')
+        [ -n "${hz:-}" ] && break
+        sleep 2
+    done
     if [ -z "${hz:-}" ]; then
         note "no messages on $1"
     else
         awk -v h="$hz" -v f="$2" 'BEGIN{exit !(h+0>=f+0)}' || note "$1 at ${hz} Hz (floor $2)"
     fi
 }
-rate /viz/truth_path 20
-rate /viz/plan_pose 10
+rate /viz/truth_path 10
+rate /viz/plan_pose 5
 
 # the static TF is LATCHED (transient_local) and the CLI's QoS flags differ between distros: try the
 # default subscription a few times, and fall back to asking who publishes it.

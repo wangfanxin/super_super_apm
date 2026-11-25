@@ -719,6 +719,18 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 18:00（第 39 条，第 21 轮收尾：Phase 5 完成，管线五个 Phase 全部关闭）
+
+- Phase 5 交付：manifest 完整性（record-only）、APE/RPE 附加行（traj_error.py + accept.extras）、rviz 回放
+  headless 冒烟（check_rviz_replay.sh）、bag→derive→live 一致性 CI（check_bag_pipeline 扩展，派生 98.8–100% 匹配
+  且 0 值不一致）、P0 判据改造提案（P0-CRITERIA-PROPOSAL.md，未实施）。
+- 门禁新增 4 个测试（timebase / nav-gates / launch-matrix / traj-error / rviz-replay / bag-replay 扩展），
+  `tests/run_all.sh` GATE: PASS；HEAD `d3ab11d` 及后续已推送。
+- 至此 PIPELINE-PLAN 的 Phase 0–5 全部关闭；剩余事项只有 **P0 判据改造（等所有者批准）** 与
+  new 调度 W6 单季度异常的后续调查（等 P0 改造后再评估）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

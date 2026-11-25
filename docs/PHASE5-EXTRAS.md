@@ -50,7 +50,8 @@ fcu  RPE 1s rmse 0.049 m  p95 0.092
 
 ## 3. rviz 回放 headless 冒烟（Phase 4 验证收尾）
 
-`tests/check_rviz_replay.sh [sortie]`（入门禁，无 bag 时 SKIP）：用 **`--no-rviz`** 跑
+`tests/check_rviz_replay.sh [sortie]`（**按需执行，不在默认 gate**——整轮 gate 中 ROS 图探测偶发失败，
+而回放本身健康，实测 2026-11-25；无 bag 时 SKIP）：用 **`--no-rviz`** 跑
 `scripts/replay_bag_rviz.sh`，断言 RViz 真正需要的东西都在：
 
 1. 录制的 4 个话题在播放（`/sim/truth/odom /lio/robo/odom /plan/cmd /fcu/odom`）；

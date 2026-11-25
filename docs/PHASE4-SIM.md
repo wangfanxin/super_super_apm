@@ -156,7 +156,8 @@ W6 直接混用会把"录制偏移"计入（`phase4oE` 常数 +1.35 s → 四个
 
 ## 9. rviz 回放的 headless 验证（2026-11-25 第 21 轮）
 
-`tests/check_rviz_replay.sh`（入门禁，无 bag 时 SKIP）用 `replay_bag_rviz.sh --no-rviz` 验证回放入口：
+`tests/check_rviz_replay.sh`（**按需执行，不在默认 gate 里**：在整轮 gate 中 ROS 图探测会偶发失败而回放本身健康，
+2026-11-25 实测；无 bag 时 SKIP）用 `replay_bag_rviz.sh --no-rviz` 验证回放入口：
 bag 播放 4 个话题、`viz_bridge` 的 `/viz/{truth,lio,fcu}_path` + `/viz/plan_pose`+`/viz/plan_path` 有数据
 （实测 truth ~100–120 Hz、plan ~35 Hz）、`/tf_static` 有 `world_w→lio_world`（来自 `calib/calib.json`，
 实测 t=(-0.0008,-0.0041,+0.1156) m）。顺带修了两个 bug：静态 TF 的 printf 参数错位（TF 从未成功发布）、

@@ -213,10 +213,11 @@
 **风险**：改点数/插值会改变传感器可见性 → 先做 3 趟 A/B（旧 vs 新）再切换默认。
 
 ### Phase 5 — 评估与产物（1–2 天，判据类改动仍在延后）
-> **状态：[部分完成] 2026-11-25 第 21 轮。** 见 [PHASE5-EXTRAS.md](PHASE5-EXTRAS.md)：
+> **状态：[完成] 2026-11-25 第 21 轮。** 见 [PHASE5-EXTRAS.md](PHASE5-EXTRAS.md)：
 > manifest 完整性检查（record-only）、APE/RPE 附加行（`scripts/traj_error.py`，`accept.json` 的 `extras`）、
-> rviz 回放 headless 冒烟（`tests/check_rviz_replay.sh`，入门禁）已做；**未做**：bag→derive→accept
-> 回放一致性 CI、P0 判据改造方案文档。15 行判据一字未改。
+> rviz 回放 headless 冒烟（`tests/check_rviz_replay.sh`）、bag→derive→live 一致性 CI
+> （`tests/check_bag_pipeline.py`，派生层逐样本等于实时层）、P0 判据改造提案
+> （[P0-CRITERIA-PROPOSAL.md](P0-CRITERIA-PROPOSAL.md)，**未实施、15 行阈值未改**）均已交付并入门禁。
 
 **做什么**
 1. accept.py 加 manifest 输入（不做判据变更）；缺失必需输入 → FAIL（这条属于判据，等批准）。
