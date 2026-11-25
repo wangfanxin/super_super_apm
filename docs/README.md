@@ -11,6 +11,7 @@
 | [INTEGRATION.md](INTEGRATION.md) | **record** | 9000+ 行的测量记录：试过什么、数字、为什么否掉（§99–§112 是第 20 轮） |
 | [PHASE0-VERIFY.md](PHASE0-VERIFY.md) | **record** | Phase 0 验证：仓库内源码构建的工作区飞出的两圈六边形实飞证据（含判据行、manifest、D5 符号链接边界、调度隔离） |
 | [EXTERNAL-NAV-ODOMETRY.md](EXTERNAL-NAV-ODOMETRY.md) | **how-to** | 用 MAVLink `ODOMETRY`(#331) 给 ArduPilot EKF3 喂外部导航：字段契约、帧、EKF 原点、参数、时间戳、上线检查清单、常见故障 |
+| [FLIGHT-LOOP-ANALYSIS.md](FLIGHT-LOOP-ANALYSIS.md) | **analysis** | 绕圈归因（phase4p）：5 处绕圈全部对应"参考速度掉到 k≈0"，不是径向超速/横侧振荡/planner 无解；含重规划时机说明与下一步 |
 | [REAL-MACHINE-CHECKLIST.md](REAL-MACHINE-CHECKLIST.md) | **how-to** | 真机迁移检查表：哪些是仿真-only、需要替换的接口、上电→首飞检查顺序、与仿真 A/B 对照的问题清单 |
 | [P0-CRITERIA-PROPOSAL.md](P0-CRITERIA-PROPOSAL.md) | **proposal** | P0 判据改造提案（未实施，等所有者批准）：W6 拆分稳态/一致性、H2 速率语义、W4 容差、H6/H3/W1b 微调，含 80 趟实测分布 |
 | [PHASE5-EXTRAS.md](PHASE5-EXTRAS.md) | **how-to** | Phase 5 已做部分：manifest 完整性（record-only）、APE/RPE 附加行（`traj_error.py`）、rviz 回放 headless 冒烟；未做项清单 |

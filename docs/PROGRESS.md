@@ -758,6 +758,23 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 20:55（第 42 条，绕圈归因：参考"停车"→飞机冲过头；新增俯视分圈/时序图/分析脚本）
+
+- 新增 `scripts/plot_flight_topdown.py`（整趟/`--per-lap` 分圈俯视）、`scripts/plot_flight_timeseries.py`
+  （xyz-t / vxyz-t / speed-t，真值 vs 指令，标出分圈与绕圈事件）、`scripts/analyze_loops.py`
+  （绕圈检测 + 与 SUPER 规划日志对齐）。
+- **phase4p 分析结论**：5 处绕圈（每处 ~1 s、净位移 0.2-0.6 m）**全部发生在"指令速度掉到 0.00–0.10 m/s"
+  的时刻**（真值仍 1.0-1.5 m/s）：飞机刹不住、冲过停住的参考点后被位置环拉回 → 小圈。
+  整趟"指令停一下"22 次（11 次在航点属设计、11 次在腿中异常）。不是径向超速（绕圈点多在腿中、离航点
+  3-4.7 m，cross-track p90 0.2-0.5 m）、不是 planner 无解（1211 次 replan 成功；事件 1 附近零 Opt failed）、
+  不是估计器（FCU 估计速度与真值几乎相同）。
+- 头号嫌疑：LIO 里程计 twist 整趟为 0（lio.csv vx,vy=0），若 SUPER 以"速度=0"重规划，新轨迹从静止起步
+  → 每拍参考速度掉 0；次因：局部 Opt failed 簇（事件 4/5 之前）。修复建议见文档 §5。
+- 文档：docs/FLIGHT-LOOP-ANALYSIS.md；图：docs/evidence/topdown-phase4p*.png、
+  timeseries-phase4p-{xyz-vxyz-speed}-t.png；README 索引、PROGRESS 本条。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。
