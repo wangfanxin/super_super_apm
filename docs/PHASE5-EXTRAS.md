@@ -1,0 +1,69 @@
+# Phase 5（可选）：评估与产物增强 —— 已做部分
+
+**原则不变**：15 行验收判据**一行未改**；本页所有内容都是 **record-only 附加块**（写进 `accept.json` 的
+`extras` 并在 RESULT 之前单独打印），任何一项缺失都**不会**让 GATE 变 FAIL —— 因为"缺输入即 FAIL"属于 P0
+判据变更，仍等所有者批准。
+
+## 1. manifest 完整性（record-only）
+
+`scripts/accept.py` 现在检查每趟 `manifest.json` 是否记录了 Phase-0 要求的字段：
+
+```
+tag / repo.head / world.sha256 / calib.sha256 /
+planner.fsm_node_sha256 / planner.config_sha256 / argv /
+ardupilot.rev / truth_timebase.offset_us
+```
+
+- 全部存在 → `manifest   : present, all required fields recorded`
+- 有缺失 → `manifest   : present, MISSING required fields: <列表>`（只报告）
+- 文件不存在 → `manifest   : ABSENT (reproducibility hole -- record-only, not a gate row)`
+- 老 sortie（2026-11-25 之前）没有 `truth_timebase` → 额外标注 `legacy_timebase`。
+
+数据也在 `accept.json` → `extras.manifest = {present, path, missing[], legacy_timebase}`。
+
+## 2. 轨迹指标 APE/RPE（附加行）
+
+`scripts/traj_error.py`（无 evo 依赖，numpy 实现；语义与 evo 的 APE/RPE 相同）：
+
+```bash
+python3 scripts/traj_error.py --run .runs/missionA-<tag> [--json out.json] [--no-align]
+```
+
+- 真值：`tap.csv` 的 `t_sim_us`（显式仿真时钟；老文件回退 `t_us`，与 accept 一致）；
+- 两条被评轨迹：`lio`（`lio.csv`，L→W：E=−y_l, N=x_l, U=z_l）与 `fcu`（`setpoints.csv` 的 `fcu_*`，已在 W）；
+- 窗口：`phase.csv` 的 takeoff..land；
+- **APE**：在飞行窗口上做一次 **SE(3) Umeyama 对齐（无尺度）** 后逐点位置误差（rmse/p50/p95/max），
+  同时打印对齐得到的 yaw 与平移 —— 把标定误差与估计器误差分开看；
+- **RPE(Δ=1 s)**：同一对齐下的 1 s 相对运动误差（rmse/p95），去掉全局摆放的影响；
+- `--no-align` 给原始误差（会把 `calib/calib.json` 的摆放差也算进去，用于诊断）。
+
+`accept.py` 在 RESULT 之前打印、并写入 `extras.trajectory`。实测（`missionA-phase4p-01-01`）：
+
+```
+lio  APE  rmse 0.027 m  p50 0.022  p95 0.045  max 0.070   (n=31963)   align yaw -0.32 deg, t=[-0.018 -0.001 +0.101]
+lio  RPE 1s rmse 0.015 m  p95 0.029
+fcu  APE  rmse 0.052 m  p50 0.043  p95 0.089  max 0.154   (n=6624)    align yaw -0.53 deg, t=[-0.018 +0.005 -0.122]
+fcu  RPE 1s rmse 0.049 m  p95 0.092
+```
+
+（LIO 的 z 平移 +0.10 m 与 FCU 的 −0.12 m 正是已知的 z 偏置方向，与 `scripts/altitude_split.py` 的结论一致。）
+
+## 3. rviz 回放 headless 冒烟（Phase 4 验证收尾）
+
+`tests/check_rviz_replay.sh [sortie]`（入门禁，无 bag 时 SKIP）：用 **`--no-rviz`** 跑
+`scripts/replay_bag_rviz.sh`，断言 RViz 真正需要的东西都在：
+
+1. 录制的 4 个话题在播放（`/sim/truth/odom /lio/robo/odom /plan/cmd /fcu/odom`）；
+2. `viz_bridge` 发布的 `/viz/truth_path /viz/lio_path /viz/plan_path /viz/plan_pose` 存在且有数据
+   （truth ≥20 Hz、plan ≥10 Hz；实测 truth ~100–120 Hz、plan ~35 Hz）；
+3. `/tf_static` 有 `world_w`（父）→ `lio_world`（子）变换（从 `calib/calib.json` 读 R_WL/t_WL）。
+
+顺带修掉两个真实 bug：静态 TF 的 printf 参数个数错位（TF 从未发布成功）、`--no-rviz` 下空 TF 行触发
+`set -u` 崩溃；TF 检查改为对 latched 话题重试 3 次（QoS 时序）。
+
+## 4. 还没做（下一轮）
+
+- **bag→derive→accept 回放一致性 CI**：在仓库内放一个**小样例 bag**（或由 gate 合成），断言
+  "回放 → `finalize_bag.sh` 派生层 → `accept.py` 的数字与现采一致"；现有 `tests/check_bag_pipeline.py`
+  只验证派生层本身（列头/行数/与直接 CSV 一致），还没接 accept。
+- P0 判据改造方案文档（de-trending/残差门限、H2 速率语义、W4 接触容差）—— 只写方案 + 数据，不改阈值。

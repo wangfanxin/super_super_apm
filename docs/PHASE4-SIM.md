@@ -152,3 +152,12 @@ W6 直接混用会把"录制偏移"计入（`phase4oE` 常数 +1.35 s → 四个
   W4 是已知 ±5 cm 缺陷，两趟中一趟 CLEAR 一趟 CONTACT）。
 - **遗留调查项**：new 调度的 W6 单季度异常（跟踪行为，非时钟、非点云预算），在 P0 判据改造（de-trending /
   单季度残差门限）之后再评估是否切默认。
+
+
+## 9. rviz 回放的 headless 验证（2026-11-25 第 21 轮）
+
+`tests/check_rviz_replay.sh`（入门禁，无 bag 时 SKIP）用 `replay_bag_rviz.sh --no-rviz` 验证回放入口：
+bag 播放 4 个话题、`viz_bridge` 的 `/viz/{truth,lio,fcu}_path` + `/viz/plan_pose`+`/viz/plan_path` 有数据
+（实测 truth ~100–120 Hz、plan ~35 Hz）、`/tf_static` 有 `world_w→lio_world`（来自 `calib/calib.json`，
+实测 t=(-0.0008,-0.0041,+0.1156) m）。顺带修了两个 bug：静态 TF 的 printf 参数错位（TF 从未成功发布）、
+`--no-rviz` 下空 TF 行触发 `set -u` 崩溃。证据：`missionA-phase4p-01-01` 回放 PASS。

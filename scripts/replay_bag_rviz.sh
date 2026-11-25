@@ -67,15 +67,19 @@ import json, math, sys
 d = json.load(open(sys.argv[1]))
 R = d["R_WL"]; t = d["t_WL"]
 yaw = math.atan2(R[1][0], R[0][0])
-print("%f %f %f 0 0 %f 1 world_w lio_world" % (t[0], t[1], t[2], math.sin(yaw / 2.0), math.cos(yaw / 2.0)))
+print("%f %f %f 0 0 %f %f world_w lio_world" % (t[0], t[1], t[2], math.sin(yaw / 2.0), math.cos(yaw / 2.0)))
 PY
 )
     # yaw-only quaternion: our calibrations are a z-rotation + translation, and printing the full
     # quaternion from a matrix here would be three more lines for no extra truth.
-    set -- $TF_LINE
-    ros2 run tf2_ros static_transform_publisher "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9" \
-        > "$RUN/rviz_tf.log" 2>&1 &
-    PIDS+=($!)
+    if [ -z "$TF_LINE" ]; then
+        echo "replay_bag_rviz: could not read R_WL/t_WL from $CALIB -- lio_world will not be linked to world_w" >&2
+    else
+        set -- $TF_LINE
+        ros2 run tf2_ros static_transform_publisher "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9" \
+            > "$RUN/rviz_tf.log" 2>&1 &
+        PIDS+=($!)
+    fi
 else
     echo "replay_bag_rviz: no $CALIB -- the lio_world cloud/TF will be missing in RViz" >&2
 fi

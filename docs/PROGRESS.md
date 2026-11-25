@@ -675,6 +675,24 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 17:15（第 36 条，Phase 5 附加块 + rviz 回放 headless 冒烟）
+
+- **APE/RPE 附加行**：新增 `scripts/traj_error.py`（numpy 实现 Umeyama 对齐 + Δ=1 s 相对误差，无 evo 依赖）：
+  真值用 `tap.csv t_sim_us`（显式仿真钟，老文件回退 t_us），同时评 `lio.csv`(L→W) 与 `setpoints.csv fcu_*`；
+  输出 rmse/p50/p95/max + 对齐 yaw/平移。实测 `phase4p`：lio APE rmse 0.027 m / RPE 0.015 m，fcu APE 0.052 m，
+  z 平移 +0.10 / −0.12 与已知 z 偏置方向一致。
+- **MANIFEST 完整性（record-only）**：`accept.py` 新增 `extras.manifest`（present/missing/legacy_timebase），
+  RESULT 前单独打印；缺字段只报告不判 FAIL（P0 规则）。
+- **accept extras**：`--no-extras` 可关；15 行判据完全未改；`accept.json` 增加 `extras` 块。
+- **rviz 回放 headless 冒烟**：新增 `tests/check_rviz_replay.sh`（无 bag 时 SKIP，入门禁）：验证 bag 播放、
+  `/viz/*` 话题速率（truth 100–120 Hz、plan ~35 Hz）、`/tf_static` 的 `world_w→lio_world`；
+  顺带修两个 bug（静态 TF printf 参数错位、`--no-rviz` 空 TF 行 set -u 崩溃），TF 检查对 latched 话题重试。
+- 测试：`tests/check_traj_error.py` 入门禁（已知刚体变换 APE<5mm、能看见 drift、--no-align 暴露标定偏移、
+  manifest 完整/残缺/缺失三种情况）；`tests/run_all.sh` GATE: PASS。
+- 文档：新增 `docs/PHASE5-EXTRAS.md`；PIPELINE-PLAN Phase 5 标记 [部分完成]；PHASE4-SIM §9；README 索引。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

@@ -233,6 +233,12 @@ def main():
     ap.add_argument("--z-split", type=float, default=2.1,
                     help="height where the pillar changes from box to cylinder, m")
     ap.add_argument("--json", default=None)
+    # PHASE 5 EXTRAS (record-only; they are NOT rows and cannot change the gate):
+    #   * manifest completeness (missing inputs are REPORTED, not failed -- turning that into a FAIL is a
+    #     criterion change, which needs the owner's approval);
+    #   * standard trajectory metrics (APOLLO-style APE/RPE after SE(3) alignment) for lio and fcu.
+    ap.add_argument("--no-extras", action="store_true",
+                    help="skip the record-only extras block (manifest completeness + trajectory APE/RPE)")
     args = ap.parse_args()
     R = Report(known=args.known_defect)
     print("run   : %s" % args.run)
@@ -878,8 +884,96 @@ def _self_description(args):
     return out
 
 
+MANIFEST_REQUIRED = (
+    ("tag",),
+    ("repo", "head"),
+    ("world", "sha256"),
+    ("calib", "sha256"),
+    ("planner", "fsm_node_sha256"),
+    ("planner", "config_sha256"),
+    ("argv",),
+    ("ardupilot", "rev"),
+    ("truth_timebase", "offset_us"),
+)
+
+
+def manifest_completeness(run):
+    """Record-only check of the Phase-0 manifest: which REQUIRED fields are missing from this sortie.
+
+    It never fails the gate -- "a missing input must FAIL" is one of the P0 criterion changes that are
+    deferred; here the list is printed and stored in the JSON so the hole is visible."""
+    path = os.path.join(run, "manifest.json")
+    rec = {"present": os.path.isfile(path), "path": path, "missing": [], "legacy_timebase": False}
+    if not rec["present"]:
+        rec["missing"] = ["<manifest.json absent>"]
+        return rec
+    try:
+        man = json.load(open(path))
+    except Exception as exc:                            # noqa: BLE001
+        rec["missing"] = ["<unreadable: %s>" % exc]
+        return rec
+    for key in MANIFEST_REQUIRED:
+        cur = man
+        ok = True
+        for k in key:
+            if isinstance(cur, dict) and k in cur:
+                cur = cur[k]
+            else:
+                ok = False
+                break
+        if not ok or cur in (None, "", [], {}):
+            rec["missing"].append(".".join(key))
+    if "truth_timebase" not in man:
+        rec["legacy_timebase"] = True          # pre-2026-11-25 sortie: tap.csv has no t_sim_us either
+    return rec
+
+
+def trajectory_extras(run):
+    """Record-only APE/RPE block from scripts/traj_error.py; None when the tool cannot run."""
+    try:
+        import traj_error  # same directory
+        return traj_error.metrics(run, align=True)
+    except Exception as exc:                            # noqa: BLE001
+        return {"error": repr(exc)}
+
+
+def extras_block(args):
+    if getattr(args, "no_extras", False):
+        return None
+    out = {"manifest": manifest_completeness(args.run)}
+    traj = trajectory_extras(args.run)
+    if traj is not None:
+        out["trajectory"] = traj
+    return out
+
+
 def finish(R, args):
+    extras = extras_block(args)
     n_pass, n_fail, n_known = R.summary()
+    if extras:
+        print("-" * 78)
+        print("附加（非 15 行判据，record-only）")
+        man = extras.get("manifest") or {}
+        if man.get("present"):
+            if man.get("missing"):
+                print("  manifest   : present, MISSING required fields: %s" % ", ".join(man["missing"]))
+            else:
+                print("  manifest   : present, all required fields recorded")
+            if man.get("legacy_timebase"):
+                print("               (no truth_timebase block: pre-2026-11-25 sortie, tap.csv has no t_sim_us)")
+        else:
+            print("  manifest   : ABSENT (reproducibility hole -- record-only, not a gate row)")
+        traj = extras.get("trajectory") or {}
+        if traj.get("error"):
+            print("  traj error : n/a (%s)" % traj["error"])
+        elif traj:
+            try:
+                import traj_error
+                for line in traj_error.fmt(traj).splitlines():
+                    print("  " + line)
+            except Exception:                           # noqa: BLE001
+                pass
+        print("-" * 78)
     print("=" * 78)
     print("RESULT: %d pass, %d fail, %d known-defect, %d informational"
           % (n_pass, n_fail, n_known, len(R.rows) - n_pass - n_fail - n_known))
@@ -897,6 +991,7 @@ def finish(R, args):
                        "rows": R.rows, "pass": n_pass, "fail": n_fail,
                        "known_defect": n_known,
                        "known_defect_rows": [r["id"] for r in R.rows if r.get("known_defect")],
+                       "extras": extras_block(args),
                        "meta": _self_description(args)}, f, indent=1)
         print("json: %s" % args.json)
     return 0 if n_fail == 0 else 1

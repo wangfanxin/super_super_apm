@@ -43,6 +43,8 @@ step "Phase 2 recording base: rosbag2 -> CSV derivation (synthetic, no flight)"
 python3 tests/check_bag_pipeline.py || note_fail "check_bag_pipeline.py (rosbag2 -> CSV derivation)"
 python3 tests/check_timebase.py || note_fail "check_timebase.py (D4 truth time base: t_sim_us + manifest mapping)"
 python3 tests/check_nav_gates.py || note_fail "check_nav_gates.py (Phase 3: explicit extnav refusal table)"
+python3 tests/check_traj_error.py || note_fail "check_traj_error.py (Phase 5 extras: APE/RPE + manifest completeness)"
+bash tests/check_rviz_replay.sh || note_fail "check_rviz_replay.sh (headless bag replay: /viz topics + TF)"
 
 step "Phase 3 merged MAVLink client (SITL, no flight): 84/331 rates, frame conversion, extnav age gate"
 bash tests/check_fcu_client.sh || note_fail "check_fcu_client.sh (merged fcu_client transport)"
