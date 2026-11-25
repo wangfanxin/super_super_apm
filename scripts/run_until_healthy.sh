@@ -183,6 +183,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --time-scale ${TIME_SCALE:-1.0} \
 --pass-by-m ${PASS_BY_M:-0.0} \
 --pass-by-long-m ${PASS_BY_LONG_M:-0.0} \
+--corner-carry-m ${CORNER_CARRY_M:-0} \
 --goal-pva ${GOAL_PVA:-0} --corner-speed ${CORNER_SPEED:-2.0} \
 --corner-mode ${CORNER_MODE:-outgoing} \
 --corner-speed-list "${CORNER_SPEED_LIST:-${CORNER_SPEED:-2.0}}" \

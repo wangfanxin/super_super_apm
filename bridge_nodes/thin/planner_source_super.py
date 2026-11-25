@@ -412,6 +412,12 @@ def main() -> int:
     ap.add_argument("--poly-check", type=int, default=0,
                     help="1 = 每秒把多项式在当前时刻求值，与 100 Hz 参考对比并打印误差（零行为改动，"
                          "用来确认系数排布与时钟对得上）。")
+    ap.add_argument("--corner-carry-m", type=float, default=0.0,
+                    help="★ 目标持续推进（carrot）：当 --pre-goal-m 已经把本 leg 的目标推进后，把发给 SUPER 的"
+                         "目标点从角点沿**出弯方向**再前移这么多米（不在角点上停车）。与 --goal-lookahead-m 不同："
+                         "goal-lookahead 在没有 pre-goal 时也把目标推出去（实测 phase4y 坠地）；carrot 只在"
+                         "pre-goal 生效的那一段、且只前移 0.5-1.0 m（A* 只有这么点余量，切弯 <0.5 m，W1b 不掉）。"
+                         "0 = 关闭（历史行为）。")
     ap.add_argument("--pre-goal-m", type=float, default=0.0,
                     help="★ 离当前角点还剩该距离时，把**下一个**角点发给 SUPER ★ 于是当前角点成为轨迹的"
                          "内部点、不在那里停车；而 A* 只有这么点余量，切不出大弯（与 --goal-lead 1 不同，"
@@ -861,6 +867,8 @@ def main() -> int:
             return
         if sent_i == state["goal_i"] and force and (now_goal() - state["last_goal_t"]) < 1.0:
             return
+        if sent_i != state["goal_i"]:
+            state["stale_resends"] = 0
         state["goal_i"] = sent_i
         state["last_goal_t"] = now_goal()
         g = PoseStamped()
@@ -873,6 +881,24 @@ def main() -> int:
         gi_t = int(min(max(sent_i, pacer.i_leg + max(0, int(getattr(args, "goal_lead", 0)))),
                        len(corners_l) - 1))
         pl = corners_l[gi_t].copy()
+        # ★ WHTF-CORNER-CARROT (2026-11-25) ★ "目标持续推进"：pre-goal 把本 leg 的目标提前推给 SUPER 之后，
+        #   若 --corner-carry-m > 0，目标点**不停在角点上**，而是沿出弯方向再前移 carry 米。于是 SUPER 的
+        #   静止终点落在角点之后、新的目标在飞机经过角点（pass-by 判据）时立刻推进，轨迹末端不再是角点。
+        #   OWNER REPORT (phase4x, corner 2 first lap): 飞机越过角点 0.77 m 再折回、累计转角 325°；
+        #   下方 0.5 m 到点判据也会让它在角点上停 2-3 s（cmd |v|=0）。carry 是对"末点必须静止"的直接对冲。
+        carry = float(getattr(args, "corner_carry_m", 0.0) or 0.0)
+        carry_active = False
+        if (carry > 0.0 and pre > 0.0 and pacer.i_leg >= 1
+                and pacer.i_leg < len(corners_l) - 1
+                and state.get("pre_goal_leg") == pacer.i_leg):
+            uo = corners_l[pacer.i_leg + 1] - corners_l[pacer.i_leg]
+            no = float(np.linalg.norm(uo[:2]))
+            if no > 1e-6:
+                pl = corners_l[pacer.i_leg].copy()
+                pl[0] += carry * uo[0] / no
+                pl[1] += carry * uo[1] / no
+                gi_t = pacer.i_leg
+                carry_active = True
         # ★ 目标点推到角点之后 ★
         #   SUPER 的每条轨迹都把**终点速度设为 0**（super_planner.cpp:725 的 pos_fina_state.setZero()），
         #   所以"把角点当目标"必然要求它在角点上停下 —— 实测 missionA-ph-01：离角点 2 m 内的路程占
@@ -900,7 +926,15 @@ def main() -> int:
         # ⚠ 停机坪那一腿（index 0，竖直起飞）**必须 v=0**：实测 missionA-pv-01，给它一个 2 m/s 的
         #   水平出弯速度后，MINCO 每拍都报 "Omg or thr or Pos violation"（4881 次），
         #   一条轨迹都优化不出来，飞机 265 s 原地悬停（路径 4.5 m）。最后的航点同理要给 0（要停）。
-        if int(getattr(args, "goal_pva", 0)) and 0 < gi_t < len(corners_l) - 1:
+        if carry_active:
+            # carrot 目标的终点速度就是出弯方向（若把 bisector/incoming 也叠上去，终点速度方向与出弯不一致，
+            # 飞机会在角点后再拐一次 —— 这正是要消除的"绕弯"）
+            uo = corners_l[pacer.i_leg + 1] - corners_l[pacer.i_leg]
+            no = float(np.linalg.norm(uo[:2]))
+            if int(getattr(args, "goal_pva", 0)) and no > 1e-6:
+                vc = float(args.corner_speed)
+                vout = np.array([vc * uo[0] / no, vc * uo[1] / no, 0.0])
+        elif int(getattr(args, "goal_pva", 0)) and 0 < gi_t < len(corners_l) - 1:
             # ★ 方向由 --corner-mode 决定 ★
             #   outgoing（默认）: 终点速度沿**出弯**方向 —— 实测不可行（90° 转向塞不进最后一段走廊，
             #     missionA-pv2-01：95 次 "Omg or thr or Pos violation"，飞机在角点磨蹭，1.70 m/s）。
@@ -995,9 +1029,20 @@ def main() -> int:
         #   WAIT_GOAL, so after a stale period the SAME goal is re-sent (the existing 1 s throttle keeps it
         #   from flooding).  The distance/speed of that last-metre standoff are printed so the next flight
         #   says WHY the gate was missed instead of only that it was.
-        _stale_force = bool(state["n_ref"] > 0 and state["ref_wall"]
-                            and (time.monotonic() - state["ref_wall"]) > 0.8)
-        if _stale_force and state["n_ref"] > 0:
+        # MEASURED CORRECTION (2026-11-26 00:30): the first version fired whenever the reference was
+        # >0.8 s old, i.e. DURING SUPER'S OWN PLANNING FAILURES.  It re-sent a goal every ~1 s, each re-send
+        # reset the FSM's new_goal, and the flight never converged: phase4x spent 40 s on the pad
+        # ("LEG 2 TIMEOUT ... 9.932 m from waypoint 2"), the tour then advanced artificially and the rest of
+        # the sortie was chaos (6 loops, one 14 s command hold).  Now: one re-send attempt every 2.5 s, only
+        # after 2.0 s of silence, and at most 3 attempts per goal -- enough to wake a finished FSM, not
+        # enough to thrash a planner that is already retrying.
+        _stale_age = (time.monotonic() - state["ref_wall"]) if state["ref_wall"] else 0.0
+        _stale_force = bool(state["n_ref"] > 0 and _stale_age > 2.0
+                            and (time.monotonic() - state.get("last_stale_resend_t", -1e9)) > 2.5
+                            and state.get("stale_resends", 0) < 3)
+        if _stale_force:
+            state["last_stale_resend_t"] = time.monotonic()
+            state["stale_resends"] = int(state.get("stale_resends", 0)) + 1
             _pw = here_w()
             if _pw is not None and pacer.i_leg < len(corners_l):
                 _d = float(np.linalg.norm(np.asarray(_pw, float)[:2] - corners_w[pacer.i_leg][:2]))
