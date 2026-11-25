@@ -77,9 +77,12 @@ fcu  RPE 1s rmse 0.049 m  p95 0.092
 这正是 Phase 2 在真实飞行上验证过的"派生层 ⊇ 现采层"的**可重复版本**，不需要飞行；真实飞行的证据仍是
 `missionA-phase2k`（逐字节包含）与 Phase 2 文档。
 
-## 5. P0 判据改造方案（已写，未实施）
+## 5. P0 判据改造方案（已写；v2 已实现为 opt-in，默认仍是 v1）
 
 `docs/P0-CRITERIA-PROPOSAL.md`：用 **80 趟 accept.json** 的实测分布提出 W6（稳态 lag ≤0.35 s + 去线性漂移后残差
 ≤0.12 s + 保留 p90 ≤0.60 m；单季度异常记为 WARN）、H2（速率 == 配置 publish-hz ±5%）、W4（CLEAR>0 不可行：
 min −0.096 / 中位 −0.052；建议先按已有 `--known-defect W4` 接受，容差版作为下一阶段目标）、H6（skip 上限改
-max(20, 1%×扫描数)）、H3/W1b 微调。**15 行阈值一字未改**；批准后以 `--criteria-v2` 实现并用历史 sortie 回放对比。
+max(20, 1%×扫描数)）、H3/W1b 微调。**15 行默认阈值一字未改**。`accept.py --criteria-v2` 已实现（默认关，`tests/check_criteria_v2.py` 钉住
+"默认 = v1 存档一致、v2 只允许 H2/W4/W6/H6 翻转"），并用 `scripts/criteria_ab.py` 对 **104 趟**存量 sortie
+做了 v1/v2 回放（`docs/metrics/p0-criteria-ab.txt`）：H2 4 趟、W4 20 趟按预期转绿，W6/H6 **0 趟翻转**
+（W6 的单季度真实滞后在 v2 下仍然 FAIL）。切默认仍需所有者批准。

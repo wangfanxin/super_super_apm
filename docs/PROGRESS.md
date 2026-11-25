@@ -731,6 +731,20 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 20:00（第 40 条，P0 A/B 证据 + accept --criteria-v2（默认关）+ 真机迁移检查表）
+
+- `scripts/criteria_ab.py`（新）：对 **104 趟**存量 sortie 重算"现行 v1 vs 提案 v2"，产出
+  `docs/metrics/p0-criteria-ab.txt`。结果：H2 4 趟 F→T（SIM_STATE/200 Hz 的趟）、W4 20 趟 F→T
+  （clear −0.005…−0.047、体内 0.02–0.42%）、**W6/H6 0 趟翻转**（W6 单季度真实滞后在 v2 下仍 FAIL，没有被洗白）。
+- `accept.py --criteria-v2`（默认关）已实现 H2/W4/W6/H6 的提案语义；v1 行为逐字节不变（默认 JSON/print 标注
+  `criteria: v1-default`）。`tests/check_criteria_v2.py` 入门禁：重放该 sortie 存档 argv，断言默认 v1 与存档
+  14 行一致、v2 只允许这四行翻转。
+- 新增 `docs/REAL-MACHINE-CHECKLIST.md`：仿真-only 清单、真机需替换的接口（LIO 输入/输出、FCU 链路、参数、
+  标定、录制/真值缺失）、上电→首飞检查顺序、与仿真基线的 A/B 对照问题。
+- 文档：P0 提案补 A/B 证据与实现状态；PHASE5-EXTRAS §5；README 索引；门禁新增 criteria-v2 测试。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

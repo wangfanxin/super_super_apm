@@ -70,3 +70,32 @@
 
 P0 属于**判据语义/阈值**，会改变"什么算通过"；它必须由所有者决定（尤其 W4 是否允许接触、W6 是否拆成稳态+一致性）。
 本文件只是把数据摆好，供审批。
+
+
+## A/B 回放证据（2026-11-25，104 趟存量 sortie，**阈值未改**）
+
+`scripts/criteria_ab.py --runs-dir /home/fanxin/sp_runs --out docs/metrics/p0-criteria-ab.txt`
+把每趟的现行判据（v1）与提案（v2）并排重算，结果：
+
+| 行 | v1 → v2 翻转 | v2 不可判 | 说明 |
+|---|---|---|---|
+| H2 | **4 趟 F→T**（phase4oF/4oG/4oH/4p） | 100（tap 时代 sortie 无 `t_sim_us`） | 这正是时间基准修复后 200 Hz SIM_STATE 的趟；v1 的 380 Hz 是 tap 时代产物，永远 F |
+| W4 | **20 趟 F→T**（clear −0.005…−0.047 m，体内样本 0.02–0.42%） | 24 | v2 的"≥−0.05 m 且体内 ≤0.5%"恰好覆盖全部已交付的 ±5 cm 缺陷，且不放过任何更深的接触 |
+| W6 | **0 趟翻转**（可判 28 趟） | 76（老 sortie 无显式仿真钟） | v2 与 v1 在全部可判趟上一致：**单季度真实滞后（如 phase4p）v2 仍然 FAIL**，不会把它洗白；v2 只是把"线性时钟漂移"显式去掉 |
+| H6 | 0 趟翻转（可判 14 趟） | 90 | skip 上限 max(20, 1%) 在现役航程上等价 |
+
+结论：v2 只在该翻的地方翻（H2 语义、W4 容差），在 W6/H6 上与 v1 等价；没有"用新判据掩盖问题"的趟。
+evidence 文件：`docs/metrics/p0-criteria-ab.txt`（逐趟明细在文件后半部分）。
+
+## 实现状态（2026-11-25）
+
+- **已实现 `accept.py --criteria-v2`（默认关闭）**：H2/W4/W6/H6 四项按本文提案实现，v1 行为逐字节不变
+  （`tests/check_criteria_v2.py` 钉住：默认 v1 与该 sortie 存档 accept.json 一致，v2 只允许这四行翻转）；
+- JSON 会写 `"criteria": "v1-default" | "v2-proposed"`，print 第一行也会标注；
+- **默认仍是 v1**；切默认需要所有者明确批准（这是 P0 判据类改动）。
+
+## 批准后要做的
+
+1. 用 `docs/metrics/p0-criteria-ab.txt` 过一遍四行差异；
+2. 所有者签字后把 `accept.py` 默认改为 v2，同时更新 `docs/SPEC.md` 的判据语义与 `--known-defect W4` 的用法；
+3. 跑一次真实飞行，确认 GATE 行与预期一致（H2/W4 变绿、W6 仍反映真实滞后）。

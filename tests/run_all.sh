@@ -44,6 +44,7 @@ python3 tests/check_bag_pipeline.py || note_fail "check_bag_pipeline.py (rosbag2
 python3 tests/check_timebase.py || note_fail "check_timebase.py (D4 truth time base: t_sim_us + manifest mapping)"
 python3 tests/check_nav_gates.py || note_fail "check_nav_gates.py (Phase 3: explicit extnav refusal table)"
 python3 tests/check_traj_error.py || note_fail "check_traj_error.py (Phase 5 extras: APE/RPE + manifest completeness)"
+python3 tests/check_criteria_v2.py || note_fail "check_criteria_v2.py (P0 v2 switch is opt-in; default v1 unchanged)"
 # ON-DEMAND, NOT IN THE GATE: `tests/check_rviz_replay.sh` is a visualisation smoke test (bag playback +
 # /viz topics + the world_w->lio_world TF).  MEASURED 2026-11-25: in a full gate run the ROS graph probes
 # intermittently lose the (heavy, 3x bag playback) graph while the replay itself is healthy -- a flaky test
