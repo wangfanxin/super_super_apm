@@ -399,6 +399,17 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 08:15（第 18 条，按 owner 指示减少录包：点云不再进 bag）
+
+- **点云不录**：`/livox/lidar`（~197 kB/条 ×10 Hz）与 `/lio/cloud_world`（~307 kB/条 ×10 Hz）约 **0.7–1.0 GB/趟**，
+  是其余 topic 的 ~16 倍；派生层与 accept 都不需要它们。默认关闭，`BAG_CLOUDS=1` 才显式打开（横幅警告体积）。
+- 默认 `core` 集合缩到 4 个 topic（`/lio/robo/odom`、`/sim/truth/odom`、`/plan/cmd`、`/fcu/odom`），
+  `/clock` 也去掉（D4 的时间基是真值客户端 stamps）；`full` = 全部非点云 topic（含 IMU/时间因子/规划参考/rosout）。
+- 实测体积：`phase2m`（144 s）core 两个 bag 合计 47 MB；带点云的同长度飞行约 0.7–1.0 GB。
+- 文档：`docs/PHASE2-RECORDING.md` 增加"数据量策略"节；PIPELINE-PLAN Phase 2 状态补 owner 指示。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

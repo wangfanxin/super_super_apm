@@ -82,3 +82,20 @@ W4 +0.026 m CLEAR   W5 ok   W6 p50 0.178 / spread ok
 **Phase 2 完成判据对照**：全量录制 ✓（bag 与发布率一致）；bag→CSV 派生 ✓（与现采逐字节一致）；
 同趟新旧 accept 逐行一致 ✓（14/15 + 窗口对齐后 15/15，见上）；目标态（无 CSV 记录器）真实飞行 ✓（本趟）。
 
+## 数据量策略（owner 指示 2026-11-25：减少录包，点云不要）
+
+**点云不进 bag**（`/livox/lidar`、`/lio/cloud_world`）。实测：`/livox/lidar` 约 **197 kB/条**、`/lio/cloud_world`
+约 **307 kB/条**、各 10 Hz ⇒ 每 150 s sortie 约 **0.7–1.0 GB**，是其余全部 topic 的 ~16 倍。CSV 派生层与
+`accept.py` 的分析都不需要点云；需要重放时用确定性仿真（pattern + world）重建即可。
+真正需要原始点云做调查时显式 `BAG_CLOUDS=1`（横幅会警告体积）。
+
+**默认 topic 集合（现在 45–50 MB/趟）**
+
+| 集合 | 内容 | 体积（phase2m，144 s） |
+|---|---|---|
+| `core`（默认） | `/lio/robo/odom`、`/sim/truth/odom`、`/plan/cmd`、`/fcu/odom` | A 24 MB + B 23 MB |
+| `full`（`BAG_TOPICS=full`） | core + `/lio/odom`、`/livox/imu`、`/planning/pos_cmd`、`/planning_cmd/poly_traj`、`/sim/rtf`、`/rosout`（仍不含点云） | ~60 MB/趟 |
+| `BAG_CLOUDS=1`（显式） | 上面 + 两路点云 | **~0.7–1.0 GB/趟** |
+
+`/clock` 也不录：D4 的时间基就是真值客户端自己的 stamps，`/clock` 是可派生量。
+

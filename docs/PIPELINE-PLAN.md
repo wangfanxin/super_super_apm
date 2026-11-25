@@ -161,6 +161,8 @@
 > 15/15 完全一致。关键发现：bag 写 ext4 虚拟盘会造成 VM 级 2 s 停顿（LiDAR cast 2249 ms → LIO 失锁），
 > 改 tmpfs 后消失；单 writer 在飞行负载下抓不全，split writers 后全量。剩余：去掉唯一保留的 CSV 记录器（记到
 > 目标态）、H2 速率门槛随真值重定义（P0 延后）。
+> **数据量（owner 指示 2026-11-25）**：点云不录（`/livox/lidar`、`/lio/cloud_world`，实测 ~0.7–1.0 GB/趟）；
+> 默认 `core` 集合 45–50 MB/趟，`full` = 全部非点云 topic；确需原始点云时才 `BAG_CLOUDS=1`。
 
 **做什么**
 1. `scripts/record_bag.sh`：rosbag2 录 `/lio/*`、`/plan/cmd`、`/planning/*`、`/fcu/*`、`/sim/state/*`、`/bridge/status`、`/tf`、`/clock`、`/rosout`；QoS 显式（BEST_EFFORT 的 topic 用 `--qos-profile-overrides-file`）。
