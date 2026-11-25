@@ -1,0 +1,108 @@
+# GENERATED for the AIRCRAFT-CAPABILITY BENCH (2026-11-26): same sensors/pad as square15_forest, NO pillars,
+# 30 m square (±15 m) inside a ±17.5 m arena -- long straight legs to test the firmware's speed/accel/attitude
+# limits with the planner out of the loop (PLANNER=rectangle, position-only targets).
+pillars: []
+spawn:
+  x: 0.0
+  y: 0.0
+  z: 0.205
+  yaw_deg: 0.0
+pad:
+  x: 0.0
+  y: 0.0
+  radius: 0.35
+  height: 0.205
+arena:
+  floor_z: 0.0
+  ceiling_z: 4.5
+  walls:
+    x:
+    - -17.5
+    - 17.5
+    y:
+    - -17.5
+    - 17.5
+sensor:
+  frame: mid360_link
+  mount:
+    x: 0.05
+    y: 0.0
+    z: 0.1
+    roll: 0.0
+    pitch: 45.0
+    yaw: 0.0
+  pattern_file: mid360_pattern.csv
+  scan_rate_hz: 10.0
+  points_per_scan: 20000
+  range_min: 0.1
+  range_max: 40.0
+  range_noise_sigma: 0.02
+  range_resolution: 0.0
+  blind_zone: 0.1
+imu:
+  rate_hz: 200.0
+  gyro_noise_sigma: 0.0002
+  accel_noise_sigma: 0.02
+  gyro_bias:
+  - 0.0
+  - 0.0
+  - 0.0
+  accel_bias:
+  - 0.0
+  - 0.0
+  - 0.0
+  gravity_norm: 9.7946
+mission:
+  takeoff_alt: 2.0
+  hold_s: 1.0
+  corners:
+  - - -15.0
+    - -15.0
+    - 2.0
+  - - 15.0
+    - -15.0
+    - 2.0
+  - - 15.0
+    - 15.0
+    - 2.0
+  - - -15.0
+    - 15.0
+    - 2.0
+  - - -15.0
+    - -15.0
+    - 2.0
+  - - 15.0
+    - -15.0
+    - 2.0
+  - - 15.0
+    - 15.0
+    - 2.0
+  - - -15.0
+    - 15.0
+    - 2.0
+  - - -15.0
+    - -15.0
+    - 2.0
+  - - 15.0
+    - -15.0
+    - 2.0
+  - - 15.0
+    - 15.0
+    - 2.0
+  - - -15.0
+    - 15.0
+    - 2.0
+  square:
+  - -15.0
+  - -15.0
+  - 15.0
+  - 15.0
+mission_b:
+  takeoff_alt: 2.0
+  goal:
+  - 3.0
+  - 4.0
+fake_truth:
+  rate_hz: 400.0
+  speed: 0.2
+  climb_s: 8.0

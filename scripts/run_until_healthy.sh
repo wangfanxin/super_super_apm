@@ -208,6 +208,17 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-ff-gain ${REF_FF_GAIN:-1.0} \
 --super-odom /lio/robo/odom --super-cloud /lio/cloud_world \
 --world "$SIM_ROOT/worlds/${WORLD_NAME:-square15_forest.yaml}" $CALIB_ARG"
+  elif [ "$WHAT" = "bench" ]; then
+    # AIRCRAFT-CAPABILITY BENCH (2026-11-26, owner: "先有一个几乎完美的飞机设置，再考虑飞路径"):
+    # the BUILT-IN rectangle plan box on an OPEN world (bench_open.yaml, 30 m square, no pillars) with the
+    # benchmark firmware parameter set in EXTRA_PARMS.  Position-only targets, so the firmware's own
+    # WP_SPD/WP_ACC/WP_JERK shaping is what is being measured -- no SUPER, no PVA feed-forward.
+    PLANNER="$ROOT/bridge_nodes/planner/rectangle_source.py"
+    # The custom-planner branch of run-mission passes CMD_ARGS VERBATIM (no --world, no vertical leg), so
+    # the bench must name them itself: without --world the plan box opened its own default
+    # (worlds/pillars.yaml, relative to the code root) and died on FileNotFoundError (measured phase6d).
+    CMD_ARGS="$CALIB_ARG --world $SIM_ROOT/worlds/${WORLD_NAME:-bench_open.yaml} \
+--vertical-first-m ${Z_M:-2.0} --vertical-hold-s 3.0 --hold-s -1 --leg-timeout-s 40"
   else
     PLANNER=rectangle
     CMD_ARGS="$CALIB_ARG"

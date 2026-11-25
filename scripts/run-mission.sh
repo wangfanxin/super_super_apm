@@ -69,8 +69,12 @@ SITL_MODEL="${SITL_MODEL:-x}"
 if grep -q "^FRAME_TYPE[[:space:]]*1" "$ARD/params/sitl_basics.parm" 2>/dev/null; then
     case "$SITL_MODEL" in
         x|X) : ;;
+        # CUSTOM AIRFRAME MODELS (2026-11-26): SIM_Frame::init() splits at the colon and loads the JSON when
+        # the string ends in .json (SIM_Frame.cpp:458-476), so "x:/abs/model.json" is the X geometry with
+        # the model's mass/props/inertia.  The base name BEFORE the colon must still be X for FRAME_TYPE 1.
+        x:*.json|X:*.json) : ;;
         *) echo "SITL_MODEL=$SITL_MODEL while sitl_basics.parm sets FRAME_TYPE 1 (X): the mixer and the" \
-                "simulated motor geometry would disagree.  Use SITL_MODEL=x or change FRAME_TYPE." >&2
+                "simulated motor geometry would disagree.  Use SITL_MODEL=x, x:<model>.json, or change FRAME_TYPE." >&2
            exit 1 ;;
     esac
 fi
@@ -720,6 +724,24 @@ PLANNER_PREFIX=$(pin_cmd "$PLANNER_CORES")
 BAG_PREFIX=$(pin_cmd "$BAG_CORES")
 BAG_PREFIX2=$(pin_cmd "${BAG_CORES2:-$BAG_CORES}")
 TRUTH_PREFIX=$(pin_cmd "${TRUTH_CORES:-off}")
+# CUSTOM AIRFRAME JSON: SITL's ROMFS/AP_Filesystem resolves the model RELATIVE to the working directory,
+# and this script runs the simulator from the RUN DIRECTORY (`cd -` restores it after the launch below).
+# MEASURED 2026-11-26: an absolute /mnt/d/... path PANICs ("failed to load") both from the repo root and from
+# the run directory, while the same file works as a path relative to the CWD.  So the model file is copied
+# into $OUT and the simulator is told the bare file name -- the launch is still self-contained in the run dir.
+case "$SITL_MODEL" in
+    x:*.json|X:*.json)
+        _mf="${SITL_MODEL#*:}"
+        if [ ! -f "$_mf" ] && [ -f "${DSH_ROOT:-$PWD}/$_mf" ]; then _mf="${DSH_ROOT:-$PWD}/$_mf"; fi
+        if [ ! -f "$_mf" ]; then
+            echo "SITL_MODEL='$SITL_MODEL': model json not found (tried the path as given and under the repo root)" >&2
+            exit 1
+        fi
+        cp "$_mf" "$OUT/airframe_model.json"
+        SITL_MODEL="x:airframe_model.json"
+        echo "   airframe json  : copied $_mf -> $OUT/airframe_model.json (SITL loads it by bare name from its CWD)" | tee -a airframe.txt
+        ;;
+esac
 SITL_T0_US=$(date +%s%6N)     # truth time base: the client's t=0 must be the simulator's t=0
 if [ "$TRUTH_SRC" = "tap" ] || [ "${LEGACY_TAP:-0}" = "1" ]; then
     SITL_TAP_ENV="LIO_TRUTH_TAP=$TAP"
