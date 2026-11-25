@@ -227,3 +227,25 @@ ArduPilot 收到 ODOMETRY 后走 `GCS_MAVLINK::handle_odometry` → `correct_off
 `phase3o`：2.0 s 的喂数空洞已消失；剩余 0.48 s 的空洞出现在 `calibrate_accel_simple` 之后、`arm` 命令发出前，
 仍足以让 FCU 判 "VisOdom: not healthy"（阈值 300 ms，`AP_VISUALODOM_TIMEOUT_MS`）。下一步是把这段间隙也
 归零（`arm` 调用前的 `pump(0.5)` 实测有空洞，需要查它为何不驱动 #331），然后再飞一次完整的 merged 趟。
+
+
+## 第 5 步（2026-11-25 10:45–11:20）：真实时钟戳在 legacy 上验证通过；merged 已能起飞但仍不稳定
+
+### 真实时钟戳（owner 指令）在 legacy 上通过
+`missionA-phase3r-01-01`（legacy，`#331` 时间戳 = `time.monotonic()` 实时钟）：起飞/爬升/巡航正常
+（truth 1.87 ↔ FCU 1.95–2.08，与之前版本同量级），W2/W3/W5/W6 过、W0b 100%。77.6 s 时 supervisor 以
+**"THE ESTIMATOR FEED IS STALE: LIO sample 1.62 s old (limit 1.50 s)"** 正确中止——那一段 lidar 进程被主机卡顿拖垮
+（`skipped scans 89`，H6 FAIL），与时间戳改造无关。⇒ **真实时钟戳对已验收链路无害**。
+
+### merged：喂数存活问题修好后，现在能解锁起飞，但控制仍不稳定
+- 根因链（已修）：`inspect.stack()` 首次调用要 import `inspect`+`linecache`，在本机实测 **0.48 s**——正好在
+  arm 命令发送之前的等待里，把 #331 饿死 >300 ms，FCU 报 "VisOdom: not healthy" 拒绝解锁。
+  改为 `sys._getframe` 取调用者（零 import）。
+- `missionA-phase3p-01-01`（merged）：**解锁成功、起飞、leg1/leg2/leg3**；#331 全程无 >0.15 s 空洞，
+  `#84` 目标序列与 legacy 相同（`posvelacc`、`z_ned=−2.0`、`type_mask=2048`）。
+- 但**爬升行为不同**：merged 的模型从 0.5 m 爬到 **3.3 m**（legacy 同目标 2.0 m 此时 1.9 m），
+  随后掉回地面（`SIM Hit ground at 0.188 m/s`），EKF 估计比真值滞后 ~0.6 m，最终 abort。
+  `--dual-link`（一个进程两个连接）同样不稳定（`phase3q`）⇒ **不是连接共享**。
+- 已排除：喂数空洞/时基（真实时钟）、发送抖动（merged p99 23 ms vs legacy 22.5 ms）、84 目标值、单连接。
+- 待查：merged 里 FCU 的推力/姿态响应（CTUN/PSCN）与 legacy 的逐项差异；下一步 bisect（merged 只跑 supervisor
+  半边 + legacy bridge 进程）定位是"bridge 半边被 pump 驱动"还是"supervisor 半边同进程"改变了行为。

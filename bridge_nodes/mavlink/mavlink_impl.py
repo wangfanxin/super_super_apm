@@ -17,6 +17,7 @@ This is the implementation that does the frame maths itself, so it is the one to
 from __future__ import annotations
 
 import math
+import sys
 import time
 
 import numpy as np
@@ -197,10 +198,14 @@ class MavlinkBridge(Bridge):
         # PHASE 3: EVERY CLASS-76 COMMAND GETS A LINE, WITH ITS CALLER.  A merged flight was found in LAND
         # mode 3 s before it hit the ground with no LAND line in the supervisor log (`missionA-phase3g`:
         # MODE Rsn=2 = GCS_COMMAND); "who sent it" must be answerable from the record, not by re-reading code.
+        # AND THE CALLER LOOKUP MUST BE FREE: `inspect.stack()` imports `inspect`/`linecache` on first use,
+        # which MEASURED 0.48 s on this host -- right inside the wait before the arm command, long enough for
+        # the FCU to time external nav out and refuse with "Arm: VisOdom: not healthy" (`phase3o`).  Frame
+        # walking needs no imports.
         try:
-            import inspect as _inspect
-            _stack = _inspect.stack()
-            _who = " <- ".join(f.function for f in _stack[1:3])
+            _f = sys._getframe(1)
+            _p = _f.f_back
+            _who = _f.f_code.co_name + (" <- " + _p.f_code.co_name if _p is not None else "")
         except Exception:
             _who = "?"
         self.log("bridge/mavlink: SENDING command %d params=%s (from %s)"

@@ -488,6 +488,20 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 11:20（第 23 条，真实时钟戳 legacy 验证通过；merged 已能起飞但仍不稳定）
+
+- **owner 指令落实后的验证**：legacy 飞 `phase3r`，`#331` 用真实 `time.monotonic()` 戳——起飞/爬升/巡航正常
+  （truth 1.87 vs FCU 1.95–2.08），W2/W3/W5/W6/W0b 过；77.6 s 因主机卡顿导致 lidar 被拖垮（skipped 89），
+  supervisor 以 "ESTIMATOR FEED IS STALE (1.62 s)" 正确中止。⇒ 真实时钟戳对已验收链路无害。
+- **merged 关键修复**：`inspect.stack()` 首次调用 import `inspect`+`linecache` 实测 0.48 s，正好卡在 arm 命令前，
+  饿死 #331 >300 ms → FCU 报 "Arm: VisOdom: not healthy"。改用 `sys._getframe`（零 import）。
+- `phase3p`（merged）：**解锁成功、起飞、leg1/2/3**；#331 无 >0.15 s 空洞；`#84` 序列与 legacy 相同；
+  但爬升速率不同（merged 冲到 3.3 m，legacy 同目标 2.0 m 处 1.9 m），随后落地、EKF 滞后 ~0.6 m → abort。
+- 已排除：喂数空洞/时基、发送抖动（p99 23 vs 22.5 ms）、84 目标值、单连接（`--dual-link` phase3q 同样不稳定）。
+- 待查：CTUN/PSCN 层面的推力/姿态差异；bisect（merged 只跑 supervisor 半边 + legacy bridge）定位哪一半改变行为。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。
