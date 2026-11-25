@@ -260,7 +260,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
       echo "          would die as 'THE PLAN BOX IS NOT TALKING'; see docs/INTEGRATION.md §89)" >&2
       exit 2
     }
-    echo "  launch         : PLANNER=$PLANNER LIDAR_POINTS=${LIDAR_POINTS:-12000} tag=$TAG"
+    echo "  launch         : PLANNER=$PLANNER LIDAR_POINTS=${LIDAR_POINTS:-10000} LIDAR_SCHEDULER=${LIDAR_SCHEDULER:-new} tag=$TAG"
     timeout "$TIMEOUT_S" env NAV_SOURCE="$NAV" ALT_MODE="$ALT" PLANNER="$PLANNER" \
       TAP="$TAP" FAN="$FAN" PORT0="$PORT0" PORT1="$PORT1" PORT2="$PORT2" PORT3="$PORT3" LOCK="$LOCK" \
       WORLD="$SIM_ROOT/worlds/$WORLD_NAME" \
@@ -268,7 +268,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
       ${EXTRA_ARG:+EXTRA_PARM="$EXTRA_ARG"} \
       ${EKF:+EKF_PARM="$EKF"} \
       GEOFENCE_M="$GEOFENCE_M" TAKEOFF_COMMAND_M="$TAKEOFF_M" VERTICAL_FIRST=1 VERTICAL_HOLD_S=3.0 \
-      LIDAR_POINTS="${LIDAR_POINTS:-12000}" \
+      LIDAR_POINTS="${LIDAR_POINTS:-10000}" LIDAR_SCHEDULER="${LIDAR_SCHEDULER:-new}" \
       SUP_ARGS="--climb-guard-m ${CLIMB_GUARD_M:-2.5}" \
       CMD_ARGS="$CMD_ARGS" \
       bash "$CODE/run-mission.sh" "$TAG" > "/tmp/$TAG.log" 2>&1 )

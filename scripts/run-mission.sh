@@ -994,14 +994,21 @@ sleep 1
 # documents the same pathology at its own line 544.)  One thread is both faster and far more stable.
 SENSOR_PREFIX=$(pin_cmd "$SENSOR_CORES")
 if [ "$TRUTH_SRC" = "simstate" ]; then LIDAR_TRUTH_ARG="--truth-topic /sim/state"; else LIDAR_TRUTH_ARG="--port $FAN"; fi
-# PHASE 4 scheduler A/B: `LIDAR_SCHEDULER=new` opts into the corrected pattern-window scheduler; the default
-# stays `legacy` until the plan's 3-flight A/B is complete (see sim/src/lidar_imu.py's note).
+# OWNER INSTRUCTION 2026-11-25: the corrected scheduler is the DEFAULT -- each scan uses the NEXT window of
+# the vendor pattern and its N points are spread UNIFORMLY over the whole 1/scan-hz period (previously the
+# first N rows were reused forever, i.e. a burst in the first 60% of the period).  Roll back the SCHEDULER
+# with SIM_LIDAR_LEGACY=1 / --legacy-lidar.
+# LIDAR_POINTS is a SIM-ONLY knob: sim/src/lidar_imu.py decimates the 200 kHz vendor pattern with it.  On the
+# real aircraft the points come from the Livox driver, this script/lidar_imu.py is not started at all, and
+# nothing downstream (LIO, bridge, supervisor, FCU) reads LIDAR_POINTS.
 LIDAR_SCHED_ARG=""
-if [ "${LIDAR_SCHEDULER:-legacy}" = "new" ]; then LIDAR_SCHED_ARG="--new-lidar"; fi
-echo "   lidar sched: ${LIDAR_SCHEDULER:-legacy}${LIDAR_SCHED_ARG:+ (corrected window)}  points ${LIDAR_POINTS:-20000}"
+if [ "${LIDAR_SCHEDULER:-new}" = "new" ]; then LIDAR_SCHED_ARG="--new-lidar"; fi
+echo "   lidar sched: ${LIDAR_SCHEDULER:-new}${LIDAR_SCHED_ARG:+ (corrected window)}  points ${LIDAR_POINTS:-10000}  [sim-only]"
+# the banner line above is the ONLY place the flight log names these two numbers; the sortie's
+# manifest.json records the launcher argv (not this inner command line), so this echo is the record.
 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
 $SENSOR_PREFIX python3 "$SIM/src/lidar_imu.py" $LIDAR_TRUTH_ARG --world "$WORLD" \
-    --points "${LIDAR_POINTS:-20000}" --scan-csv "$OUT/scans.csv" $LIDAR_SCHED_ARG \
+    --points "${LIDAR_POINTS:-10000}" --scan-csv "$OUT/scans.csv" $LIDAR_SCHED_ARG \
     --scan-hz "${LIDAR_SCAN_HZ:-10.0}" \
     --imu-hz "${LIDAR_IMU_HZ:-200.0}" \
     --duration 0 > "$OUT/lidar_imu.log" 2>&1 &

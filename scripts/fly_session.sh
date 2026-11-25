@@ -17,7 +17,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 TAG=${1:?usage: fly_session.sh TAG [ATTEMPTS] [POINTS]}
 ATT=${2:-2}
-export LIDAR_POINTS=${3:-${LIDAR_POINTS:-20000}}
+export LIDAR_POINTS=${3:-${LIDAR_POINTS:-10000}}
 # ★ core dumps ★ Super-LIO dies with SIGFPE in ~5 % of sorties.  Without this line nothing is written
 #   (WSL ships core_pattern=|/wsl-capture-crash and ulimit -c 0).  With it the next crash leaves
 #   /tmp/dsh_core.super_lio_node.<pid>, and `gdb -batch -ex bt <node> <core>` names the exact line.

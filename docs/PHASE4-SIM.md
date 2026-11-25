@@ -77,3 +77,22 @@ t_start_us,cast_ms,points,reason        # reason ∈ ok / empty / truth_hole / b
 1. 再飞 2 对 A/B 确认 W6 差异是否稳定复现；若稳定，方案二选一：(a) 保持 60 ms 窗口但在其内均匀抽点；
    (b) 与 LIO 的 `livox_360.yaml` 时间参数对齐后再切换；
 2. `LIDAR_POINTS` 的 fly 默认 12000 与注释里的 20000 不一致，需统一（本轮已确认 20000 不可用）。
+
+
+## 6. 2026-11-25 15:25 默认切换（owner 指示）：10000 点 + 整窗均匀调度
+
+owner 决定：**默认改成 10000 点/帧，并使用整窗均匀抽点**（`--new-lidar`）。已改：
+
+| 位置 | 旧默认 | 新默认 |
+|---|---|---|
+| `scripts/run-mission.sh` | `LIDAR_POINTS=20000`, `LIDAR_SCHEDULER=legacy` | **`LIDAR_POINTS=10000`, `LIDAR_SCHEDULER=new`** |
+| `scripts/run_until_healthy.sh` | `LIDAR_POINTS=12000` | **`LIDAR_POINTS=10000`，并把 `LIDAR_SCHEDULER` 显式传给 run-mission** |
+| `scripts/fly_session.sh` | 20000 | **10000** |
+
+回滚：`SIM_LIDAR_LEGACY=1` 或 `--legacy-lidar`（调度）；`LIDAR_POINTS=<n>`（点数）。
+两个参数都是 **SIM-ONLY**：只有 `sim/src/lidar_imu.py` 读它们；真机的点云来自 Livox 驱动，这个脚本根本不会启动，
+LIO/bridge/supervisor/FCU 都不读 `LIDAR_POINTS`（run-mission 的横幅里也注明了 `[sim-only]`）。
+
+**为什么 10000 可以接受**：实测 LIO 相对真值的漂移很小（`scripts/lio_drift.py`，两圈 130 s 飞行）：
+`phase4kB` 误差 0.10–0.37 m、`phase4g` 0.04–0.20 m，没有 >0.25 m 的跳变；降低点数主要影响点云密度，
+需要飞行 A/B 确认 W1b/W6 不退化。

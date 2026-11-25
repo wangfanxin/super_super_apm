@@ -603,6 +603,20 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 15:25（第 31 条，owner 指示：默认 10000 点 + 整窗均匀调度；新增 ODOMETRY 外部导航手册）
+
+- 按 owner 决定把飞行默认改为 `LIDAR_POINTS=10000` + `LIDAR_SCHEDULER=new`（整窗均匀抽点、图案窗口逐扫描前进）；
+  回滚 `SIM_LIDAR_LEGACY=1` / `LIDAR_POINTS=<n>`。两个参数都是 **sim-only**（仅 `sim/src/lidar_imu.py` 读取；
+  真机点云来自 Livox 驱动，下游 LIO/bridge/supervisor/FCU 均不读该参数）。
+- 修 run_until_healthy 未把 LIDAR_SCHEDULER 显式传入 run-mission 的问题（之前靠环境继承，易漏）。
+- `scripts/lio_drift.py` 实测 LIO 相对真值漂移：phase4kB 0.10–0.37 m、phase4g 0.04–0.20 m，无 >0.25 m 跳变
+  —— 支持"降点数到 10000"的决策，但 W1b/W6 仍需飞行 A/B 确认。
+- 新增 `docs/EXTERNAL-NAV-ODOMETRY.md`：ODOMETRY(#331) 喂 EKF3 的完整实战手册（字段契约/帧/原点/参数/时间戳/
+  上线检查清单/常见故障表/pymavlink 示例）。
+- 下一步：用新默认飞 1–2 趟验证 H6/W6/W1b；若 W6 变宽，回滚调度或点数并记录。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。
