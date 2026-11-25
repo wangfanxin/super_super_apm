@@ -202,7 +202,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-along-floor ${REF_ALONG_FLOOR:-0} \
 --ref-catchup-mps ${REF_CATCHUP_MPS:-0.5} \
 --ref-lead-s ${REF_LEAD_S:-0} \
---ref-deadreckon-s ${REF_DEADRECKON_S:-0} \
+--ref-v-slew ${REF_V_SLEW:-0} --ref-deadreckon-s ${REF_DEADRECKON_S:-0} \
 --stale-s ${REF_STALE_S:-1.0} \
 --ref-lp-tau ${REF_LP_TAU:-0} \
 --ref-ff-acc-max ${REF_FF_ACC_MAX:-0} \

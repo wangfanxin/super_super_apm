@@ -459,6 +459,13 @@ def main() -> int:
                          "(the hexagon arm uses this, so the waypoints and the map have one source)")
     ap.add_argument("--no-super", action="store_true", help="不自己起 fsm_node（调试用）")
     ap.add_argument("--stale-s", type=float, default=1.0, help="SUPER 断流多久后改发 hold")
+    ap.add_argument("--ref-v-slew", type=float, default=0.0,
+                    help="★ WHTF-REF-VSLEW (2026-11-26) ★ slew limit on the commanded VELOCITY (m/s^2).  0 = off."
+                         " MEASURED flight_quality Q3: the reference VELOCITY steps by up to 0.40-0.53 m/s in"
+                         " 20 ms (20-26 m/s^2 of commanded acceleration) at waypoint handovers; the aircraft"
+                         " overshoots those steps and scripts/analyze_loops.py counts 2-9 truth loops whose"
+                         " command never loops.  Slew-limiting v keeps the position/velocity/acceleration"
+                         " triple close to the planner's while never showing the FCU a step it cannot follow.")
     ap.add_argument("--ref-deadreckon-s", type=float, default=0.0,
                     help="★ WHTF-DEADRECKON (2026-11-26) ★ 参考断流后的处理：>0 时用**最后参考的速度**外推"
                          "（最多这么多秒）而不是原地 hold(v=0)。motivation: MEASURED phase8d/8a the commanded"
@@ -1232,6 +1239,23 @@ def main() -> int:
                                      cmd_stream.TRAJECTORY_STATUS_COMPLETED if pacer.done
                                      else cmd_stream.TRAJECTORY_STATUS_READY)
             state["hold_yaw"] = yaw_ned               # latch：断流时保持这个航向，不要发 0.0
+        # ★ WHTF-REF-VSLEW：指令速度的 slew 限制（0 = 关）★
+        #   位置保持规划器给的点（位置本来就有速率钳位），只把速度限制成飞机跟得上的变化率。
+        if float(getattr(args, "ref_v_slew", 0.0) or 0.0) > 0.0 and state.get("n_ref", 0) > 0:
+            _dt_slew = max(0.0, now - state.get("last_pub_wall", now))
+            _a = float(args.ref_v_slew) * _dt_slew
+            _v = np.asarray(s.v, float)
+            _vlast = state.get("v_slew")
+            if _vlast is None:
+                state["v_slew"] = _v.copy()
+            else:
+                _dv = _v - _vlast
+                _n = float(np.linalg.norm(_dv))
+                if _n > _a and _n > 1e-9:
+                    _v = _vlast + _dv * (_a / _n)
+                state["v_slew"] = _v.copy()
+            s = cmd_stream.CmdSample(s.p, _v, s.a, s.yaw, s.yaw_dot, s.trajectory_id, s.trajectory_flag)
+            state["vslew_n"] = int(state.get("vslew_n", 0)) + 1
         # ★ P0：两个参考源之间的钳位 ★
         #   SUPER 掉一拍再回来时，指令会在"最后指令点"与"前方 0.5 m"之间跳十几米。
         #   ego 臂为此有 EGO_REF_CLAMP_M=1.2（`run_mission.sh:373`），这里照做：单拍位移上限。
