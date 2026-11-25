@@ -385,6 +385,20 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 08:05（第 17 条，Phase 3 设计稿）
+
+把 Phase 3 的合并设计写成 `docs/PHASE3-MAVLINK.md`（现状缺陷、目标架构、写死的接口约定、迁移与 A/B 验证计划、风险）：
+- 目标 `bridge_nodes/mavlink/fcu_client.py`：一个 pymavlink 客户端、一条连接、**唯一** L→W→FCU 转换点；
+  84 50 Hz / 331 48 Hz / COMMAND_LONG 事件驱动；状态机与守卫从 supervisor 搬入；`phase.csv`/`wire.csv`/`setpoints.csv`
+  列名不变（accept 不动）。
+- 写死接口：extnav age（0.5 s 降级 / 1.5 s abort）、quality（连续 3 帧异常停 331）、reset（>2 m 跳变默认只 abort，
+  先 log-only 飞一趟看发生率）、wire liveness（心跳 >2 s / ACK 超时 3 次 → 停 setpoint+LAND）、yaw 单点转换、起飞门语义保持。
+- 迁移：`FCU_CLIENT=merged|legacy`（默认 legacy 直到验证）；无飞行测试 `tests/check_fcu_client.py`；同臂 A/B 飞行
+  对比 accept 与 84 目标时间序列；merged 连飞 2 趟通过后删旧实现。
+- 风险表：单进程崩溃面、reset 误 abort、守卫循环与发送互相拖延（单线程 event loop + deadline 调度）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。
