@@ -55,7 +55,25 @@ t_start_us,cast_ms,points,reason        # reason ∈ ok / empty / truth_hole / b
   `scans.csv` 59 行全 `ok`、cast p50 16.1 ms；legacy 回滚路径复现 0.059995 s；
 - `tests/run_all.sh` GATE PASS；`accept.py` H6 在 phase4i 上以 `[per-scan: scans.csv]` 读出。
 
-**待办（下一轮）**：
-1. 按计划做 3 趟 A/B（legacy vs new）并在安静主机上对比 H6/W6/W2/W1b，决定是否把 new 设为默认；
-2. 若 W6 lag 变差（首趟 spread 0.379），先查是否需要在 LIO 侧按新点时间分布调整（或把点数默认提到 20000）；
-3. `LIDAR_POINTS` 当前默认 20000，但 fly 脚本可能仍传 12000 —— A/B 时固定为同一值。
+## 5. A/B 实测（2026-11-25，LIDAR_POINTS=12000 固定）
+
+| 趟 | 调度 | 结果 |
+|---|---|---|
+| `phase4g/4h`（Phase 3 验收） | legacy | 完整 13/13，H6 True，**W6 spread 在 0.15 内** |
+| `phase4i` | new | 完整 13/13，H6 True（p50 18.5 ms/skipped 12），**W6 spread 0.379** |
+| `phase4jD` | legacy @20000 点 | H6 **FAIL**（skipped 237：20000 点在此主机上超出扫描预算），H5/W6 连带失败 |
+| `phase4kA` | legacy | H6 True（p50 16.1/skipped 9），但 plan box 在 leg9 停发导致 abort（不计入比较） |
+| `phase4kB` | **new** | 完整 13/13，H6 True（p50 18.3 ms/skipped 9，**per-scan CSV 1628 行**），W4 −0.061（已知缺陷），**W6 spread 0.201** |
+
+初步结论：
+- **20000 点在本主机上不可用**（扫描预算超支、大量 skipped）→ 保持 12000；
+- 新的整窗调度本身工作正常（H6 与旧聚合同量级，scans.csv 完整，扫描窗口 0.099995 s、逐扫描前进）；
+- 但两趟 new 调度的 **W6 offset spread 都超过 0.15**（0.379 / 0.201），而 legacy 基线在界内。W6 衡量的是"plan 与 truth 的
+  时间基准偏移在四个季度间的一致性"——new 把点的时间分布从"前 60 ms 密集"改成"整 100 ms 均匀"，LIO 的输出时间行为随之
+  改变，这是**判据感知到的真实差异**（不是 H6 的扫描预算问题）。
+- ⇒ 默认继续 legacy；需要再做两对 A/B（安静主机）并检查 LIO 侧是否应按点时间分布调整（或官方是否本就用 60 ms 窗口）。
+
+**待办**：
+1. 再飞 2 对 A/B 确认 W6 差异是否稳定复现；若稳定，方案二选一：(a) 保持 60 ms 窗口但在其内均匀抽点；
+   (b) 与 LIO 的 `livox_360.yaml` 时间参数对齐后再切换；
+2. `LIDAR_POINTS` 的 fly 默认 12000 与注释里的 20000 不一致，需统一（本轮已确认 20000 不可用）。

@@ -589,6 +589,20 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 14:25（第 30 条，Phase 4 A/B 首轮：new 调度可用但 W6 变宽；默认保持 legacy；按 owner 要求暂停总汇报）
+
+- 修 `LIDAR_SCHED_ARG` 未定义 bug（定义位置在 sensor 启动之后，set -u 直接崩）。
+- A/B（固定 12000 点）：
+  * `phase4jD` legacy@20000：H6 FAIL（skipped 237），确认 **20000 点在本主机不可用**；
+  * `phase4kA` legacy@12000：H6 True（p50 16.1/skipped 9），但 plan box 停发导致 abort，不作比较；
+  * `phase4kB` new@12000：完整 13/13、H6 True（p50 18.3/skipped 9，per-scan CSV 1628 行）、W4 −0.061 已知缺陷，
+    **W6 spread 0.201 (>0.15)**；此前 `phase4i` new 的 W6 spread 0.379。legacy 基线（phase4g/4h）W6 在界内。
+  ⇒ new 调度工作正常，但"整 100 ms 均匀点"改变了 LIO 输出时间行为，W6 判据感知到差异。**默认保持 legacy**，
+  待再两对 A/B + LIO 时间参数核对后再决定切换。
+- 按 owner 要求：**暂停飞行与推进**，输出总体汇报（docs/PHASE-SUMMARY-2026-11-25.md）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

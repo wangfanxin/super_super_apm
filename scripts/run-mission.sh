@@ -994,6 +994,11 @@ sleep 1
 # documents the same pathology at its own line 544.)  One thread is both faster and far more stable.
 SENSOR_PREFIX=$(pin_cmd "$SENSOR_CORES")
 if [ "$TRUTH_SRC" = "simstate" ]; then LIDAR_TRUTH_ARG="--truth-topic /sim/state"; else LIDAR_TRUTH_ARG="--port $FAN"; fi
+# PHASE 4 scheduler A/B: `LIDAR_SCHEDULER=new` opts into the corrected pattern-window scheduler; the default
+# stays `legacy` until the plan's 3-flight A/B is complete (see sim/src/lidar_imu.py's note).
+LIDAR_SCHED_ARG=""
+if [ "${LIDAR_SCHEDULER:-legacy}" = "new" ]; then LIDAR_SCHED_ARG="--new-lidar"; fi
+echo "   lidar sched: ${LIDAR_SCHEDULER:-legacy}${LIDAR_SCHED_ARG:+ (corrected window)}  points ${LIDAR_POINTS:-20000}"
 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
 $SENSOR_PREFIX python3 "$SIM/src/lidar_imu.py" $LIDAR_TRUTH_ARG --world "$WORLD" \
     --points "${LIDAR_POINTS:-20000}" --scan-csv "$OUT/scans.csv" $LIDAR_SCHED_ARG \
@@ -1070,12 +1075,6 @@ fi
 # (QoS-aware, see scripts/bag_qos.yaml); scripts/bag_to_csv.py derives the CSV layer from it, so the
 # analysis/acceptance code keeps reading the same files.  Both are recorded during the transition.
 sleep 3
-
-# PHASE 4 scheduler A/B: `LIDAR_SCHEDULER=new` opts into the corrected pattern-window scheduler; the default
-# stays `legacy` until the plan's 3-flight A/B is complete (see sim/src/lidar_imu.py's note).
-LIDAR_SCHED_ARG=""
-if [ "${LIDAR_SCHEDULER:-legacy}" = "new" ]; then LIDAR_SCHED_ARG="--new-lidar"; fi
-echo "   lidar sched: ${LIDAR_SCHEDULER:-legacy}${LIDAR_SCHED_ARG:+ (corrected window)}"
 
 echo "== flying =="
 # THE EGO STACK, WHEN THE PLANNER NEEDS ONE, AND IT IS TWO MORE PROCESSES.  This is the piece that made

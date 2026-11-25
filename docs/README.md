@@ -10,6 +10,7 @@
 | [CHAIN_DETAIL.md](CHAIN_DETAIL.md) | **deep-dive** | 航点盒、SUPER FSM、薄层每拍判断的逐行注解 |
 | [INTEGRATION.md](INTEGRATION.md) | **record** | 9000+ 行的测量记录：试过什么、数字、为什么否掉（§99–§112 是第 20 轮） |
 | [PHASE0-VERIFY.md](PHASE0-VERIFY.md) | **record** | Phase 0 验证：仓库内源码构建的工作区飞出的两圈六边形实飞证据（含判据行、manifest、D5 符号链接边界、调度隔离） |
+| [PHASE-SUMMARY-2026-11-25.md](PHASE-SUMMARY-2026-11-25.md) | **status** | 管线总汇报（暂停点）：各 Phase 状态、默认链路、验收数字、已修问题、已知缺陷、回滚点与下一步 |
 | [PHASE3-MAVLINK.md](PHASE3-MAVLINK.md) | **design** | Phase 3 设计：bridge+supervisor 合并为单个自建 MAVLink 客户端（extnav 年龄/质量/reset、wire liveness、yaw 单点转换、迁移与验证） |
 | [PHASE2-RECORDING.md](PHASE2-RECORDING.md) | **record** | Phase 2 验证：rosbag2 作为录制底座、split writers、tmpfs 写入、bag→CSV 派生与同趟新旧 accept 逐行对比 |
 | [PHASE1-TRUTH.md](PHASE1-TRUTH.md) | **record** | Phase 1 实测：未打补丁 SITL 的 SIM_STATE 能提供什么（以及时钟/位置的限制与迁移判据） |
