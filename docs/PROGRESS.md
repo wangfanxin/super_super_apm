@@ -630,6 +630,21 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 16:45（第 33 条，D4 时间基准修复 + Phase 4 完成：默认 10000 点 + legacy，连飞两趟干净趟）
+
+- **根因修复**：W6 假失败的根源是 `tap.csv t_us`（录制器单调钟）与飞行侧 `t_sim_us`（仿真钟）混用，
+  差值 = `--stamp-offset-us`（正常 0.15 s，phase4oE 1.35 s，直接顶穿 W6 的 ±0.6 s 拟合窗）。
+  修：tap.csv 增加 `t_sim_us` 列（两列都写）、accept.tap_world 优先用 t_sim_us（老 sortie 兼容）、
+  run-mission 写 `truth_timebase.json` 并注入 `manifest.truth_timebase`、新增 `tests/check_timebase.py` 入门禁。
+- 修复后 W6 绝对偏移变为真实跟踪滞后 ~−0.15 s；连飞最终默认（10000 点 + legacy）：
+  `phase4oF` W6 T(0.079)、W4 CONTACT −0.027；`phase4oH` W6 T(0.084)、**W4 CLEAR**、H1/H3/H4/H5/H6+W0b/W1/W1b/W2/W3/W5 全过
+  （仅 H2 P0 判据不过）⇒ **Phase 4 完成（连飞两趟干净趟）**。
+- new 调度在时钟修复后仍 W6 F（`phase4oG` 0.413，Q1 −0.500/p90 0.77，与时钟无关）⇒ 默认保持 legacy，
+  `LIDAR_SCHEDULER=new` 作为实验开关；遗留调查项记入 PHASE4-SIM §8。
+- 门禁：`tests/run_all.sh` GATE: PASS（含新 timebase 测试）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

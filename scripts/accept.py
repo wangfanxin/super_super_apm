@@ -78,14 +78,24 @@ def load_csv(path, required):
 
 
 def tap_world(path):
-    """(t_s, E, N, U, vE, vN, vU) from the 1200 Hz truth tap."""
+    """(t_s, E, N, U, vE, vN, vU) from the 1200 Hz truth tap.
+
+    TIME BASE (D4, fixed 2026-11-25): `tap.csv` has two time columns.  `t_us` is the recorder's own
+    monotonic clock (what the old tap stream also reported); `t_sim_us` is the SAME sample mapped onto the
+    simulator clock with the explicit `--stamp-offset-us` (= truth-client start - SITL step 0).  The LiDAR
+    -> LIO -> bridge chain is stamped on the SIM clock (the client publishes /sim/state with t_sim_us), so
+    every comparison between the tap and anything recorded on the flight side MUST use `t_sim_us`; using
+    `t_us` adds a constant offset that varies per sortie (0.15 s normally, 1.35 s on phase4oE).  Old
+    sorties have no `t_sim_us` column and keep the old behaviour.
+    """
     got, err = load_csv(path, ["t_us", "pn", "pe", "pd", "vn", "ve", "vd"])
     if got is None:
         return None, err
     a, c, _ = got
-    ok = np.isfinite(a[:, c["t_us"]])
+    tcol = "t_sim_us" if "t_sim_us" in c else "t_us"
+    ok = np.isfinite(a[:, c[tcol]])
     a = a[ok]
-    t = a[:, c["t_us"]] * 1e-6
+    t = a[:, c[tcol]] * 1e-6
     return (t, a[:, c["pe"]], a[:, c["pn"]], -a[:, c["pd"]],
             a[:, c["ve"]], a[:, c["vn"]], -a[:, c["vd"]]), None
 
@@ -756,6 +766,10 @@ def main():
         # AND the four offsets must agree with each other.
         #
         # ★ WHY A SPREAD OF A FEW HUNDREDTHS IS EXPECTED HERE, AND WHY 0.15 IS A BOUNDARY ★
+        #   (2026-11-25: since tap.csv carries `t_sim_us`, tap_world() now uses the EXPLICIT simulated
+        #   clock, so the per-sortie offset no longer slides the fit; the drift discussed below is only
+        #   the residual clock RATIO (rtf) between the two recorders, which the explicit mapping cannot
+        #   remove.  Old sorties without `t_sim_us` are graded exactly as before.)
         #   The two clocks in this recording are NOT the same clock: `tap.csv` is stamped in SIMULATION
         #   time (SITL's t_us) and `setpoints.csv` in ROS wall time.  At rtf 1.0005 (kn3-01-01) the pair
         #   drifts by 0.05 % -- 0.06 s over a 120 s route -- and the H1 gate allows rtf anywhere in

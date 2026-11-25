@@ -79,8 +79,15 @@ class LocalEnu:
 
 # THE CSV THAT scripts/accept.py READS (same header/columns as sim/src/truth_rx.py --csv):
 #   t_us,inst,pn,pe,pd,vn,ve,vd,qw,qx,qy,qz,wx,wy,wz,ax,ay,az
-TAP_CSV_HEADER = ("t_us,inst,pn,pe,pd,vn,ve,vd,qw,qx,qy,qz,wx,wy,wz,ax,ay,az\n")
-TAP_ROW = ("%d,0,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,"
+# PHASE 1b/D4 FIX (2026-11-25): `t_us` is the recorder's own monotonic clock; `t_sim_us` is that SAME
+# sample mapped onto the simulator clock with the explicit offset `--stamp-offset-us` (= client start -
+# SITL step 0, printed on the flight banner).  The ROS /sim/state stamp already uses t_sim_us (so the
+# LiDAR -> LIO -> bridge chain is on SITL's clock), but tap.csv historically carried only t_us: comparing
+# the two (as W6 does) therefore mixed two time bases by exactly that offset -- 0.15 s on a normal sortie,
+# 1.35 s on phase4oE (client started late), which put W6's +-0.6 s fit at its search edge.  Both columns
+# are now written so every consumer can choose the documented one.
+TAP_CSV_HEADER = ("t_us,t_sim_us,inst,pn,pe,pd,vn,ve,vd,qw,qx,qy,qz,wx,wy,wz,ax,ay,az\n")
+TAP_ROW = ("%d,%d,0,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,"
            "%.8f\n")
 
 
@@ -445,7 +452,8 @@ def main() -> int:
         tap_fh.write(TAP_CSV_HEADER)
     if truth_out is not None and tap_fh is not None:
         def _tap_sink(t_us, p, v, q, w, a):
-            tap_fh.write(TAP_ROW % (t_us, p[0], p[1], p[2], v[0], v[1], v[2],
+            tap_fh.write(TAP_ROW % (t_us, t_us + int(args.stamp_offset_us),
+                                    p[0], p[1], p[2], v[0], v[1], v[2],
                                     q[0], q[1], q[2], q[3], w[0], w[1], w[2], a[0], a[1], a[2]))
         truth_out.sink = _tap_sink
     p_ned_arr = None            # integrated position, anchored at the first sample
@@ -554,7 +562,9 @@ def main() -> int:
                     truth_out.feed(t_sample_us + args.stamp_offset_us, p_ned_arr, v_cur, q_cur,
                                    w_cur, a_cur)
                 if tap_fh is not None and truth_out is None:
-                    tap_fh.write(TAP_ROW % (t_sample_us + args.stamp_offset_us,
+                    # no-ROS path: `t_us` is the raw monotonic sample, `t_sim_us` the mapped one -- the same
+                    # convention the ROS path's sink writes, so a tap.csv means one thing everywhere.
+                    tap_fh.write(TAP_ROW % (t_sample_us, t_sample_us + int(args.stamp_offset_us),
                                             p_ned_arr[0], p_ned_arr[1], p_ned_arr[2],
                                             v_cur[0], v_cur[1], v_cur[2],
                                             q_cur[0], q_cur[1], q_cur[2], q_cur[3],

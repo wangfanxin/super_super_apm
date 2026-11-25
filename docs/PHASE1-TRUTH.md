@@ -277,3 +277,32 @@ W0b 100%；W1 13/13；W1b 13/13；W2/W3/W5 pass；W6 spread 0.147 s（pass）；
 * 真值时间基偏移 +0.1918 s（client start − SITL sim t=0，锚点是 `Smoothing reset at ...`）。
 * 结论：**Phase 1 的目标态可飞**；H2 的速率门槛与 W4 的已知缺陷属于验收判据类改动（P0），按所有者要求延后。
 
+
+
+## D4 补充（2026-11-25 16:20–16:40）：把真值的显式时钟映射"写下来"
+
+**问题**（Phase 4 A/B 时暴露）：`tap.csv` 的 `t_us` 是**录制器自己的单调时钟**，而 `/sim/state` 的 stamp、
+LiDAR 点云、LIO 里程计、`setpoints.csv t_sim_us` 全在**仿真时钟**上；两者的差就是启动参数
+`--stamp-offset-us = 真值客户端启动墙钟 − SITL 首步墙钟`（正常 ~0.15 s，`phase4oE` 那次 1.35 s）。
+`accept.py` 的 W6 直接用 `tap.csv t_us` 与 `setpoints.csv t_sim_us` 对比 → 相当于给 W6 注入一个每趟不同、
+最大超过其 ±0.6 s 拟合窗的常数偏移（`phase4oE` 四个季度全部顶在 +0.600 边界 → 假失败）。
+
+**修复**（提交 `e41e284` 之后、本轮）：
+1. `sim/src/sim_state_recv.py`：`tap.csv` 现在写 **`t_us,t_sim_us`** 两列（`t_sim_us = t_us + offset`），
+   两种写出路径（ROS / 无 ROS）统一约定；
+2. `scripts/accept.py::tap_world()`：有 `t_sim_us` 列时用它（显式仿真时钟），老 sortie 无该列时行为不变
+   （W6/H5/W4/W5/H2 的阈值一字未改，只把时间基准放对）；
+3. `scripts/run-mission.sh`：算出 offset 后写 `$OUT/truth_timebase.json`，并把同一 block 写进
+   `$OUT/manifest.json` 的 `truth_timebase`（D4 原文要求"显式映射写进 manifest"）；
+4. `tests/check_timebase.py` 纳入 `tests/run_all.sh` 门禁：合成 tap 验证 `tap_world` 选 `t_sim_us`、老文件兼容、
+   mapping 文件与 manifest 字段存在。
+
+**验证**（真实飞行，固定 10000 点）：
+| 趟 | 调度 | W6 | spread | 说明 |
+|---|---|---|---|---|
+| `phase4oF` | legacy | **T** | 0.079 | offsets −0.111/−0.137/−0.176/−0.190（现在是**真实跟踪滞后**，不再是录制偏移） |
+| `phase4oH` | legacy | **T** | 0.084 | 同上，W4 也 CLEAR |
+| `phase4oG` | new | F | 0.413 | 修复后仍是**单个季度**异常（Q1 −0.500、p90 0.77），其余季度正常 ⇒ 与时钟无关 |
+
+⇒ 时间基准修复后，W6 的绝对偏移变成可解释的 ~−0.15 s（控制器滞后），`phase4oE` 那种"常数 1.35 s 顶边"
+的假失败不会再出现；new 调度剩下的失败是**飞行行为**的单季度异常，属 P0 判据之外的调查项。

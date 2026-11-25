@@ -885,6 +885,15 @@ if [ "$TRUTH_SRC" = "simstate" ]; then
     TRUTH_OFFSET_US=$((CLIENT_T0_US - SITL_SIMT0_US))
     echo "   truth    : SIM_STATE time-base offset +${TRUTH_OFFSET_US} us" \
          "(client start - SITL sim t=0)"
+    # D4: THE MAPPING IS WRITTEN DOWN, not just printed.  tap.csv now carries t_sim_us = t_us + offset for
+    # every sample, accept.py prefers it, and this file/manifest field is the sortie's own record of how
+    # the recorder clock maps onto the simulator clock.  Without it a grader comparing tap.csv with the
+    # flight-side streams mixes clocks by this offset (0.15 s normally, 1.35 s on phase4oE -> W6 at its
+    # +-0.6 s search edge).
+    python3 "$DSH_ROOT/scripts/write_timebase.py" --out "$OUT/truth_timebase.json" \
+        --manifest "$OUT/manifest.json" --sitl-t0-us "$SITL_SIMT0_US" \
+        --client-t0-us "$CLIENT_T0_US" --offset-us "$TRUTH_OFFSET_US" \
+        > /tmp/timebase-$TAG.log 2>&1 || echo "WARNING: truth_timebase.json could not be written"
     $TRUTH_PREFIX python3 "$SIM/src/sim_state_recv.py" --mav "tcp:127.0.0.1:${PORT2:-5782}" \
         --hz "${SIM_STATE_HZ:-1000}" --home="${SIM_STATE_HOME:--35.363261,149.165230,584.0}" \
         --csv "$OUT/sim_state.csv" --ros --publish-hz 200 --tap-csv "$OUT/tap.csv" --truth-odom \

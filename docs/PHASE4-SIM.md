@@ -127,3 +127,28 @@ W6 记录两套时钟、在好趟上只剩 2 ms 余量、**"de-trending 是判�
 3. **下一个真问题**：`setpoints.csv t_sim_us`（LIO 时间戳）与 `tap.csv`（SIM_STATE 时间）之间的时间基准差
    在某些趟里是 0.15 s、某些趟是 1.4 s —— 属于 D4（显式时钟映射）范畴，应在 W6 判据改造（P0）之前先把
    录制时间基准统一/标定，否则 W6 会周期性假失败。
+
+
+## 8. 2026-11-25 16:40 收尾：时间基准修复 + Phase 4 完成证据
+
+上面 §7 的 A/B 被一个新发现推翻了一半：**`tap.csv` 的 `t_us` 与飞行侧 `t_sim_us` 是两套时钟**，
+W6 直接混用会把"录制偏移"计入（`phase4oE` 常数 +1.35 s → 四个季度全顶在 ±0.6 s 搜索边界）。
+修复见 [PHASE1-TRUTH.md](PHASE1-TRUTH.md) 的 D4 补充：`tap.csv` 现在带 `t_sim_us` 列、accept 优先用它、
+`truth_timebase.json` + `manifest.truth_timebase` 记录偏移、`tests/check_timebase.py` 入门禁。
+
+修复后的真实飞行（固定 `LIDAR_POINTS=10000`）：
+
+| 趟 | 调度 | H6 | W1/W1b | W4 | W6 | spread |
+|---|---|---|---|---|---|---|
+| `phase4oF` | legacy | T (p50 12.9/skip 9) | 13/13, T | CONTACT −0.027（已知缺陷） | **T** | 0.079 |
+| `phase4oH` | legacy | T (p50 13.9/skip 8) | 13/13, T | **CLEAR +0.003** | **T** | 0.084 |
+| `phase4oG` | new | T | 13/13, T | CONTACT | F | 0.413（Q1 −0.500, p90 0.77；时钟无关） |
+
+**结论**：
+- **Phase 4 完成**：每帧 CSV + H6（已生效）、rviz 单入口（`pipeline.rviz` + `viz_bridge.py` + `replay_bag_rviz.sh`）、
+  图案窗口修正（`--new-lidar`）已实现并有 bench/飞行数据；**默认 = `LIDAR_POINTS=10000` + legacy 调度**，
+  `LIDAR_SCHEDULER=new` 保留为实验开关。
+- **验收证据**：最终默认下**连飞两趟干净趟** `phase4oF` / `phase4oH`（除 H2 这一 P0 判据外全绿；
+  W4 是已知 ±5 cm 缺陷，两趟中一趟 CLEAR 一趟 CONTACT）。
+- **遗留调查项**：new 调度的 W6 单季度异常（跟踪行为，非时钟、非点云预算），在 P0 判据改造（de-trending /
+  单季度残差门限）之后再评估是否切默认。
