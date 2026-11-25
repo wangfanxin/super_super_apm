@@ -519,3 +519,16 @@ z 误差 ≤0.10 m（PSC_NE_POS/VEL 加硬、PSC_D 垂直环、ATC 姿态环、�
 2. 若失败，不能让 committed 轨迹自然结束进入 WAIT_GOAL，而是"延长旧轨迹 + 新目标"再规划一次；
 3. 到点判定在 plan box 内改为单调 route-progress（配合 arrive 0.8），目标是绕圈=0 且 W1b 全过。
 
+### 15.2 planner 侧尝试与否决（2026-11-26 03:10–03:30）
+
+| 尝试 | 结果 | 结论 |
+|---|---|---|
+| **patch 13**：new_goal 时 `split_dis=0`（不再沿旧轨迹 recede，直接从当前状态 A* 到新目标） | ExpTraj failed 44→**88**、Traj finish 11→**20**、绕圈 2→**5**、停顿 3→**9** | **否决并 revert**：旧的 receding splice 反而更可靠；换目标失败不是"旧 guide 拼接"造成的 |
+| `GOAL_LOOKAHEAD_M=0.8`（目标沿出弯方向前移 0.8 m，让末点落在角点之后） | W1/W1b/W6 全挂（planner 声明到点与 pacer 半径判据错位） | **否决**：前瞻目标会破坏到点记账，必须同时改到点判据，不能单独用 |
+
+**当前事实**：
+- 1.35 m/s 最优仍是 **phase8d（arrive 0.3 / corner 0.8）**：W1/W1b/W6 全过、绕圈 2、中段停顿 3 次 6.1 s；
+- 换目标失败（44 次/趟）→ Traj finish（11 次）→ 停-走 是剩余 2 圈的唯一来源；
+- plan box 层的滚动目标（8g）、pre-goal、carrot、pass-by、goal-lookahead 全部已被真飞否决；
+- **下一步必须重做 plan box 与 SUPER 的接口**：要么在 SUPER 内部实现"移动目标"（把目标作为状态变量在 10 Hz 重规划里更新，而不是通过 new_goal 消息），要么把 plan box 改成"轨迹流"（订阅 SUPER 多项式轨迹并自行拼接/前移末端），不再靠 SUPER 的 FSM 收尾。这两条都超出调参，属于下一阶段的设计工作。
+
