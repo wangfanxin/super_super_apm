@@ -459,6 +459,11 @@ def main() -> int:
                          "(the hexagon arm uses this, so the waypoints and the map have one source)")
     ap.add_argument("--no-super", action="store_true", help="不自己起 fsm_node（调试用）")
     ap.add_argument("--stale-s", type=float, default=1.0, help="SUPER 断流多久后改发 hold")
+    ap.add_argument("--ref-deadreckon-s", type=float, default=0.0,
+                    help="★ WHTF-DEADRECKON (2026-11-26) ★ 参考断流后的处理：>0 时用**最后参考的速度**外推"
+                         "（最多这么多秒）而不是原地 hold(v=0)。motivation: MEASURED phase8d/8a the commanded"
+                         " speed collapses to 0 for 0.3-0.8 s at every waypoint handover while SUPER rebuilds,"
+                         " and the aircraft overshoots into loops (scripts/flight_quality.py).  0 = 历史行为.")
     ap.add_argument("--log-period-s", type=float, default=5.0)
     ap.add_argument("--selftest", action="store_true")
     args, _unknown = ap.parse_known_args()
@@ -772,6 +777,12 @@ def main() -> int:
           也就是大半条航线上机头是歪的。换算只允许在 `common.frames.l_to_wire_yaw` 里做一次，
           在**发布那一拍**做（见 on_timer），这里保持 L 系原值。
         """
+        # WHTF-DEADRECKON: the LAST NON-ZERO reference velocity.  MEASURED phase8l: at a handover the last
+        # SUPER sample often carries |v|=0 (end-of-trajectory sample), so dead reckoning from `ref[1]` would
+        # extrapolate zero -- the aircraft brakes into a loop anyway.  Keep the last real cruise velocity.
+        _v_now = np.array([m.velocity.x, m.velocity.y, m.velocity.z])
+        if float(np.linalg.norm(_v_now[:2])) > 0.4:
+            state["last_nonzero_v"] = _v_now.copy()
         state["ref"] = (np.array([m.position.x, m.position.y, m.position.z]),
                         np.array([m.velocity.x, m.velocity.y, m.velocity.z]),
                         np.array([m.acceleration.x, m.acceleration.y, m.acceleration.z]),
@@ -1186,7 +1197,25 @@ def main() -> int:
         #   flown here as a monotone ramp to the vertical-leg target, shaped by the rate limiter,
         #   and SUPER takes over from leg 2 onward.
         on_vertical_leg = (pacer.i_leg == 0)
-        if on_vertical_leg or ref is None or (now - state["ref_wall"]) > args.stale_s:
+        _ref_age = (now - state["ref_wall"]) if state["ref_wall"] else 0.0
+        _dr_s = float(getattr(args, "ref_deadreckon_s", 0.0) or 0.0)
+        if (_dr_s > 0.0 and not on_vertical_leg and ref is not None and state["n_ref"] > 0
+                and _ref_age > args.stale_s and _ref_age <= (_dr_s + args.stale_s)):
+            # DEAD RECKONING: SUPER is rebuilding at a waypoint handover.  A frozen position with v=0 makes the
+            # aircraft brake (it is still moving at 1.3 m/s) and overshoot into a loop; instead keep the last
+            # commanded velocity and let the position run forward, capped at --ref-deadreckon-s of extrapolation.
+            _dt = min(_ref_age - args.stale_s, _dr_s)
+            _v_dr = np.asarray(ref[1], float)
+            if float(np.linalg.norm(_v_dr[:2])) < 0.2 and state.get("last_nonzero_v") is not None:
+                _v_dr = np.asarray(state["last_nonzero_v"], float)    # end-of-trajectory sample: keep cruising
+            _p = np.asarray(ref[0], float) + _v_dr * _dt
+            s = cmd_stream.CmdSample(_p, _v_dr, np.zeros(3), state["hold_yaw"], ref[4],
+                                     pacer.i_leg + 1, cmd_stream.TRAJECTORY_STATUS_READY)
+            state["dr_n"] = int(state.get("dr_n", 0)) + 1
+            if state["dr_n"] in (1, 5, 20, 100, 500):
+                print("REF DEAD-RECKON #%d: SUPER silent %.2f s, extrapolating |v| %.2f m/s for %.2f s"
+                      % (state["dr_n"], _ref_age, float(np.linalg.norm(_v_dr[:2])), _dt), flush=True)
+        elif on_vertical_leg or ref is None or _ref_age > args.stale_s:
             s = hold_sample(force_vertical=on_vertical_leg)
         else:
             # ★★ yaw 在这一拍换算成飞控的罗盘航向（第 88 轮审查 F2）★★
