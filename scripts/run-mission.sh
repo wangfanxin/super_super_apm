@@ -1158,6 +1158,22 @@ if [ "$PLANNER" = "rectangle" ]; then
 else
     YAW_ARG=""
 fi
+if [ "${FCU_CLIENT:-legacy}" = "merged" ]; then
+    # PHASE 3: ONE process, ONE MAVLink link, ONE rclpy node (bridge_nodes/mavlink/fcu_client.py).
+    # The bridge half keeps 84/331 and the wire/setpoint CSVs; the supervisor half keeps class-76, the
+    # phase log and the guards, and its pump loop drives the shared link.
+    $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
+        --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
+        --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" \
+        --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
+        --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
+        --fcu-odom-topic /fcu/odom \
+        --phase-log "$OUT/phase.csv" > "$OUT/fcu_client.log" 2>&1
+    SUP_RC=$?
+    FSM_RC=$SUP_RC
+    cat "$OUT/fcu_client.log"
+    BRIDGE_PID=""
+else
 $BRIDGE_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
     --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
     --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" \
@@ -1165,11 +1181,13 @@ $BRIDGE_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${P
 BRIDGE_PID=$!
 sleep 2
 kill -0 "$BRIDGE_PID" 2>/dev/null || { echo "the bridge process died:"; tail -20 "$OUT/bridge.log"; exit 1; }
+fi
 
 # THE SUPERVISOR, ITS OWN PROCESS AND ITS OWN ENDPOINT (serial1).  Preflight, arm, take-off, the go, the
 # four gates, LAND and the NAMED abort.  Its inputs are the truth and the LINK, never the LIO in flight.
 # It is last because its exit is the sortie's result, and because the two processes it watches must already
 # be publishing when it starts.
+if [ "${FCU_CLIENT:-legacy}" != "merged" ]; then
 $AUX_PREFIX python3 "$BRIDGE/supervisor/supervisor.py" --mav "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
     --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
     --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
@@ -1177,6 +1195,7 @@ $AUX_PREFIX python3 "$BRIDGE/supervisor/supervisor.py" --mav "tcp:127.0.0.1:${PO
 SUP_RC=$?
 cat "$OUT/supervisor.log"
 FSM_RC=$SUP_RC
+fi
 
 # ALL THREE PRODUCER PROCESSES ARE STOPPED AND WAITED FOR BEFORE THE METRICS RUN (see stop_stack above).
 # This is the whole fix: after it, tap.csv, the FCU's BIN and lio.csv are FROZEN, so the file this script

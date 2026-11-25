@@ -410,6 +410,30 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 08:25（第 19 条，Phase 3 第一步：单连接合并客户端实现 + 门禁 PASS + 首飞暴露控制异常）
+
+**已实现**
+- `bridge_nodes/mavlink/fcu_client.py`：一个进程、一条 MAVLink 连接、一个 rclpy node。
+  `BridgeProcess`/`Supervisor` 支持 `bridge=`/`node=` 依赖注入；supervisor 的 pump 每轮调 `BridgeProcess.step()`，
+  84/331/class-76 由同一线程串行写；两半的 argparse 各自抽成 `add_*_arguments()`，合并 parser 用
+  `conflict_handler="resolve"`。启动器 `FCU_CLIENT=merged` 可切换（默认 legacy）。
+- 新门禁 `tests/check_fcu_client.sh`（SITL+合成输入，无飞行、不 arm）已接入 `tests/run_all.sh`：
+  实测 `#331 46.9 Hz`、`#84 500/11 s`、`setpoints.csv 500 行`、`wire.csv 500 行`、extnav age gate 触发 -> PASS。
+  全量 GATE: PASS。
+
+**首飞（missionA-phase3a-01-01，FCU_CLIENT=merged）**
+- 链路/状态机通：arm → 起飞 → 悬停 → THE GO → relay 使能 → leg1/leg2；84=1054 条、331=1774 条、phase.csv 正常；
+  H1/H3/H4/H5/H6 全过。
+- 控制异常：GO 后 z 冲到 3.17 m（legacy 同 arm 同时刻 1.85 m），随后跌到 1.6 m、SITL `SIM Hit ground`、
+  EKF/truth 差 2.0 m → abort。同 arm 的 `wire.csv` 早期行与 legacy **完全一致**，所以不是目标值问题；
+  待查 331 时间戳/相位、84 使能竞态、extnav 与 legacy 的逐行差异。默认仍 legacy，修好后 A/B 复飞。
+
+**下一步**
+1. 对比 merged 与 legacy 同一 arm 的 331 序列（t_usec、速度、发送相位）与 84 首批样本时刻，定位 z 过冲；
+2. 修好后 merged 复飞，A/B 对比 accept 与 84 目标时间序列；连飞 2 趟后把默认切 merged。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

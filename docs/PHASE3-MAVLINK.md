@@ -75,3 +75,31 @@
 | extnav reset 策略过激导致误 abort | 阶段 3 先**只记录不动作**（log-only）飞 1 趟，拿到真实发生率再决定 |
 | supervisor 的 1 ms 守卫循环与发送在同一进程，可能互相拖延 | 发送线程 + 守卫线程分离（pymavlink 非线程安全 → 单线程 event loop + 定时器，84/331 用 deadline 调度） |
 | 判据类行为（P0） | 不改任何 accept 门槛；行语义保持 |
+
+
+## 实现进度（2026-11-25，第 1 步：单连接骨架完成，实验性启用）
+
+已实现 `bridge_nodes/mavlink/fcu_client.py`：**一个进程、一条 MAVLink 连接、一个 rclpy node**。
+
+* `bridge_node.BridgeProcess` 与 `supervisor.Supervisor` 都支持**依赖注入**（`bridge=`/`node=`）；
+  supervisor 的 pump 循环每轮调用 `BridgeProcess.step()` —— 同一个线程串行化对 socket 的每一次写，
+  84（50 Hz）/331（48 Hz）/class-76 共享一条链路。
+* 两半的 argparse 各自提取成 `add_bridge_arguments()` / `add_supervisor_arguments()`，
+  `fcu_client.build_parser()` 用 `conflict_handler="resolve"` 合并（同义 flag 只留一个值）。
+* 启动器支持 `FCU_CLIENT=merged`（默认仍是 `legacy` 双进程，直到验证完成）。
+* **无飞行门禁 `tests/check_fcu_client.sh`（已接入 `tests/run_all.sh`）**：SITL + 合成输入 →
+  `fcu_client --bench`，实测 `#331 46.9 Hz`、`#84 500 sends / 11 s`、`setpoints.csv 500 行`、
+  `wire.csv 500 行`、extnav age gate 触发 → **PASS**。
+
+### 首飞（`missionA-phase3a-01-01`，`FCU_CLIENT=merged`）
+
+链路与状态机走通：arm → 起飞 → 悬停 → THE GO → relay 使能 → leg1/leg2，`#84` 1054 条、`#331` 1774 条、
+`phase.csv` 正常；H1/H3/H4/H5/H6 全过。但**控制异常**：THE GO 后 z 冲到 3.17 m（legacy 同 arm 同一时刻 1.85 m），
+随后掉到 1.6 m、SITL 报 `SIM Hit ground`，EKF 与 truth 差 2.0 m → abort（`phase -> abort/land`）。
+`wire.csv` 与 legacy 同 arm 的早期行**完全一致**（同一目标 z=2.000），所以不是目标值错，需要查：
+
+1. `#331` 的时间戳/速度（`bridge.send_nav` 在合并后是否被 `step()` 的调用时机改变了相位）；
+2. 起飞段 84 的第一个样本是否早于 legacy（relay 使能时刻、takeoff→GUIDED 切换的竞态）；
+3. 合并后 EKF 收到的 extnav 与 legacy 的逐行对比（可用同一 arm 的 legacy 飞行 `wire.csv` + `#331` 序列）。
+
+在查清之前 `FCU_CLIENT` 保持 `legacy` 默认；下一次修好后同一 arm A/B 复飞。

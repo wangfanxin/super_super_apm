@@ -349,10 +349,20 @@ TRIGGER_TOPIC_DEFAULT = "/plan/trigger"
 
 
 class BridgeProcess:
-    """The bridge's own process: external nav in, the plan's setpoints out, and its own health on a topic."""
+    """The bridge's own process: external nav in, the plan's setpoints out, and its own health on a topic.
 
-    def __init__(self, args):
+    PHASE 3: it can ALSO run inside a merged client -- `bridge=` / `node=` inject the single MAVLink
+    connection and the single rclpy node, so the bridge half and the supervisor half talk to the FCU over
+    ONE link (FCU_CLIENT=merged).  Injecting nothing keeps the historical one-process-per-role behaviour.
+    """
+
+    def __init__(self, args, bridge=None, node=None):
         self.args = args
+        self._injected_bridge = bridge
+        self._injected_node = node
+        # an injected transport is live from construction: the merged client's bench/setup calls
+        # start_ros() before run(), and start_ros() builds the relay against self.bridge
+        self.bridge = bridge
         self.t_wall0 = time.monotonic()
         self.lio = {"t_us": 0, "p": np.zeros(3), "q": np.array([1.0, 0.0, 0.0, 0.0]),
                     "v": np.zeros(3), "n": 0, "rate": 0.0, "rate_slow": 0.0, "last_wall": 0.0,
@@ -457,19 +467,24 @@ class BridgeProcess:
                      % self.calib.summary())
 
     # ---- ROS ---------------------------------------------------------------------------------------
-    def start_ros(self):
+    def start_ros(self, node=None):
         import rclpy
         from rclpy.node import Node
         from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
         from nav_msgs.msg import Odometry
         from std_msgs.msg import String
         from geometry_msgs.msg import PoseStamped
-        try:
-            from rclpy.signals import SignalHandlerOptions
-            rclpy.init(args=[], signal_handler_options=SignalHandlerOptions.NO)
-        except Exception:
-            rclpy.init(args=[])
-        self.node = Node("bridge_node")
+        node = node if node is not None else self._injected_node
+        if node is not None:
+            self.node = node                      # merged mode: the caller owns rclpy and the node
+            self.rclpy = rclpy
+        else:
+            try:
+                from rclpy.signals import SignalHandlerOptions
+                rclpy.init(args=[], signal_handler_options=SignalHandlerOptions.NO)
+            except Exception:
+                rclpy.init(args=[])
+            self.node = Node("bridge_node")
         best_effort = QoSProfile(depth=200, history=HistoryPolicy.KEEP_LAST,
                                  reliability=ReliabilityPolicy.BEST_EFFORT)
         latched = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST,
@@ -712,15 +727,23 @@ class BridgeProcess:
         # MEASURED the hard way: the other order died with "'BridgeProcess' object has no attribute
         # 'bridge'" two seconds into a sortie -- the second startup failure of this process, and both were
         # process-boundary mistakes rather than transport ones.
-        self.bridge = MavlinkBridge(url=self.args.mav, log=self.log)
+        self.bridge = self._injected_bridge or MavlinkBridge(url=self.args.mav, log=self.log)
         self.start_ros()
+        self.open_logs()
+        self.log("bridge/process: ready.  It owns the estimator feed (331) and the plan's setpoints (84) "
+                 "on %s; it sends NO class-76 command -- arm/takeoff/mode/LAND are the supervisor's, on its "
+                 "own endpoint." % self.args.mav)
+        return self.run_loop()
+
+    def open_logs(self):
+        """Open the two wire records.  Separate from `run()` so a merged client can own them too."""
         if self.args.setpoint_log:
             self.sp_log = open(self.args.setpoint_log, "w")
             # ALL cmd_* COLUMNS ARE IN W (the plan box publishes L; send_cmd places it in W and the
             # log records what was placed).  lio_* is L on purpose -- it is the raw estimator pose.
             self.sp_log.write("t_wall,t_sim_us,cmd_x,cmd_y,cmd_z,vel_x,vel_y,vel_z,acc_x,acc_y,acc_z,"
                               "fcu_x,fcu_y,fcu_z,fcu_vx,fcu_vy,fcu_vz,lio_x,lio_y,lio_z,yaw_cmd\n")
-        if self.args.wire_log:
+        if getattr(self.args, "wire_log", ""):
             self.wire_log = open(self.args.wire_log, "w")
             # `frame_id` = the MAVLink frame the setpoint goes out in (1 = LOCAL_NED, the only one
             # `send_cmd` uses); `z_ned` = the z field as the FCU receives it (NED: UP IS NEGATIVE).
@@ -730,9 +753,41 @@ class BridgeProcess:
             self.wire_log.write("t_wall,fields,frame_id,type_mask,p_l_x,p_l_y,p_l_z,v_l_x,v_l_y,"
                                 "v_l_z,a_l_x,a_l_y,a_l_z,yaw_l,yaw_dot_l,z_ned,p_w_x,p_w_y,p_w_z,"
                                 "yaw_out,trajectory_id,trajectory_flag\n")
-        self.log("bridge/process: ready.  It owns the estimator feed (331) and the plan's setpoints (84) "
-                 "on %s; it sends NO class-76 command -- arm/takeoff/mode/LAND are the supervisor's, on its "
-                 "own endpoint." % self.args.mav)
+    def close_logs(self):
+        """Close the wire records (the merged client owns the process lifetime)."""
+        for attr in ("sp_log", "wire_log"):
+            fh = getattr(self, attr, None)
+            if fh is not None:
+                try:
+                    fh.flush()
+                    fh.close()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
+    def step(self, now=None):
+        """ONE non-blocking bridge step: the FCU-mode gate, the 331/84 tick and the status topic.
+
+        PHASE 3: the merged client calls this from the supervisor's 1 kHz pump instead of owning a loop of
+        its own, so both halves share one MAVLink connection and one rclpy node.
+        """
+        now = time.monotonic() if now is None else now
+        st = self.bridge.state() if self.bridge is not None else None
+        if st is not None and self.relay is not None and self.relay.enabled and st.armed and st.mode not in ("GUIDED", ""):
+            self.relay.disable("the FCU left GUIDED (%s): the plan is off the wire" % st.mode)
+        if self.relay is not None and self.relay.completed and self.relay.enabled:
+            self.relay.disable("the plan declared the tour COMPLETE")
+        self.tick(now)
+        if now - self.last_status > 0.2:
+            self.last_status = now
+            if self.status_pub is not None:
+                from std_msgs.msg import String
+                msg = String()
+                msg.data = self.status_line()
+                self.status_pub.publish(msg)
+        return True
+
+    def run_loop(self) -> int:
         if not self.check_own_links():
             self.bridge.close()
             return 3
@@ -779,9 +834,8 @@ class BridgeProcess:
         return 0
 
 
-def bridge_main(argv=None) -> int:
-    import argparse
-    ap = argparse.ArgumentParser(description="the bridge as its own process (F2)")
+def add_bridge_arguments(ap):
+    """The bridge half's arguments, reusable by the merged client (PHASE 3)."""
     ap.add_argument("--mav", default="tcp:127.0.0.1:5760", help="THIS process's endpoint (serial0)")
     ap.add_argument("--cmd-topic", default="/plan/cmd")
     ap.add_argument("--trigger-topic", default=TRIGGER_TOPIC_DEFAULT)
@@ -846,6 +900,12 @@ def bridge_main(argv=None) -> int:
                     help="one row per setpoint PUT ON MESSAGE 84: the L input beside the W/wire "
                          "output and the field mask.  Without it, \"the plan published a clean "
                          "command but the bridge sent something else\" is invisible")
+
+
+def bridge_main(argv=None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(description="the bridge as its own process (F2)")
+    add_bridge_arguments(ap)
     args = ap.parse_args(argv)
     return BridgeProcess(args).run()
 

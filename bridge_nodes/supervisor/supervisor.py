@@ -166,8 +166,14 @@ def geofence_verdict(tap, geofence_m, now, grace_s, disagree_m=2.0, ignore_m=50.
 
 
 class Supervisor:
-    def __init__(self, args):
+    def __init__(self, args, bridge=None, node=None, tick_hook=None):
+        """PHASE 3: `bridge`/`node`/`tick_hook` let the merged client reuse ONE MAVLink connection and ONE
+        rclpy node, and drive the bridge half from this supervisor's own pump loop.  Nothing injected keeps
+        the historical two-process behaviour."""
         self.args = args
+        self._injected_bridge = bridge
+        self._injected_node = node
+        self.tick_hook = tick_hook
         self.t_wall0 = time.monotonic()
         self.tap = TapTruth()
         self.bridge = None
@@ -239,19 +245,24 @@ class Supervisor:
         self.log("NAV AGE: " + note)
 
     # ------------------------------------------------------------------ plumbing
-    def start_ros(self):
+    def start_ros(self, node=None):
         import rclpy
         from rclpy.node import Node
         from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
         from nav_msgs.msg import Odometry
         from std_msgs.msg import String
         from geometry_msgs.msg import PoseStamped
-        try:
-            from rclpy.signals import SignalHandlerOptions
-            rclpy.init(args=[], signal_handler_options=SignalHandlerOptions.NO)
-        except Exception:
-            rclpy.init(args=[])
-        self.node = Node("supervisor")
+        node = node if node is not None else self._injected_node
+        if node is not None:
+            self.node = node
+            self.rclpy = rclpy
+        else:
+            try:
+                from rclpy.signals import SignalHandlerOptions
+                rclpy.init(args=[], signal_handler_options=SignalHandlerOptions.NO)
+            except Exception:
+                rclpy.init(args=[])
+            self.node = Node("supervisor")
         best_effort = QoSProfile(depth=50, history=HistoryPolicy.KEEP_LAST,
                                  reliability=ReliabilityPolicy.BEST_EFFORT)
         latched = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST,
@@ -414,6 +425,8 @@ class Supervisor:
                 break
             self.bridge.poll()
             self.rclpy.spin_once(self.node, timeout_sec=0.0)
+            if self.tick_hook is not None:
+                self.tick_hook(time.monotonic())
             self.check_gates()
             if self.abort_reason:
                 return
@@ -954,7 +967,7 @@ class Supervisor:
         self.planner_stall_since = None
         self.gates_armed = True                    # set in __init__ too; see the comment there
         self.start_ros()
-        self.bridge = MavlinkBridge(url=self.args.mav, log=self.log)
+        self.bridge = self._injected_bridge or MavlinkBridge(url=self.args.mav, log=self.log)
         try:
             steps = [self.preflight, self.takeoff, lambda: self.hold(self.args.hold), self.route]
             for step in steps:
@@ -1049,9 +1062,8 @@ def _texts(st):
     return " | ".join(t for _, t in st.messages[-4:]) or "(nothing)"
 
 
-def main(argv=None) -> int:
-    here = os.path.dirname(os.path.abspath(__file__))
-    ap = argparse.ArgumentParser()
+def add_supervisor_arguments(ap):
+    """The supervisor half's arguments, reusable by the merged client (PHASE 3)."""
     ap.add_argument("--mav", default="tcp:127.0.0.1:5761",
                     help="THIS process's own MAVLink endpoint.  The bridge is on serial0 (5760) and this is "
                          "serial1 (5761): one writer per message class, no arbitration (design section 4.2)")
@@ -1175,7 +1187,16 @@ def main(argv=None) -> int:
                     help="A DEAD PLAN BOX IS AN ABORT, not a finished tour: the tour's end is a FIELD "
                          "(trajectory_flag = COMPLETED), so silence is an error.  0 disables")
     ap.add_argument("--phase-log", required=True)
+
+
+def main(argv=None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser()
+    add_supervisor_arguments(ap)
     args = ap.parse_args(argv)
+    here = os.path.dirname(os.path.abspath(__file__))
+    phase_log = args.phase_log
+    os.makedirs(os.path.dirname(os.path.abspath(phase_log)), exist_ok=True)
     GATES["geofence_m"] = args.geofence_m
     print("supervisor: endpoint %s (its OWN), phase log %s" % (args.mav, args.phase_log), flush=True)
     print("supervisor: gates -- geofence %.2f m on TRUTH, nav floor %.1f Hz, plan silence %.1f s, "
@@ -1199,7 +1220,6 @@ def main(argv=None) -> int:
     print("supervisor: the take-off's own guard -- abort if the TRUTH passes %.2f m (mission altitude "
           "%.2f + climb guard %.2f); nothing else bounds the flight before the trigger"
           % (args.alt + args.climb_guard_m, args.alt, args.climb_guard_m), flush=True)
-    os.makedirs(os.path.dirname(os.path.abspath(args.phase_log)), exist_ok=True)
     return Supervisor(args).run()
 
 

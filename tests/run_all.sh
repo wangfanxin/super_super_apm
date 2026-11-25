@@ -42,6 +42,9 @@ python3 scripts/archive/harness/test-stall-gate.py || note_fail "test-stall-gate
 step "Phase 2 recording base: rosbag2 -> CSV derivation (synthetic, no flight)"
 python3 tests/check_bag_pipeline.py || note_fail "check_bag_pipeline.py (rosbag2 -> CSV derivation)"
 
+step "Phase 3 merged MAVLink client (SITL, no flight): 84/331 rates, frame conversion, extnav age gate"
+bash tests/check_fcu_client.sh || note_fail "check_fcu_client.sh (merged fcu_client transport)"
+
 step "path policy"
 bash tests/no_abs_paths.sh || note_fail "no_abs_paths.sh"
 
