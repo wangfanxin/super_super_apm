@@ -273,3 +273,11 @@ void ROGMap::updateRobotState(const Pose& pose) {
     robot_state_.yaw = get_yaw_from_quaternion<double>(pose.second);
     updateLocalBox(pose.first);
 }
+
+void ROGMap::updateRobotState(const Pose& pose, const Vec3f& v_world) {
+    updateRobotState(pose);
+    /// WHTF-ROBO-VELOCITY (2026-11-25): store the vehicle velocity the odometry carries.  Before this the
+    /// field was never assigned, so super_planner.cpp's hot_start injection always saw v=0 and every
+    /// rest2rest replan restarted from rest (the reference braked to 0 mid-leg; the aircraft overshot it).
+    robot_state_.v = v_world;
+}

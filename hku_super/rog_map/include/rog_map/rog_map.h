@@ -118,6 +118,10 @@ namespace rog_map {
         std::ofstream time_log_file_, map_info_log_file_;
 
         void updateRobotState(const Pose& pose);
+        /// WHTF-ROBO-VELOCITY (2026-11-25): the ROS odometry callback can carry the vehicle's velocity, and
+        /// SUPER's replanner needs it (hot_start_en injects robot_state_.v into the initial state so that a
+        /// rest2rest replan does not brake the reference to a stop).  v is in the WORLD/odom frame.
+        void updateRobotState(const Pose& pose, const Vec3f& v_world);
 
         bool findNearestCellThat(const bool & is, const GridType& target_type,
             const Vec3f & start_pos, Vec3f& nearest_pt, const double & max_dis) const ;

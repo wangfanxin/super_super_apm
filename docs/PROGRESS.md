@@ -758,6 +758,21 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 22:05（第 43 条，跟踪质量诊断 + 高速竞速方案；角点过弯 A/B）
+
+- **跟踪诊断**（新工具 `scripts/track_quality.py`）：phase4q 零滞后误差 p50 0.154 / p90 0.265 m，最优滞后 **−0.13 s**；
+  沿航迹 p50 −0.124 m、横侧 p50 −0.023 m → 是"延迟/追不上"而非跑偏。参考 |a_xy| p90 1.45 / p99 2.81 / max 4.02 m/s²。
+  结论：不是 PID 没调好、也不是控制量缺失（`wire.csv` 是全 PVA；ArduPilot 4.7 `posvelacc` 用
+  `input_pos_vel_accel_NE_m(..., limit_output=false)`，前馈不削、只削修正）；主因是 ~0.13 s 总延迟
+  + `PSC_NE_POS_P 1.2` 偏低 + 参考加速度随速度平方增长。
+- **修正认知**：PVA 模式 jerk 限幅是 `PSC_NE_JERK`（80 m/s³），不是 `WP_JERK`（后者只影响位置-only 导航）。
+- **高速方案** `docs/HIGH-SPEED-PLAN.md`：阶段 0 tracking-vs-speed 阶梯（工具已就绪）；阶段 1 先补延迟
+  （`REF_LEAD_S`、nav/wire 频率）再调硬（WP_ACC/WP_SPD/PSC_NE_* /ATC）；阶段 2 规划侧 3→6 m/s（新 race 配置/世界）；
+  阶段 3 8–10 m/s 需控制栈升级评估（据 SUPER 论文 >20 m/s、T/W>5；我们 GUIDED 级联预计 5–7 m/s 上限）。
+- **角点过弯 A/B**：`GOAL_PVA=1 bisector CORNER_SPEED=1.2 ARRIVE_M=0.3`（phase4s）角点平均转角 172°→**139°**、
+  指令速度 p10 0.49→0.57、W1b/W6 仍过；`GOAL_LEAD=1`（phase4t）W1/W1b/W6 失败 → 拒绝。
+- 文档：`docs/HIGH-SPEED-PLAN.md`、`docs/FLIGHT-LOOP-ANALYSIS.md` §6；图：`docs/evidence/phase4s-corner*-zoom.png`。
+
 ## 2026-11-25 20:55（第 42 条，绕圈归因：参考"停车"→飞机冲过头；新增俯视分圈/时序图/分析脚本）
 
 - 新增 `scripts/plot_flight_topdown.py`（整趟/`--per-lap` 分圈俯视）、`scripts/plot_flight_timeseries.py`

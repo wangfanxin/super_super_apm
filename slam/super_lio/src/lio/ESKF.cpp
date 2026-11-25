@@ -178,7 +178,15 @@ bool ESKF::Predict(const IMUData& imu, DynamicState& state_imu, DynamicState& st
   state_robot.time = imu.secs;
   state_robot.R = new_R.R_;
   state_robot.p = new_p;
-  // todo: v, w, a
+  /// WHTF-ROBO-VELOCITY (2026-11-25): the robot-frame velocity/rates were never filled (`// todo: v,w,a`),
+  /// so /lio/robo/odom carried a ZERO twist and every consumer that needs the vehicle's own velocity saw a
+  /// parked robot.  SUPER's replanner is one: on every rest2rest replan (goal handover, trajectory rebuild
+  /// after an optimiser failure) it injects robot_state_.v into the initial state (hot_start_en) to keep the
+  /// reference continuous -- with v=0 it instead brakes the reference to a stop, the aircraft overshoots it and
+  /// draws a small loop (measured phase4p: 5 loops, all at "command speed 0.00-0.10 m/s while truth 1.0-1.5";
+  /// docs/FLIGHT-LOOP-ANALYSIS.md).  v is expressed in the ROBOT frame (REP-105: nav_msgs/Odometry twist).
+  state_robot.v = new_R.R_.transpose() * fw_v_;
+  state_robot.w = gyr;
 
   return true;
 }

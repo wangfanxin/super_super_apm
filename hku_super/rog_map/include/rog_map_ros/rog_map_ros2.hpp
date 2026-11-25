@@ -88,13 +88,22 @@ namespace rog_map {
                 { static long n_odom = 0; ++n_odom;
                   RCLCPP_INFO_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 1000,
                       "[ROGMAP] odom cb n=%ld", n_odom); }  // WHTF-CB-TRACE-odom
+            /// WHTF-ROBO-VELOCITY (2026-11-25): the pose used to be all this callback kept; the twist was
+            /// dropped, so ROGMap's robot_state_.v stayed 0 and SUPER's hot_start had nothing to inject.
+            /// nav_msgs/Odometry twist is in the CHILD (body) frame, robot_state_.v is consumed in the
+            /// WORLD/odom frame, so rotate it with the same orientation the pose carries.
+            const Quatf q_odom(odom_msg->pose.pose.orientation.w,
+                               odom_msg->pose.pose.orientation.x,
+                               odom_msg->pose.pose.orientation.y,
+                               odom_msg->pose.pose.orientation.z);
+            const Vec3f v_body(odom_msg->twist.twist.linear.x,
+                               odom_msg->twist.twist.linear.y,
+                               odom_msg->twist.twist.linear.z);
             updateRobotState(std::make_pair(Vec3f(odom_msg->pose.pose.position.x,
                                                   odom_msg->pose.pose.position.y,
                                                   odom_msg->pose.pose.position.z),
-                                            Quatf(odom_msg->pose.pose.orientation.w,
-                                                  odom_msg->pose.pose.orientation.x,
-                                                  odom_msg->pose.pose.orientation.y,
-                                                  odom_msg->pose.pose.orientation.z)));
+                                            q_odom),
+                             Vec3f(q_odom * v_body));
 
 
             geometry_msgs::msg::TransformStamped transformStamped;

@@ -404,6 +404,16 @@ void ROSWrapper::imuHandler(const sensor_msgs::msg::Imu::SharedPtr msg){
       odom_robo.pose.pose.orientation.y = q.y();
       odom_robo.pose.pose.orientation.z = q.z();
       odom_robo.pose.pose.orientation.w = q.w();
+
+      /// WHTF-ROBO-VELOCITY (2026-11-25): the robot-frame twist used to be left at zero.  Consumers that
+      /// need the vehicle's own velocity (SUPER's replanner via rog_map, any future analysis tool) must get
+      /// it from here -- see ESKF::Predict's state_robot.v/w.  REP-105: twist is in the child/body frame.
+      odom_robo.twist.twist.linear.x = robo_state.v(0);
+      odom_robo.twist.twist.linear.y = robo_state.v(1);
+      odom_robo.twist.twist.linear.z = robo_state.v(2);
+      odom_robo.twist.twist.angular.x = robo_state.w(0);
+      odom_robo.twist.twist.angular.y = robo_state.w(1);
+      odom_robo.twist.twist.angular.z = robo_state.w(2);
     }
 
     odom_imu.header.stamp = msg->header.stamp;

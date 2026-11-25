@@ -86,3 +86,19 @@
 2. 在 `/plan/cmd` 出口加"参考停车保护"（腿中速度突降→短暂保持）；
 3. 把 `scripts/analyze_loops.py` 的"指令停一下/腿中绕圈"计数纳入每趟飞行后的自动检查，作为回归指标；
 4. 上述改动之后重飞 2 趟，用同一张 xyz-t / vxyz-t 图和绕圈表对比。
+
+## 6. 角点 A/B：带速度过弯（2026-11-25 晚，phase4s / phase4t）
+
+在上述速度接口修复（LIO→rog_map→hot_start）之后，又试了"角点不停车"的两个开关组合：
+
+| 趟 | 配置 | 角点平均转角（几何 60°） | cmd 停顿（角/腿中） | 结果 |
+|---|---|---|---|---|
+| phase4p | 修复前基线 | 180° | 22（11/11） | 11 pass / 3 fail |
+| phase4q | 仅速度接口修复 | 172° | 11（8/3） | 12 pass / 2 fail（W6 True） |
+| **phase4s** | `GOAL_PVA=1 CORNER_MODE=bisector CORNER_SPEED=1.2 ARRIVE_M=0.3` | **139°** | 16（11/5） | 12 pass / 2 fail（W6 True） |
+| phase4t | 4s + `GOAL_LEAD=1` | — | — | **W1/W1b/W6 失败，拒绝**（提前一个航点发 goal 破坏了到达判据） |
+
+结论：`GOAL_PVA=1 + bisector + arrive-m 0.3` 把角点平均转角从 172° 降到 139°、指令速度 p10 从 0.49 提到
+0.57 m/s，验收行不退化（W1b/W6 仍过）；`GOAL_LEAD=1` 不可用。剩余角点"停一下"是 SUPER 轨迹终点静止
+（`pos_fina_state=0`）与到点换目标的综合结果，下一步按 `docs/HIGH-SPEED-PLAN.md` 的"延迟补偿 + 参数调硬"
+推进；这两趟的图在 `docs/evidence/phase4s-*`（若未生成则用 `plot_corner_details.py --tag phase4s-01-01` 生成）。

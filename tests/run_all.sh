@@ -56,6 +56,7 @@ python3 tests/check_criteria_v2.py || note_fail "check_criteria_v2.py (P0 v2 swi
 step "Phase 3 merged MAVLink client (SITL, no flight): 84/331 rates, frame conversion, extnav age gate"
 bash tests/check_fcu_client.sh || note_fail "check_fcu_client.sh (merged fcu_client transport)"
 bash tests/check_launch_matrix.sh || note_fail "check_launch_matrix.sh (one FCU implementation: merged | legacy rollback)"
+bash tests/check_super_velocity_wiring.sh || note_fail "check_super_velocity_wiring.sh (LIO velocity -> rog_map -> SUPER hot_start)"
 
 step "path policy"
 bash tests/no_abs_paths.sh || note_fail "no_abs_paths.sh"

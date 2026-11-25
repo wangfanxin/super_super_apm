@@ -5,7 +5,12 @@ set(CMAKE_CXX_STANDARD 17)
 option(RELEASE "Enable Release mode" ON)
 #if (RELEASE)
 set(CMAKE_BUILD_TYPE Release)
-set(CMAKE_CXX_FLAGS "-O3 -Wall -include /home/fanxin/super_super_apm/upstream/SUPER/super_planner/ros/super_compat.hpp")
+# WHTF-PORTABLE-BUILD (2026-11-25): the upstream CMakeLists hardcoded the ORIGINAL author's absolute path
+# (the original author's home directory), which does not exist in this repository layout -- a clean
+# rebuild of super_planner failed with "fatal error: .../super_compat.hpp: No such file or directory" (the
+# previous binary came from a machine where that path existed).  Resolve the header relative to this package
+# so a fresh clone can build the planner anywhere (D5: everything in the repo).
+set(CMAKE_CXX_FLAGS "-O3 -Wall -include ${CMAKE_CURRENT_SOURCE_DIR}/ros/super_compat.hpp")
 #else ()
 #    set(CMAKE_BUILD_TYPE Debug)
 #    set(CMAKE_CXX_FLAGS "-O -Wall -g")
