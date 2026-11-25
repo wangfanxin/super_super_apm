@@ -127,3 +127,9 @@ W1b **13/13 按圈按序**（最差 0.10 m）、**W6 p50 0.211 / p90 0.395**、*
   "W4 自己转正"的点。六趟合并（变体 3 + 交付态 3）：W2 1.41–1.46 全过、W6 均值 **0.306**（1.5 档 0.352）、
   **W4 3/6 趟无接触**、3/6 趟零豁免全过。
 * 以上批次（`kx1-02-01`、`kw1-01-01`、`kv1-02-01`）的数字**已被本批取代**，只留作历史对照。
+
+## 俯视图（2026-11-25）
+- `topdown-phase4p.png`：flight `missionA-phase4p-01-01` 的整趟俯视图（含分圈着色）
+- `topdown-phase4p-lap1.png` / `topdown-phase4p-lap2.png`：按圈分开的俯视图（分圈边界 = 真值经过 corner 1 附近 1.2 m 内，实测规则）
+- `topdown-phase4p-launch.png`：起飞后到第一个航点段
+- 生成命令：`python3 scripts/plot_flight_topdown.py --tag phase4p-01-01 [--per-lap]`
