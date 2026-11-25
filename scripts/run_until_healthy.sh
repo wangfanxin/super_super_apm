@@ -218,7 +218,8 @@ for i in $(seq 1 "$ATTEMPTS"); do
     # the bench must name them itself: without --world the plan box opened its own default
     # (worlds/pillars.yaml, relative to the code root) and died on FileNotFoundError (measured phase6d).
     CMD_ARGS="$CALIB_ARG --world $SIM_ROOT/worlds/${WORLD_NAME:-bench_open.yaml} \
---vertical-first-m ${Z_M:-2.0} --vertical-hold-s 3.0 --hold-s -1 --leg-timeout-s 40"
+--vertical-first-m ${Z_M:-2.0} --vertical-hold-s 3.0 --hold-s -1 --leg-timeout-s 40 \
+--arrive-m 0.6 --settle-speed 2.0 --settle-s 0.3"
   else
     PLANNER=rectangle
     CMD_ARGS="$CALIB_ARG"
@@ -285,7 +286,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
       ${EKF:+EKF_PARM="$EKF"} \
       GEOFENCE_M="$GEOFENCE_M" TAKEOFF_COMMAND_M="$TAKEOFF_M" VERTICAL_FIRST=1 VERTICAL_HOLD_S=3.0 \
       LIDAR_POINTS="${LIDAR_POINTS:-10000}" LIDAR_SCHEDULER="${LIDAR_SCHEDULER:-new}" \
-      SUP_ARGS="--climb-guard-m ${CLIMB_GUARD_M:-2.5}" \
+      SUP_ARGS="--climb-guard-m ${CLIMB_GUARD_M:-2.5} --nav-skip-max-per-s ${NAV_SKIP_MAX:-10.0}" \
       CMD_ARGS="$CMD_ARGS" \
       bash "$CODE/run-mission.sh" "$TAG" > "/tmp/$TAG.log" 2>&1 )
   echo "  RUN_EXIT=$?"
@@ -325,7 +326,14 @@ for i in $(seq 1 "$ATTEMPTS"); do
   OK=1
   [ "$LIO" -ge 1000 ] || { echo "  NO: the LIO delivered $LIO rows (<1000)"; OK=0; }
   [ "$SET" -ge 100 ] || { echo "  NO: only $SET setpoints reached the wire (<100)"; OK=0; }
-  [ "$REF" -ge 1 ] || { echo "  NO: SUPER published NO reference -- everything on the wire was my hold fallback"; OK=0; }
+  # The "SUPER ref" counter only exists for the SUPER arm (planner_source_super's status line).  The
+  # rectangle bench plan box never prints it, so requiring it would mark every capability-bench sortie
+  # ungradeable for a reason that says nothing about the aircraft (measured phase6e/6f).
+  if [ "$WHAT" = "bench" ]; then
+    [ "$SET" -ge 100 ] || { echo "  NO: the bench plan box produced fewer than 100 setpoint rows"; OK=0; }
+  else
+    [ "$REF" -ge 1 ] || { echo "  NO: SUPER published NO reference -- everything on the wire was my hold fallback"; OK=0; }
+  fi
   [ -z "$AB" ] || { echo "  NO: the supervisor aborted"; OK=0; }
   awk "BEGIN{exit !($RTFF>=0.98 && $RTFF<=1.02)}" || { echo "  NO: host gate flight_rtf=$RTFF (take-off..land) is outside 0.98-1.02, numbers not gradeable"; OK=0; }
   python3 "$ROOT/scripts/lidar_stall.py" "$D" >/dev/null 2>&1 \

@@ -1014,6 +1014,17 @@ def add_bridge_arguments(ap):
                          "position-controller target (PSCD.TPD) exceeded the commanded z in 14.6 %% of "
                          "samples (max +4.5 m) while the command stayed at 2.0 m; with `posvel` it was "
                          "1.1 %%. Zeroing the vertical component isolates that channel.")
+    # THE PHYSICAL NAV GATE SCALES WITH THE SPEED LADDER (2026-11-26).  It refuses an external-nav frame
+    # whose implied step speed exceeds --nav-gate-mps (default 5.0), which is correct at 1.35 m/s but at 8 m/s
+    # it refused LEGITIMATE frames: bench phase6h had 44 reason-1 refusals and the supervisor aborted with
+    # "THE ESTIMATOR IS DIVERGING: refused 11 frames/s (limit 10/s)" while the LIO was healthy.  A speed arm
+    # must therefore raise this gate together with WP_SPD/planner max_vel -- the gate is a sanity bound, not a
+    # speed limit.
+    ap.add_argument("--nav-gate-mps", type=float, default=5.0,
+                    help="physical gate: refuse a pose implying a step speed above this (m/s); raise it for "
+                         "the speed ladder (5.0 at 1.35 m/s, 15 at 8 m/s)")
+    ap.add_argument("--nav-gate-dps", type=float, default=900.0,
+                    help="physical gate: refuse a pose implying a step yaw rate above this (deg/s)")
     ap.add_argument("--nav-z-trim-m", type=float, default=0.0,
                     help="vertical DATUM correction added to the W/ENU z of the ESTIMATOR feed only, m. "
                          "MEASURED (scripts/altitude_split.py, six sorties): the FCU tracks its own "

@@ -1229,7 +1229,9 @@ merged)
     # were removed in round 20; this is the only path the acceptance flights use.
     $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" \
         --mav-supervisor "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
-        --nav-hz "${NAV_HZ:-48}" --wire-hz "${WIRE_HZ:-50}" $YAW_ARG ${BRIDGE_ARGS:-} \
+        --nav-hz "${NAV_HZ:-48}" --wire-hz "${WIRE_HZ:-50}" \
+        --nav-gate-mps "${NAV_GATE_MPS:-5.0}" --nav-gate-dps "${NAV_GATE_DPS:-900}" \
+        $YAW_ARG ${BRIDGE_ARGS:-} \
         --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
         --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
         --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
@@ -1245,7 +1247,9 @@ legacy)
     # Kept runnable so a merged-client regression can be bisected against the delivered shape; not a
     # supported acceptance path any more (docs/LEGACY_PATHS.md).
     $BRIDGE_PREFIX python3 "$BRIDGE/mavlink/bridge_node.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
-        --nav-hz "${NAV_HZ:-48}" --wire-hz "${WIRE_HZ:-50}" $YAW_ARG ${BRIDGE_ARGS:-} \
+        --nav-hz "${NAV_HZ:-48}" --wire-hz "${WIRE_HZ:-50}" \
+        --nav-gate-mps "${NAV_GATE_MPS:-5.0}" --nav-gate-dps "${NAV_GATE_DPS:-900}" \
+        $YAW_ARG ${BRIDGE_ARGS:-} \
         --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
         > "$OUT/bridge.log" 2>&1 &
     BRIDGE_PID=$!

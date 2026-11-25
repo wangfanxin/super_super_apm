@@ -391,3 +391,32 @@ phase4x 的 corner2 第一圈量化：真值冲过角点 **0.77 m**（到 (5.77,
   半径 20 m 级别），并同步把 `CORNER_SPEED` 抬到 3–4 m/s、`robot_r` 复核；
 - 工具：`scripts/path_continuity.py` 现在用于"沿整条路径"检查，而不是只盯上一轮的坏点。
 
+## 11. 飞机能力台架（2026-11-26 01:30，1 kg / 250 mm 机体 + 固件参数）
+
+**目的**：按 owner 要求"先把飞机设置到接近完美，再谈路径"。台架把规划器排除在外：开放世界
+（`sim/worlds/bench_low.yaml`：30 m 正方形飞行区无遮挡，区内 1.2 m 高的低柱给 Super-LIO 提供特征，
+21-23 m 外有高柱环），PLANNER=rectangle（位置目标、无前馈），固件参数 `guided_limits_bench.parm`。
+
+| 项 | 实测（phase6j） |
+|---|---|
+| 机体 | `sim/models/quad_1kg_250mm.json`：1.0 kg、250 mm 轴距、T/W≈4.25 |
+| 速度 | p50 6.00 / p90 **8.03** / p95 8.11 / **max 8.34 m/s**；1 s 平均最大 **8.09** |
+| 水平加速度 | p90 8.15 / max 11.8 m/s²（WP_ACC 8） |
+| 姿态 | pitch p90 32° / max 51.6°；roll 同类（ATC_ANGLE_MAX 55） |
+| 高度 | 目标 2.0 m，高速时 p50 1.87（下垂 ~0.13 m） |
+| 航点 | 14/14 ARRIVED，30 m 正方形两圈，无 abort |
+| 宿主 | flight_rtf 0.9999，lidar cast p50 11.9 ms，nav 22 199 行 |
+
+**过程中修掉的两个系统级限制（不是规划器！）**：
+1. **固件**：`WP_SPD 1.5 / WP_ACC 4 / ATC_ANGLE_MAX 45` 是 1.35 m/s 档；台架参数组改为
+   `WP_SPD 8 / WP_ACC 8 / WP_JERK 30 / ATC_ANGLE_MAX 55 / ATC_ANG_PIT,PLL 10 / PSC_NE_* 加硬 /
+   MOT_THST_HOVER 0.39 / EXPO 0.65`（与 1 kg 模型一致）。
+2. **桥的外导航物理门限 `--nav-gate-mps` 默认 5.0 m/s**：8 m/s 时合法 LIO 帧被判"物理不可达"
+   （phase6h 44 次拒绝），supervisor 据此报 `ESTIMATOR IS DIVERGING` 并 abort。已做成可配置
+   （`NAV_GATE_MPS`/`NAV_GATE_DPS`，台架用 15/900），并给 supervisor 的拒绝率上限加了 `NAV_SKIP_MAX`。
+3. 另：SITL 自定义机体 JSON 只认相对路径，run-mission 现在把模型拷进 run 目录再加载。
+
+**下一步**：台架已证明 8 m/s 在 1 kg 机体上可达。接下来在台架上做**跟踪质量调参**（PVA 前馈/位置环/
+姿态环），目标是 8 m/s 下跟踪误差 p90 ≤0.2 m、无振荡；然后把同一套固件参数用到路径飞行，先 1.35 m/s
+质量门禁（绕圈=0、中段停顿=0）再提速。
+
