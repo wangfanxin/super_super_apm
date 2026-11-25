@@ -61,6 +61,14 @@ def build_parser():
                          "with messages 84/331.  The historical two endpoints, merged in one client.")
     ap.add_argument("--mav-supervisor", default="tcp:127.0.0.1:5781",
                     help="the supervisor half's own endpoint when --dual-link is used")
+    # BISECT MODES (diagnosis): run ONE half of the merged client in this process, the other half as the
+    # historical process.  Phase 3 needs to know WHICH half changes the FCU's behaviour when both live here.
+    ap.add_argument("--bridge-only", action="store_true",
+                    help="bisect: run only the bridge half in this process (own loop); the supervisor stays a "
+                         "separate legacy process")
+    ap.add_argument("--supervisor-only", action="store_true",
+                    help="bisect: run only the supervisor half in this process (class-76 on --mav); the bridge "
+                         "stays the legacy separate process on serial0")
     ap.add_argument("--bench", action="store_true", help="bench: bridge half only, print PASS/FAIL summary")
     ap.add_argument("--bench-seconds", type=float, default=10.0)
     return ap
@@ -93,12 +101,53 @@ def main(argv=None) -> int:
 
     # ONE MAVLink connection -- unless --dual-link, which is both a diagnostic (does the single shared link
     # change the FCU's behaviour?) and the fallback if it does.
-    bridge = MavlinkBridge(url=args.mav, log=log)
+    # the supervisor-only bisect owns serial1 and NOTHING on serial0 (the legacy bridge owns that); opening
+    # serial0 here as well would put a second client on the same SITL endpoint and starve both (MEASURED
+    # 2026-11-25 phase3s: "no heartbeat on ...:5781").
+    _url = args.mav_supervisor if args.supervisor_only else args.mav
+    bridge = MavlinkBridge(url=_url, log=log)
     bridge_sup = bridge
     if args.dual_link:
         bridge_sup = MavlinkBridge(url=args.mav_supervisor, log=log)
         print("fcu_client: DUAL LINK -- 84/331 on %s, class-76 on %s (one process, one node)"
               % (args.mav, args.mav_supervisor), flush=True)
+    if args.bridge_only:
+        # BISECT CONTROL: this is the historical bridge, just started from this file.  If a flight with this
+        # mode misbehaves, the problem is the PROCESS, not who drives the feed.
+        bp = BridgeProcess(args, bridge=bridge, node=node)
+        bp.load_calib()
+        bp.start_ros(node=node)
+        bp.open_logs()
+        print("fcu_client: BRIDGE-ONLY (bisect) on %s -- the supervisor is a separate legacy process" % args.mav,
+              flush=True)
+        try:
+            return bp.run_loop()
+        finally:
+            bp.close_logs()
+            try:
+                bridge.close()
+            except Exception:
+                pass
+
+    if args.supervisor_only:
+        # BISECT: only the supervisor half lives here.  It gets its OWN connection (class-76) and NO bridge
+        # half; the estimator feed comes from the legacy bridge process on serial0.
+        sv = Supervisor(args, bridge=bridge, node=node)
+        print("fcu_client: SUPERVISOR-ONLY (bisect) on %s -- the estimator feed is the legacy bridge process"
+              % args.mav, flush=True)
+        try:
+            return sv.run()
+        finally:
+            try:
+                bridge.close()
+            except Exception:
+                pass
+            try:
+                node.destroy_node()
+                rclpy.shutdown()
+            except Exception:
+                pass
+
     bp = BridgeProcess(args, bridge=bridge, node=node)
     bp.load_calib()
     bp.start_ros(node=node)

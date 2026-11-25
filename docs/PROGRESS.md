@@ -514,6 +514,20 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 12:00（第 25 条，Phase 3 bisect 工具就绪；supervisor-only 首飞被主机卡顿污染）
+
+- 新增 bisect 模式：`FCU_CLIENT=bridge_only`（bridge 半边在合并进程里跑自己的 loop，supervisor 仍 legacy）与
+  `FCU_CLIENT=supervisor_only`（supervisor 半边在合并进程，84/331 由 legacy bridge 进程提供，自己走 serial1）。
+  run-mission 已接线；门禁 PASS。
+- `supervisor_only` 首飞（phase3t）：连接/状态机/起降走通（正常 LAND+disarm），但主机卡顿（lidar skipped 86、H6 FAIL、
+  SIM Hit ground 1.64 m/s）污染，不能作 bisect 结论；需安静主机重飞。
+- 已积累对照事实：merged 与 legacy 的 84/331 内容与发送抖动几乎一致；merged 失败形态是**起飞后 FCU 姿态估计发散**
+  （ATT roll/pitch 从 ~10° 涨到 40–50° 再到 137°/425°）+ 爬升 1.8 m/s（legacy 1.0 m/s）→ 模型失控。
+- 主线怀疑：合并进程里单 node 承载两半订阅 + `spin_once` 每次只处理一个 callback，可能改变 `/lio`、`/plan/cmd`
+  的 callback 顺序/延迟，从而改变 331 "发送时刻 vs 数据时刻"的关系。下一轮用干净 bisect 飞行定位。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

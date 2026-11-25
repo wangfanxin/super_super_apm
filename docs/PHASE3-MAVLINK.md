@@ -249,3 +249,22 @@ ArduPilot 收到 ODOMETRY 后走 `GCS_MAVLINK::handle_odometry` → `correct_off
 - 已排除：喂数空洞/时基（真实时钟）、发送抖动（merged p99 23 ms vs legacy 22.5 ms）、84 目标值、单连接。
 - 待查：merged 里 FCU 的推力/姿态响应（CTUN/PSCN）与 legacy 的逐项差异；下一步 bisect（merged 只跑 supervisor
   半边 + legacy bridge 进程）定位是"bridge 半边被 pump 驱动"还是"supervisor 半边同进程"改变了行为。
+
+
+## 第 6 步（2026-11-25 11:35–12:00）：bisect 工具就绪；supervisor-only 首飞被主机卡顿污染
+
+新增两个 bisect 模式（`fcu_client.py` + `run-mission.sh`）：
+- `FCU_CLIENT=bridge_only`：只把 **bridge 半边**放进合并进程（跑它自己的 loop），supervisor 仍是 legacy 独立进程；
+- `FCU_CLIENT=supervisor_only`：只把 **supervisor 半边**放进合并进程（自己一条连接 serial1），84/331 由 legacy bridge 进程提供。
+
+`supervisor_only` 首飞（`missionA-phase3t-01-01`）：连接/状态机/起降都走通（正常 LAND+disarm），但被主机卡顿污染
+（lidar `skipped scans 86`、H6 FAIL、`SIM Hit ground at 1.64 m/s`），不能用来判断 bisect 结论。需要在安静主机上重飞。
+
+### 已积累的 merged/legacy 对照事实（供下一轮直接使用）
+- merged 与 legacy 的 `#84` 目标序列、`type_mask`、`posvelacc` 完全一致；merged 的 `#331` 位置/速度/姿态内容也"正确"
+  （VISP 与 LIO/真值一致），发送抖动接近（p99 23 vs 22.5 ms）。
+- merged 的失败形态：起飞后 1–2 s 内 **FCU 姿态估计开始发散**（ATT roll/pitch 从 ~10° 单调涨到 40–50°，
+  随后 137°/425° 量级 → 模型失控），爬升速度 1.8 m/s（legacy 1.0 m/s），最终 `SIM Hit ground`、EKF 滞后/发散。
+- 主线怀疑：**合并进程里 spin_once 只处理一个 callback / 单个 node 上挂了两半的订阅**，使某些 callback（尤其
+  `/lio/robo/odom`、`/plan/cmd`）的处理顺序/延迟与 legacy 不同，从而 331 的"发送时刻 vs 数据时刻"关系变化。
+  下一轮用 bridge_only / supervisor_only 的干净飞行把范围缩到一半，再决定是否给 bridge 半边单独线程。

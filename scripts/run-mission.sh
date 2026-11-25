@@ -1158,7 +1158,18 @@ if [ "$PLANNER" = "rectangle" ]; then
 else
     YAW_ARG=""
 fi
-if [ "${FCU_CLIENT:-legacy}" = "merged" ]; then
+if [ "${FCU_CLIENT:-legacy}" = "bridge_only" ]; then
+    # BISECT (Phase 3): the historical bridge, started from fcu_client.py, in the background; the supervisor
+    # below is the legacy separate process.  Tests "does this PROCESS change the estimator feed's behaviour".
+    $BAG_PREFIX echo >/dev/null 2>&1 || true
+    $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --bridge-only --mav "tcp:127.0.0.1:${PORT0:-5780}" \
+        $CALIB_ARG --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
+        --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
+        > "$OUT/bridge.log" 2>&1 &
+    BRIDGE_PID=$!
+    sleep 2
+    kill -0 "$BRIDGE_PID" 2>/dev/null || { echo "the bridge process died:"; tail -20 "$OUT/bridge.log"; exit 1; }
+elif [ "${FCU_CLIENT:-legacy}" = "merged" ]; then
     # PHASE 3: ONE process, ONE MAVLink link, ONE rclpy node (bridge_nodes/mavlink/fcu_client.py).
     # The bridge half keeps 84/331 and the wire/setpoint CSVs; the supervisor half keeps class-76, the
     # phase log and the guards, and its pump loop drives the shared link.
@@ -1189,7 +1200,20 @@ fi
 # four gates, LAND and the NAMED abort.  Its inputs are the truth and the LINK, never the LIO in flight.
 # It is last because its exit is the sortie's result, and because the two processes it watches must already
 # be publishing when it starts.
-if [ "${FCU_CLIENT:-legacy}" != "merged" ]; then
+if [ "${FCU_CLIENT:-legacy}" = "supervisor_only" ]; then
+    # BISECT (Phase 3): the supervisor half inside this process (its OWN endpoint serial1), with the legacy
+    # bridge process above providing 84/331 on serial0.
+    $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --supervisor-only \
+        --mav "tcp:127.0.0.1:${PORT1:-5781}" \
+        --mav-supervisor "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
+        --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
+        --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
+        --fcu-odom-topic /fcu/odom \
+        --phase-log "$OUT/phase.csv" > "$OUT/fcu_client.log" 2>&1
+    SUP_RC=$?
+    FSM_RC=$SUP_RC
+    cat "$OUT/fcu_client.log"
+elif [ "${FCU_CLIENT:-legacy}" != "merged" ] && [ "${FCU_CLIENT:-legacy}" != "bridge_only" ]; then
 $AUX_PREFIX python3 "$BRIDGE/supervisor/supervisor.py" --mav "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
     --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \
     --hold 3.0 --geofence-m "$GEOFENCE_M" $SUP_TRIGGER ${SUP_ARGS:-} \
