@@ -1158,7 +1158,17 @@ if [ "$PLANNER" = "rectangle" ]; then
 else
     YAW_ARG=""
 fi
-if [ "${FCU_CLIENT:-legacy}" = "bridge_only" ]; then
+if [ "${FCU_CLIENT:-legacy}" = "bridge_thread" ]; then
+    # BISECT: bridge half in this process, driven by a thread; supervisor is the legacy separate process.
+    $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --bridge-thread --mav "tcp:127.0.0.1:${PORT0:-5780}" \
+        $CALIB_ARG --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
+        --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
+        --phase-log "$OUT/phase.csv" \
+        > "$OUT/bridge.log" 2>&1 &
+    BRIDGE_PID=$!
+    sleep 2
+    kill -0 "$BRIDGE_PID" 2>/dev/null || { echo "the bridge process died:"; tail -20 "$OUT/bridge.log"; exit 1; }
+elif [ "${FCU_CLIENT:-legacy}" = "bridge_only" ]; then
     # BISECT (Phase 3): the historical bridge, started from fcu_client.py, in the background; the supervisor
     # below is the legacy separate process.  Tests "does this PROCESS change the estimator feed's behaviour".
     $BAG_PREFIX echo >/dev/null 2>&1 || true

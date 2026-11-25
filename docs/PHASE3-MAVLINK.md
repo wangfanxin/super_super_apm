@@ -297,3 +297,24 @@ ArduPilot 收到 ODOMETRY 后走 `GCS_MAVLINK::handle_odometry` → `correct_off
 1. 安静主机上复飞 merged（应完整 13/13）；再连飞一趟做 A/B；
 2. W6 lag 复查（bridge_only 0.93 vs legacy 0.17）；
 3. 之后把默认切到 merged、删掉 legacy 双进程路径。
+
+
+## 第 8 步（2026-11-25 12:35–13:15）：★ bisect 再收敛：bridge 半边"独立线程 + 独立进程内"完全正常 ★
+
+新增 `FCU_CLIENT=bridge_thread`：bridge 半边在 fcu_client 进程里**由自己的线程驱动**（线程内 poll+spin+tick），
+supervisor 仍是 legacy 独立进程。
+
+| 配置 | bridge 半边 | supervisor 半边 | 结果 |
+|---|---|---|---|
+| `bridge_only`（phase3w） | 本进程，`run_loop()` | legacy 进程 | 13/13 航点（W6 p50 0.93 lag） |
+| **`bridge_thread`（phase4d）** | **本进程，独立线程** | **legacy 进程** | **H1/H3/H4/H5/H6 + W0b/W1/W1b/W2/W3/W4/W5/W6 全过（仅 H2=P0 门槛）** |
+| `merged` / `merged --dual-link`（phase3y/4a/4b） | 本进程，独立线程 | **本进程** | 起飞后 ~4–5 s 模型失推力坠地 / 姿态发散 |
+
+⇒ 现在可以确定：**问题出在"supervisor 与 bridge 同处一个进程"这一侧**，而不是 bridge 的驱动方式、也不是连接共享
+（dual-link 也必须 supervisor 同进程才复现）。最可能的具体机制是 **两个线程共用一个 rclpy node + 一个 MAVLink 连接**：
+supervisor 的 pump 在 node 上 `spin_once`，bridge 线程在同一 node/连接上发送；而 `bridge_thread` 里同一个线程
+"poll→spin→tick" 串行完成，行为与 legacy 完全一致。
+
+下一轮的直接实验（最小改动）：**merged 模式下给 supervisor 自己的 rclpy node**（bridge 线程 spin 自己的 node 并 poll
+连接，supervisor pump spin 自己的 node），若通过则保留"单进程、单连接、两个 node、两个线程"的形态；否则再试
+"单进程、双连接、双 node、双线程"。

@@ -63,6 +63,9 @@ def build_parser():
                     help="the supervisor half's own endpoint when --dual-link is used")
     # BISECT MODES (diagnosis): run ONE half of the merged client in this process, the other half as the
     # historical process.  Phase 3 needs to know WHICH half changes the FCU's behaviour when both live here.
+    ap.add_argument("--bridge-thread", action="store_true",
+                    help="bisect: only the bridge half in this process, driven by its OWN THREAD (poll+spin+"
+                         "tick); the supervisor stays the separate legacy process")
     ap.add_argument("--bridge-only", action="store_true",
                     help="bisect: run only the bridge half in this process (own loop); the supervisor stays a "
                          "separate legacy process")
@@ -111,6 +114,39 @@ def main(argv=None) -> int:
         bridge_sup = MavlinkBridge(url=args.mav_supervisor, log=log)
         print("fcu_client: DUAL LINK -- 84/331 on %s, class-76 on %s (one process, one node)"
               % (args.mav, args.mav_supervisor), flush=True)
+    if args.bridge_thread:
+        # BISECT: the bridge half's code, this process, its own thread, NO supervisor.  Discriminates
+        # "thread-driven bridge changes behaviour" from "supervisor-in-process changes behaviour".
+        import threading as _th
+        import time as _tm
+        bp = BridgeProcess(args, bridge=bridge, node=node)
+        bp.load_calib()
+        bp.start_ros(node=node)
+        bp.open_logs()
+        _st = {"stop": False}
+
+        def _loop():
+            while not _st["stop"]:
+                bridge.poll()
+                rclpy.spin_once(node, timeout_sec=0.0)
+                bp.step(_tm.monotonic())
+                _tm.sleep(0.0005)
+
+        _t = _th.Thread(target=_loop, name="bridge-half", daemon=True)
+        print("fcu_client: BRIDGE-THREAD (bisect) on %s -- supervisor is a separate legacy process" % args.mav,
+              flush=True)
+        _t.start()
+        try:
+            while True:
+                _tm.sleep(0.2)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            _st["stop"] = True
+            _t.join(timeout=2.0)
+            bp.close_logs()
+            return 0
+
     if args.bridge_only:
         # BISECT CONTROL: this is the historical bridge, just started from this file.  If a flight with this
         # mode misbehaves, the problem is the PROCESS, not who drives the feed.
@@ -172,9 +208,15 @@ def main(argv=None) -> int:
     import time as _time
     _run = {"stop": False, "err": None}
 
+    _thread_polls = bool(args.dual_link)
+
     def _bridge_loop():
         while not _run["stop"]:
             try:
+                if _thread_polls:
+                    # DUAL LINK: the bridge half owns serial0 and must READ it too -- the supervisor's pump
+                    # polls only its own connection, so without this the bridge half's FCU state never updates.
+                    bridge.poll()
                 bp.step(_time.monotonic())
             except Exception as exc:                                 # noqa: BLE001
                 if _run["err"] is None:

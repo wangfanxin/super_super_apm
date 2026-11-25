@@ -542,6 +542,20 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 13:15（第 27 条，★ Phase 3 bisect 收敛：bridge 半边独立线程+独立进程完全正常，问题在 supervisor 同进程 ★）
+
+- 新增 `FCU_CLIENT=bridge_thread`（bridge 半边在 fcu_client 进程、独立线程内 poll+spin+tick；supervisor 仍 legacy 进程）。
+- 飞行 `phase4d`：**H1/H3/H4/H5/H6 + W0b/W1/W1b/W2/W3/W4/W5/W6 全过（仅 H2=P0 门槛）** —— 与已验收基线等价。
+- 对照：`bridge_only`（bridge 本进程 run_loop + legacy supervisor）=13/13 航点；`merged`（supervisor 同进程，含 dual-link）
+  = 起飞后 4–5 s 失推力坠地/姿态发散。
+  ⇒ **问题确定在"supervisor 与 bridge 同处一个进程"**；连接共享不是原因（dual-link 同进程仍复现）。
+  最可能机制：两个线程共用一个 rclpy node + 一个连接（supervisor pump 在 node 上 spin_once，bridge 线程在同一 node/连接上发），
+  而 `bridge_thread` 是"poll→spin→tick"串行。
+- 下一轮最小实验：merged 模式下给 supervisor 单独的 rclpy node（bridge 线程 spin 自己的 node 并 poll 连接），
+  通过则 Phase 3 形态定为"单进程 + 单连接 + 两个 node + 两个线程"。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。
