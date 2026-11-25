@@ -699,3 +699,23 @@ FSM 于是长时间停在 WAIT_GOAL/GENERATE_TRAJ，plan box 发 hold —— 12a
 - hex16 的 lidar 模拟器在本机仍不稳（H6 时好时坏），高速度档建议先用 hex12w（H6 稳定），
   leg 不够时再优化 raycast。
 
+## 21. round 15：新世界规划失败的真正原因 —— **规划器 map_size 只有 24 m**（07:05–07:25）
+
+三趟对照（hex12w，1 kg 机体 + bench5 固件）：
+
+| 趟 | 配置 | W1 | ExpTraj failed | 结论 |
+|---|---|---|---|---|
+| 13a | fast(2.5) + 默认 map_size 24 | 4/13 | 2463 | 速度不是主因 |
+| 13b | 默认 1.35 + 默认 map_size 24 | 6/13（4 次 LEG TIMEOUT，飞机长期没离开停机坪） | 1819 | **新世界在 1.35 也规划不了** |
+| **13c** | 默认 1.35 + **map_size 40**（`super_planner_hex_big.yaml`） | **8/13（顺序 1..8）** | 1668 | 明显变好，但仍失败 |
+
+**根因（13b/13c 对比）**：SUPER 的 `rog_map.map_size` 是 **24 m**（±12 m）。新世界 corner 半径 12 m、
+柱子铺到 ±16 m：航点正好压在 **OUT_OF_MAP 边界**上，A* / MINFC 频繁失败（1668–2463 次/趟），
+飞机被留在停机坪（13b 连续 4 次 LEG TIMEOUT）。把 map_size 提到 **40 m**（±20）后 W1 从 6→8 且顺序正确，
+证明假设成立；但 1668 次失败仍偏高——新世界比冻结世界大、柱多（970 vs 522），还有别的约束在卡。
+
+**已提交的配置**：`super_planner_hex_big.yaml` / `_fast_big.yaml` / `_race4b_big.yaml`（map_size 40）。
+
+**下一轮**：继续把 map_size 调到 48、修 1668 次残余失败（看失败点是不是在 ±12 边界附近），
+在 1.35 干净后按 2.5→4 m/s 重跑；若仍卡，则退回到"小世界 + 更宽柱距"的对照实验定位几何项。
+
