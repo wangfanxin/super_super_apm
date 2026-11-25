@@ -14,6 +14,7 @@
 | [REAL-MACHINE-CHECKLIST.md](REAL-MACHINE-CHECKLIST.md) | **how-to** | 真机迁移检查表：哪些是仿真-only、需要替换的接口、上电→首飞检查顺序、与仿真 A/B 对照的问题清单 |
 | [P0-CRITERIA-PROPOSAL.md](P0-CRITERIA-PROPOSAL.md) | **proposal** | P0 判据改造提案（未实施，等所有者批准）：W6 拆分稳态/一致性、H2 速率语义、W4 容差、H6/H3/W1b 微调，含 80 趟实测分布 |
 | [PHASE5-EXTRAS.md](PHASE5-EXTRAS.md) | **how-to** | Phase 5 已做部分：manifest 完整性（record-only）、APE/RPE 附加行（`traj_error.py`）、rviz 回放 headless 冒烟；未做项清单 |
+| [DELIVERY-2026-11-25.md](DELIVERY-2026-11-25.md) | **status** | **交付清单/单一入口**：运行方式、阶段状态与证据、默认配置、回滚开关、已知遗留（P0/W4/W6/真机）、门禁覆盖、规范化判定标准 |
 | [PHASE-SUMMARY-2026-11-25.md](PHASE-SUMMARY-2026-11-25.md) | **status** | 管线总汇报（暂停点）：各 Phase 状态、默认链路、验收数字、已修问题、已知缺陷、回滚点与下一步 |
 | [PHASE3-MAVLINK.md](PHASE3-MAVLINK.md) | **design** | Phase 3 设计：bridge+supervisor 合并为单个自建 MAVLink 客户端（extnav 年龄/质量/reset、wire liveness、yaw 单点转换、迁移与验证） |
 | [PHASE2-RECORDING.md](PHASE2-RECORDING.md) | **record** | Phase 2 验证：rosbag2 作为录制底座、split writers、tmpfs 写入、bag→CSV 派生与同趟新旧 accept 逐行对比 |

@@ -243,7 +243,7 @@
 
 ## 6. 明确不做 / 延后
 
-* **验收判据改造（P0）**：按你的意见延后（W2/W6/H2/H3/H6/W1b/W4 的语义与阈值）。
+* **验收判据改造（P0）**：按你的意见延后。**现状（2026-11-25 第 41 条）**：提案 [P0-CRITERIA-PROPOSAL.md](P0-CRITERIA-PROPOSAL.md) + 104 趟 A/B 证据 (`docs/metrics/p0-criteria-ab.txt`) 已备好；`accept.py --criteria-v2` 已实现为 opt-in（**默认仍是 v1**）；切默认等所有者批准。
 * **SUPER 内部死键/约束失效**：单独一条线（`yaw_mode`/`backup_traj_en`/`hot_start`/边界约束），要改上游或永久文档化，与管线解耦。
 * **角点停 vs SPEC S1**：需要你决策，不阻塞管线。
 * **ego 臂是否保留**：Phase 3 后只有一条控制实现；ego 臂降级为历史。

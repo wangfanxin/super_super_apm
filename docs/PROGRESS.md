@@ -745,6 +745,19 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 20:15（第 41 条，★ 数据管线「规范化完成」交付 ★）
+
+- 新增 `docs/DELIVERY-2026-11-25.md`（交付单一入口）：三条运行命令、每趟产物清单、Phase 0–5 状态与证据、
+  默认配置、回滚开关、已知遗留（P0/W4/W6/真机）、门禁覆盖、"规范化完成"的 7 条判定标准（全部满足）。
+- 本轮同时完成：`scripts/criteria_ab.py`（104 趟 v1/v2 A/B，`docs/metrics/p0-criteria-ab.txt`）、
+  `accept.py --criteria-v2`（默认关，`tests/check_criteria_v2.py` 钉住 v1 不变）、
+  `docs/REAL-MACHINE-CHECKLIST.md`（真机迁移检查表）。
+- 门禁：`tests/run_all.sh` 连续两次 **GATE: PASS**；工作树干净（本地 commit，按所有者要求未 push）。
+- 状态：Phase 0–5 全部完成；剩余只有**所有者决策类**（P0 判据是否切默认）与**立项类**（W4 规划器安全边距、
+  W6 单季度滞后归因、真机迁移）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。
