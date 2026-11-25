@@ -170,3 +170,24 @@ run-mission 自动带 `--nav-log $OUT/nav.csv`）。同时把 LIO 位置差分�
    若这样能飞，问题在 supervisor-in-merged-process（pump 结构/回调顺序）；若不能，问题在 bridge-in-merged-process。
 2. 查 phase3g 里那条 `Rsn=2` 的 LAND 是谁发的（抓 serial0 上所有 class-76 的源：给 `MavlinkBridge` 加
    `command_long` 日志，或对比 supervisor 日志时间）。
+
+
+### 第 3 步补充：merged 的失控现象与 legacy 的逐项对照（数据事实）
+- merged 的 **extnav 位置是"真的"**：`phase3g` 的 BIN 里 `VISP.PZ` 在起飞后 12 s 内从 −0.11 涨到 −4.60 m，
+  与模型自己的 `SIM_STATE`（`alt` 584.1→589.0）一致；legacy 同阶段 PZ 停在 −1.85…−1.95（目标 2 m）。
+  也就是说 merged 里飞机**真的被飞到了 4.6 m**，而 84 的 setpoint 一直是 `p_l_z=1.88 / z_ned=−2.00`
+  （`wire.csv` 678 行，`type_mask`、fields 与 legacy 完全相同），plan 也一直只发竖直腿（`derived/traj z=1.88`）。
+- EKF 侧：merged 的 `XKF4.SH`（高度创新）在起飞后 ~16 s 达到 **3.77 m**（legacy 全程 ≤0.28 m），
+  `SP` 到 2.04 m —— EKF 从一开始就没有跟上竖直 extnav；`VISP` 的 `Ign` 全为 0（说明不是 quality 门），
+  因此是 **创新门/状态发散**，不是数据没到。
+- `phase3g` 的 `MODE` 记录：boot 50.77（≈起飞后 20.6 s）出现 **mode 9 LAND，Rsn=2 = GCS_COMMAND**，
+  比 `SIM Hit ground` 早 3 s；`fcu_client.log` 里 supervisor 的 abort 在此之后。**这条 LAND 来源未定**。
+  （`phase3h` 的 `--dual-link` 也复现同样的失控 ⇒ 与单连接无关。）
+
+下一轮优先级：
+1. 抓 class-76 源：给 `MavlinkBridge.command_long_send` 类调用点加统一日志（谁、何时、哪条命令），
+   解释那条 `Rsn=2` 的 LAND；
+2. bisect：merged 进程只跑 supervisor 半身 + 独立 legacy bridge 进程（以及反过来），判定哪一半在
+   "合并进程"里改变了 EKF 看到的输入；
+3. 注意 legacy 在本轮之前从未用 `--feed-clock fcu` 飞过：需要一趟 legacy 复飞来确认 extnav 时间戳改写成
+   boot 时钟对已验收链路无害（BIN 的 VISP 年龄应为 ~ms 级、13 段飞行正常）。
