@@ -693,6 +693,17 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 17:35（第 37 条，Phase 5-3：bag→derive→live 一致性 CI 入门禁）
+
+- `tests/check_bag_pipeline.py` 扩展：同一次运行里同时用 bag（split writers）与飞行实时 CSV 记录器
+  （`record-odom.py`、`record-traj.py`）记录同一对已知话题（30 Hz，避免两个订阅者丢不同包），派生 bag 后
+  逐样本对比"派生层 vs 实时层"：派生每行必须能在实时层找到同 t_us 且数值一致（<1e-6），要求 ≥95% 匹配、
+  0 个值不一致。实测 lio/traj.cmd 两条均 `matched 100.0% of derived, value mismatches 0`。
+- 这就是 Phase 2 真实飞行结论（派生层逐字节包含现采层）的可重复 CI 版本，不需要飞行。
+- 文档：PHASE5-EXTRAS.md §4 更新；门禁 GATE: PASS。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

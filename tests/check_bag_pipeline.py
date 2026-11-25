@@ -67,7 +67,10 @@ while time.monotonic() - t0 < 12.0:
     c.trajectory_flag = 1
     pub_c.publish(c)
     k += 1
-    time.sleep(0.01)
+    # 30 Hz, not 100: two independent subscribers (live recorder + rosbag2) must not lose different
+    # subsets, otherwise "bag-derived == live" cannot be judged sample-for-sample (MEASURED: at 100 Hz
+    # the overlap was 77-91 % with ZERO value mismatches -- loss, not corruption).
+    time.sleep(0.033)
 print("PUBLISHED", k, flush=True)
 '''
 
@@ -136,9 +139,26 @@ def main():
     time.sleep(1.0)
     bag = shell("bash %s/scripts/record_bag.sh %s /dev/shm/sp_bagtest" % (R, OUT),
                 log=os.path.join(OUT, "bag.log"))
+    # PHASE 5-3 REPLAY CI: the SAME data is also written by the live CSV recorders the flight uses
+    # (`record-odom.py` -> lio.csv, `record-traj.py --csv traj.csv` -> traj.csv.cmd.csv).  After the bag is
+    # derived, the two layers must agree sample-for-sample: that is the "bag -> derive == live" claim made
+    # executable on every gate run, without needing a flight.
+    live = os.path.join(OUT, "live")
+    os.makedirs(live, exist_ok=True)
+    rec_o = shell("python3 %s/scripts/record-odom.py --topic /lio/robo/odom --csv %s/lio.csv --seconds 0"
+                  % (R, live), log=os.path.join(live, "record_odom.log"))
+    rec_t = shell("python3 %s/scripts/record-traj.py --topic /plan/cmd --msg position_cmd "
+                  "--csv %s/traj.csv --world %s/sim/worlds/forest_hex12.yaml "
+                  "--calib-file %s/calib/calib.json --seconds 0"
+                  % (R, live, R, R), log=os.path.join(live, "record_traj.log"))
     time.sleep(11.0)
     pub.send_signal(signal.SIGINT)
     bag.send_signal(signal.SIGINT)
+    for p in (rec_o, rec_t):
+        try:
+            p.send_signal(signal.SIGINT)
+        except Exception:
+            pass
     # wait for the recorder to CLOSE the bag (metadata.yaml appears when the storage is finalised)
     meta = "/dev/shm/sp_bagtest/bag/metadata.yaml"
     for _ in range(100):
@@ -149,7 +169,7 @@ def main():
     # does not reliably reach it -- MEASURED 2026-11-25: every gate run left one recorder alive, subscribing
     # to the topics and writing into the tmpfs path, and after four of them the gate itself went flaky.
     import signal as _signal
-    for p in (pub, bag):
+    for p in (pub, bag, rec_o, rec_t):
         try:
             os.killpg(p.pid, _signal.SIGKILL)      # start_new_session=True => the group id IS the pid
         except Exception:
@@ -187,6 +207,58 @@ def main():
         good = lines and lines[0] == header and len(lines) > 20 and checks(lines[1].split(","))
         ok = ok and bool(good)
         details.append("%s %d rows %s" % (name, len(lines) - 1, "ok" if good else "BAD"))
+    # ---- PHASE 5-3: bag-derived CSVs == live-recorder CSVs (sample for sample) --------------------
+    def compare_layers(live_path, derived_path, label):
+        import csv as _csv
+        if not (os.path.isfile(live_path) and os.path.isfile(derived_path)):
+            return None, "%s: missing live or derived file" % label
+        live_rows = list(_csv.DictReader(open(live_path)))
+        der_rows = list(_csv.DictReader(open(derived_path)))
+        if not live_rows or not der_rows:
+            return None, "%s: empty layer" % label
+        by_t = {}
+        for r in der_rows:
+            by_t.setdefault(int(r["t_us"]), r)
+        cols = [c for c in live_rows[0] if c != "t_us"]
+        by_live = {}
+        for r in live_rows:
+            by_live.setdefault(int(r["t_us"]), r)
+        matched = bad = 0
+        # iterate the DERIVED rows: that is the layer accept.py reads, and two independent subscribers can
+        # legitimately see different subsets under loss (the live recorder is a superset here: it starts
+        # fractionally earlier).  What must hold is "every derived sample exists in the live layer, with the
+        # same values" -- i.e. deriving the bag loses/changes nothing.
+        for d in der_rows:
+            r = by_live.get(int(d["t_us"]))
+            if r is None:
+                continue
+            matched += 1
+            for c in cols:
+                a, b = r.get(c, ""), d.get(c, "")
+                try:
+                    if abs(float(a) - float(b)) > 1e-6:
+                        bad += 1
+                        break
+                except ValueError:
+                    if a != b:
+                        bad += 1
+                        break
+        frac = matched / max(1, len(der_rows))
+        okc = frac >= 0.95 and bad == 0
+        return okc, ("%s: live %d / derived %d rows, matched %.1f%% of derived, value mismatches %d"
+                     % (label, len(live_rows), len(der_rows), 100.0 * frac, bad))
+
+    for label, live_name, der_name in (
+        ("lio", os.path.join(live, "lio.csv"), os.path.join(OUT, "csv", "lio.csv")),
+        ("traj.cmd", os.path.join(live, "traj.csv.cmd.csv"), os.path.join(OUT, "csv", "traj.csv.cmd.csv")),
+    ):
+        okc, msg = compare_layers(live_name, der_name, label)
+        if okc is None:
+            ok = False
+            details.append(msg)
+        else:
+            details.append(msg)
+            ok = ok and okc
     if not ok:
         tail = open(os.path.join(OUT, "derive.log")).read().strip().splitlines()[-3:]
         details.append("derive: " + " | ".join(tail))

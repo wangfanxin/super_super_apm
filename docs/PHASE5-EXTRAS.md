@@ -61,9 +61,21 @@ fcu  RPE 1s rmse 0.049 m  p95 0.092
 顺带修掉两个真实 bug：静态 TF 的 printf 参数个数错位（TF 从未发布成功）、`--no-rviz` 下空 TF 行触发
 `set -u` 崩溃；TF 检查改为对 latched 话题重试 3 次（QoS 时序）。
 
-## 4. 还没做（下一轮）
+## 4. bag→derive→live 一致性 CI（2026-11-25 第 21 轮，已做）
 
-- **bag→derive→accept 回放一致性 CI**：在仓库内放一个**小样例 bag**（或由 gate 合成），断言
-  "回放 → `finalize_bag.sh` 派生层 → `accept.py` 的数字与现采一致"；现有 `tests/check_bag_pipeline.py`
-  只验证派生层本身（列头/行数/与直接 CSV 一致），还没接 accept。
+`tests/check_bag_pipeline.py`（入门禁）现在把三件事放进一次 gate 运行：
+
+1. 发已知 `/lio/robo/odom` 与 `/plan/cmd`（30 Hz，避免两个订阅者丢不同的包）；
+2. **同时**用 bag 记录（`scripts/record_bag.sh`，split writers）和飞行实际使用的实时 CSV 记录器
+   （`scripts/record-odom.py` → `lio.csv`；`scripts/record-traj.py --csv traj.csv` → `traj.csv.cmd.csv`）；
+3. 用 `bag_to_csv.py` 派生 bag，再逐样本对比 **派生层 vs 实时层**：
+   - 派生层的每一行必须能在实时层里找到**同一时间戳**、且所有数值字段一致（<1e-6）；
+   - 要求 ≥95% 的派生行匹配、0 个数值不一致。
+   实测：`matched 100.0% of derived, value mismatches 0`（lio 与 traj.cmd 两条都如此）。
+
+这正是 Phase 2 在真实飞行上验证过的"派生层 ⊇ 现采层"的**可重复版本**，不需要飞行；真实飞行的证据仍是
+`missionA-phase2k`（逐字节包含）与 Phase 2 文档。
+
+## 5. 还没做（下一轮）
+
 - P0 判据改造方案文档（de-trending/残差门限、H2 速率语义、W4 接触容差）—— 只写方案 + 数据，不改阈值。
