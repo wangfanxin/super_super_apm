@@ -318,3 +318,46 @@ supervisor 的 pump 在 node 上 `spin_once`，bridge 线程在同一 node/连�
 下一轮的直接实验（最小改动）：**merged 模式下给 supervisor 自己的 rclpy node**（bridge 线程 spin 自己的 node 并 poll
 连接，supervisor pump spin 自己的 node），若通过则保留"单进程、单连接、两个 node、两个线程"的形态；否则再试
 "单进程、双连接、双 node、双线程"。
+
+
+## ★ 第 9 步：Phase 3 完成（2026-11-25 13:10–13:35）★
+
+### 根因（最终版）
+两半合进一个进程后，只要 **supervisor 与 bridge 共享同一个 rclpy node**（或共享"全局 executor"），飞行就会在起飞后
+4–5 s 失推力/姿态发散。逐步 bisect 排除了：bridge 代码、连接共享、喂数空洞、时间戳、发送抖动、pump 驱动方式。
+最终可工作的形态与 legacy 的**串行结构**一一对应：
+
+| 半边 | 连接 | rclpy node | executor | 线程 |
+|---|---|---|---|---|
+| bridge | serial0（84/331） | `fcu_client` | 自己的 `SingleThreadedExecutor` | `bridge-half` 线程：`poll → spin_once → bp.step()` |
+| supervisor | serial1（class-76、守卫） | `fcu_client_sup` | 自己的 `SingleThreadedExecutor` | 主线程：`poll → spin_once → check_gates → 命令` |
+
+关键两点：(a) `rclpy.spin_once()` 用的是**进程全局 executor**，两个线程同时用会
+`ValueError: generator already executing`；(b) 两个线程/节点共用一个 node 时 ROS 回调与喂数发送相互干扰，
+FCU 的 EKF 会以高度创新（XKF4.SH 1–3 m）拒绝 extnav，随后位置环发散。每半身独立 node+executor+连接后完全正常。
+`MavlinkBridge._tx_lock` 仍保留（一个程序内两条连接、每半身单线程写）。
+
+### 验收飞行（`FCU_CLIENT=merged` 已是默认；连飞两趟）
+| 行 | `phase4g` | `phase4h` | legacy 基线（`phase2m`） |
+|---|---|---|---|
+| H1 rtf / 飞行窗 | 1.0000 / 130.41 s | 1.0000 / 128.41 s | 1.0000 / 130.52 s |
+| H3 速率 | 200.0 Hz | 200.0 Hz | 200.0 Hz |
+| H5 水平/垂直 span | 10.23 vs 10.26 / 1.97 vs 1.87 | 10.21 vs 10.17 / 1.99 vs 1.87 | 10.21 vs 10.24 / 1.96 vs 1.81 |
+| H6 cast p50 / skipped | 20.2 ms / 13 | 18.8 ms / 11 | 18.3 ms / 5 |
+| W0b / W1 / W1b | 100% / 13/13 / worst 0.12 | 100% / 13/13 / worst 0.09 | 100% / 13/13 / worst 0.08 |
+| W2 p50 / W3 bias | 1.27 / −0.088 | 1.27 / −0.085 | 1.25 / −0.080 |
+| W4 最小间距 | +0.018 m CLEAR | −0.047 m CONTACT | +0.026 m CLEAR |
+| W6 p50 / p90 | 0.172 / 0.248 | 0.177 / 0.244 | 0.178 / 0.246 |
+| H2（P0 判据） | FALSE | FALSE | FALSE |
+
+⇒ 除 **H2（tap 时代 380 Hz 速率判据，P0 延后重定义）** 与 **W4 的已知 ±5 cm 接触缺陷**外，
+merged 与 legacy 的行级结果一致。Phase 3 的**功能目标达成**：bridge+supervisor 合并为一个程序、
+84/331 与 class-76 各自单点、yaw 仍只在 `bridge_node.py::send_cmd / send_external_nav_l` 一处转换。
+
+### 回滚与清理
+- `FCU_CLIENT=legacy` 回到历史双进程（bridge+supervisor）路径；`bridge_only/bridge_thread/supervisor_only` 保留为
+  bisect/诊断模式。
+- **不是删掉旧文件**：`fcu_client.py` 的实现就是复用 `bridge_node.BridgeProcess` 与 `supervisor.Supervisor`
+  （合并不是重写），所以这两个模块继续作为库存在；进入飞行路径的"客户端进程"只有一个。
+- 遗留：extnav 的**年龄门/质量门/reset** 现在是"bridge 侧 age 记录 + nav gate 拒绝计数"，尚未把
+  `--nav-max-age-s`/质量阈值做成可配置门限（Phase 3 清单里的下一小步，可在 Phase 4 之后收紧）。

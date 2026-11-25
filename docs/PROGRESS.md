@@ -556,6 +556,22 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 13:35（第 28 条，★ Phase 3 功能目标达成：merged 成为默认飞行路径并连飞两趟 ★）
+
+- **最终根因**：supervisor 与 bridge 共享同一个 rclpy node / 进程全局 executor 时，起飞后 4–5 s 失推力/发散
+  （FCU 的 XKF4.SH 高度创新 1–3 m → 拒绝 extnav）；拆成"每半身自己的 node + 自己的 SingleThreadedExecutor +
+  自己的连接 + 自己的线程"后完全正常。`rclpy.spin_once` 是进程全局 executor，两线程同用会
+  "ValueError: generator already executing"（本次一并修掉）。
+- **形态**：一个程序（`bridge_nodes/mavlink/fcu_client.py`）、两个连接（serial0 = 84/331；serial1 = class-76/守卫）、
+  两个 node（`fcu_client` / `fcu_client_sup`）、两个 executor/线程。`MavlinkBridge._tx_lock` 保留。
+- **验收**：`FCU_CLIENT=merged` 设为**默认**；连飞 `phase4g`、`phase4h` 两趟：
+  H1/H3/H4/H5/H6 + W0b/W1(13/13)/W1b/W2/W3/W5/W6 全过，与 legacy 基线（phase2m）行级一致；
+  仅 H2（tap 时代 380 Hz，P0 延后）与 W4（+0.018 CLEAR / −0.047 CONTACT，已知 ±5 cm 缺陷）不同。
+- **回滚**：`FCU_CLIENT=legacy` 回历史双进程；bridge_only/bridge_thread/supervisor_only 保留为诊断模式。
+- 遗留：extnav 年龄/质量显式门限、legacy 路径清理（连飞达标后）。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

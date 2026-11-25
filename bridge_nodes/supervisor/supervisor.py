@@ -166,7 +166,7 @@ def geofence_verdict(tap, geofence_m, now, grace_s, disagree_m=2.0, ignore_m=50.
 
 
 class Supervisor:
-    def __init__(self, args, bridge=None, node=None, tick_hook=None):
+    def __init__(self, args, bridge=None, node=None, tick_hook=None, executor=None):
         """PHASE 3: `bridge`/`node`/`tick_hook` let the merged client reuse ONE MAVLink connection and ONE
         rclpy node, and drive the bridge half from this supervisor's own pump loop.  Nothing injected keeps
         the historical two-process behaviour."""
@@ -174,6 +174,10 @@ class Supervisor:
         self._injected_bridge = bridge
         self._injected_node = node
         self.tick_hook = tick_hook
+        # PHASE 3: a per-thread executor.  `rclpy.spin_once()` uses a process-global executor, and in the merged
+        # client the bridge half spins its own node in its own thread -- two threads on the global executor raise
+        # "ValueError: generator already executing" (MEASURED 2026-11-25 phase4e).  Each half gets its own.
+        self.executor = executor
         self.t_wall0 = time.monotonic()
         self.tap = TapTruth()
         self.bridge = None
@@ -424,7 +428,10 @@ class Supervisor:
             if until is not None and until():
                 break
             self.bridge.poll()
-            self.rclpy.spin_once(self.node, timeout_sec=0.0)
+            if self.executor is not None:
+                self.executor.spin_once(timeout_sec=0.0)
+            else:
+                self.rclpy.spin_once(self.node, timeout_sec=0.0)
             if self.tick_hook is not None:
                 self.tick_hook(time.monotonic())
             self.check_gates()

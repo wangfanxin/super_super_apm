@@ -176,6 +176,11 @@
 **风险**：ROS 2 的消息时间与现有 CSV 语义差异 → 全部留在派生层解决，不动分析/评分代码。
 
 ### Phase 3 — 单个自建 MAVLink 客户端（2–3 天；D1：不用 mavros）
+> **状态：[完成-功能目标达成] 2026-11-25。** 证据见 [PHASE3-MAVLINK.md](PHASE3-MAVLINK.md)：`FCU_CLIENT=merged`
+> 已是默认飞行路径，连飞 `missionA-phase4g/4h` 两趟：H1/H3/H4/H5/H6 + W0b/W1(13/13)/W1b/W2/W3/W5/W6 全过，
+> 与 legacy 基线行级一致；只有 H2（P0 延后）与 W4 已知缺陷不同。合并形态 = 一个程序、两个连接、两个 node、
+> 两个 executor/线程（bridge：serial0 84/331 自己的线程；supervisor：serial1 class-76+守卫）。
+> 遗留：extnav 年龄/质量阈值做成显式可配置门限、legacy 双进程路径在连飞达标后清理。
 
 **做什么**
 1. bridge 与 supervisor 的**两个连接合并为一条**（一个进程或一个连接对象分派），消息按段分派：84/331/setpoint、76/mode、511 流控、SIM_STATE 108 真值；状态机统一（armed/mode/relay/方案）。不做多进程多连接。

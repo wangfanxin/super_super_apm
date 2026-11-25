@@ -56,11 +56,11 @@ def build_parser():
     # BENCH MODE: run the bridge half only (ONE connection, 84/331, wire/setpoint logs) against SITL with
     # synthetic ROS inputs, and check the rates + the extnav age gate.  No arming, no supervisor, no flight.
     ap.add_argument("--dual-link", action="store_true",
-                    help="DIAGNOSTIC/FALLBACK: keep ONE process and ONE rclpy node, but give the "
-                         "supervisor half its OWN MAVLink connection (serial1) instead of sharing serial0 "
-                         "with messages 84/331.  The historical two endpoints, merged in one client.")
+                    help="compatibility flag: merged mode ALWAYS uses two links now (see main())")
+    ap.add_argument("--legacy-shape", action="store_true",
+                    help="DIAGNOSTIC: merged mode with ONE shared node/connection (the shape that diverged)")
     ap.add_argument("--mav-supervisor", default="tcp:127.0.0.1:5781",
-                    help="the supervisor half's own endpoint when --dual-link is used")
+                    help="the supervisor half's own endpoint (serial1)")
     # BISECT MODES (diagnosis): run ONE half of the merged client in this process, the other half as the
     # historical process.  Phase 3 needs to know WHICH half changes the FCU's behaviour when both live here.
     ap.add_argument("--bridge-thread", action="store_true",
@@ -80,6 +80,16 @@ def build_parser():
 def main(argv=None) -> int:
     ap = build_parser()
     args = ap.parse_args(argv)
+    if getattr(args, "supervisor_only", False):
+        args.client_mode = "supervisor_only"
+    elif getattr(args, "bridge_thread", False):
+        args.client_mode = "bridge_thread"
+    elif getattr(args, "bridge_only", False):
+        args.client_mode = "bridge_only"
+    elif getattr(args, "bench", False):
+        args.client_mode = "bench"
+    else:
+        args.client_mode = "merged"
     if getattr(args, "mav", "") and not str(args.mav).startswith("tcp:127.0.0.1:5780"):
         print("fcu_client: NOTE -- merged mode expects the FCU endpoint on serial0 (5780); using %s"
               % args.mav, flush=True)
@@ -109,11 +119,21 @@ def main(argv=None) -> int:
     # 2026-11-25 phase3s: "no heartbeat on ...:5781").
     _url = args.mav_supervisor if args.supervisor_only else args.mav
     bridge = MavlinkBridge(url=_url, log=log)
+    # ★ TWO NODES, TWO CONNECTIONS, TWO THREADS — THE SHAPE THAT WORKS (PHASE 3, 2026-11-25) ★
+    #   `FCU_CLIENT=bridge_thread` (bridge half + its own thread + its own node, supervisor as the legacy
+    #   process) flew the whole tour; any shape where the supervisor and the bridge half SHARED a node did not
+    #   (single-link pump-driven, single-link threaded, dual-link threaded).  So the merged client keeps each
+    #   half's serial structure exactly as its legacy process had it: the bridge thread owns serial0 AND spins
+    #   the bridge's node; the supervisor owns serial1 AND spins its own node.  One program, one build, one
+    #   place for the FCU interface -- two transports.
+    merged = args.client_mode == "merged"
     bridge_sup = bridge
-    if args.dual_link:
+    node_sup = node
+    if merged:
         bridge_sup = MavlinkBridge(url=args.mav_supervisor, log=log)
-        print("fcu_client: DUAL LINK -- 84/331 on %s, class-76 on %s (one process, one node)"
-              % (args.mav, args.mav_supervisor), flush=True)
+        node_sup = Node("fcu_client_sup")
+        print("fcu_client: MERGED -- 84/331 on %s (bridge thread + its node), class-76 on %s (supervisor + its "
+              "own node)" % (args.mav, args.mav_supervisor), flush=True)
     if args.bridge_thread:
         # BISECT: the bridge half's code, this process, its own thread, NO supervisor.  Discriminates
         # "thread-driven bridge changes behaviour" from "supervisor-in-process changes behaviour".
@@ -195,30 +215,28 @@ def main(argv=None) -> int:
     if args.bench:
         return _bench(args, bridge, node, bp)
 
-    # ★ THE BRIDGE HALF GETS ITS OWN THREAD (PHASE 3, THE FIX FOR `missionA-phase3p`) ★
-    #   Driving 84/331 from the supervisor's 1 kHz `pump` SHOULD have been equivalent to the legacy bridge's own
-    #   loop, and it was not: with the SAME bridge code in this process but with its own loop
-    #   (`FCU_CLIENT=bridge_only`, `missionA-phase3w`) the flight did 13/13 waypoints, while the pump-driven merged
-    #   client lost attitude right after take-off (`phase3p`: the model climbed to 3.3 m for a 2.0 m target and
-    #   the FCU's roll/pitch estimate ran away).  The difference is that the pump is shared with the supervisor's
-    #   gates, commands and callbacks, so the estimator feed's SEND INSTANT drifts with the supervisor's work.
-    #   A dedicated thread restores "the bridge half owns its cadence", which is what the FCU was tuned against.
-    #   Writes are atomic (`MavlinkBridge._tx_lock`); reads (`poll`) stay on this thread.
     import threading as _threading
     import time as _time
+    from rclpy.executors import SingleThreadedExecutor as _Exec
     _run = {"stop": False, "err": None}
-
-    _thread_polls = bool(args.dual_link)
+    _legacy_shape = bool(args.legacy_shape)
+    _node_for_bridge = node
+    # ONE EXECUTOR PER THREAD: `rclpy.spin_once()` is process-global and not reentrant (phase4e crashed with
+    # "generator already executing" when both threads used it).
+    _ex_bridge = None if _legacy_shape else _Exec()
+    _ex_sup = None if _legacy_shape else _Exec()
+    if _ex_bridge is not None:
+        _ex_bridge.add_node(node)
+        _ex_sup.add_node(node_sup)
 
     def _bridge_loop():
         while not _run["stop"]:
             try:
-                if _thread_polls:
-                    # DUAL LINK: the bridge half owns serial0 and must READ it too -- the supervisor's pump
-                    # polls only its own connection, so without this the bridge half's FCU state never updates.
-                    bridge.poll()
+                if not _legacy_shape:
+                    bridge.poll()                       # this thread owns serial0's reads
+                    _ex_bridge.spin_once(timeout_sec=0.0)
                 bp.step(_time.monotonic())
-            except Exception as exc:                                 # noqa: BLE001
+            except Exception as exc:                     # noqa: BLE001
                 if _run["err"] is None:
                     _run["err"] = repr(exc)
                     print("fcu_client: bridge thread EXCEPTION %r" % (exc,), flush=True)
@@ -229,10 +247,13 @@ def main(argv=None) -> int:
     _bt = _threading.Thread(target=_bridge_loop, name="bridge-half", daemon=True)
     _bt.start()
 
-    # THE SUPERVISOR DRIVES ONLY ITS OWN HALF NOW: poll + spin + gates + class-76 (no tick hook).
-    sv = Supervisor(args, bridge=bridge_sup, node=node)
-    print("fcu_client: merged client up -- ONE link %s; 84/331 by the bridge half (own thread), class-76 + "
-          "guards by the supervisor half" % args.mav, flush=True)
+    # supervisOR half: its own node (and, unless --legacy-shape, its own connection)
+    sv = Supervisor(args, bridge=bridge_sup, node=node_sup, executor=_ex_sup)
+    if _legacy_shape:
+        print("fcu_client: merged client (LEGACY ONE-NODE SHAPE) up -- diagnose only", flush=True)
+    else:
+        print("fcu_client: merged client up -- bridge thread owns 84/331 on %s; supervisor owns class-76 + "
+              "guards on %s" % (args.mav, args.mav_supervisor), flush=True)
     try:
         return sv.run()
     finally:
@@ -248,6 +269,10 @@ def main(argv=None) -> int:
                 bridge_sup.close()
             except Exception:
                 pass
+        try:
+            node_sup.destroy_node()
+        except Exception:
+            pass
         try:
             node.destroy_node()
             rclpy.shutdown()
