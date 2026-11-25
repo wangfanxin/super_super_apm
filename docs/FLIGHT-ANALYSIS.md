@@ -19,6 +19,7 @@
 | phase4w | `PRE_GOAL_M=1.5` + 锁存 | goal 单调不再横跳，但暴露新问题：SUPER 到点后 `Traj finish`→WAIT_GOAL，飞机停在 0.5 m 门外，pacer 未判到达 → 参考断流 3 s → **中途 abort**（4/13） |
 | phase4x | 4w + 参考断流时重发 goal + 诊断打印 | **事后复核：这不是"进展"，而是被掩盖的故障**——aircraft 在 pad 停留 40 s（`LEG 2 TIMEOUT ... 9.932 m from waypoint 2`），原因是 corner1 的 PVA 用 outgoing 方向（90° 角）规划不可行 + 我们的"参考断流重发"每 ~1 s 重置一次 SUPER 的 new_goal，规划永远收敛不了；tour 超时后**人工推进**才飞完剩下航点，所以 W1 缺 corner1、W1b 只有 12/13。飞机在 c2 附近与 c5→c6 中段的绕圈（6 处）都发生在这个混乱阶段 |
 | phase4y | `GOAL_LOOKAHEAD_M=1.5` + CORNER_SPEED=1.2 | **失败/坠地**：76.9 s 时 `SIM Hit ground at 2.05 m/s`，W2/W6 False → goal-lookahead 当前不可用 |
+| **phase5a** | 滚动目标 v1：`TARGET_MODE=rolling TARGET_LOOK_M=2.5 TARGET_STEP_M=0.8 TARGET_VREF=1.2 GOAL_PVA=1 CORNER_MODE=bisector CORNER_SPEED=1.2 PASS_BY_M=0.5` | 1.35 m/s 下**首次无 stall、无 timeout、W1 13/13、W2/W6 过**；但 W1b 8/13（lap1 corner6 真值最近 **0.500 m** 卡线，导致 lap2 整段不算）、W4 −0.069 m 接触、12 处绕圈、角点仍有 0.2–1.0 s 指令停顿（12 次共 11.1 s）、114 次 GOAL ROLL（goal 更新≈1.6 Hz，`PlanFromRest failed` 55 次） |
 | phase4z | `PRE_GOAL_M=1.2 CORNER_CARRY_M=0.8 PASS_BY_M=0.5 PASS_BY_LONG_M=1.0 REF_NO_RETRACT=1`（"连续目标+越点判据"原型） | **回归**：12/13 ARRIVED 但 24 处绕圈、每个角点平均转角 178–238°、角点指令最小速度 0.00–0.15 m/s、W6 p90 0.616 → pass-by 半平面判据 + carrot 组合不可用，需重设计 |
 
 结论：角点"不停车"的两个现成机制都还不能直接进交付配置——pre-goal 与验收的"按序到点"口径冲突，
@@ -352,4 +353,24 @@ phase4x 的 corner2 第一圈量化：真值冲过角点 **0.77 m**（到 (5.77,
    用 bisector（phase4s 已验证 W1b 13/13）；
 3. "目标持续推进"必须在**参考可用率 100%、规划不失败**的前提下做，否则任何 carrot/提前换目标都会把
    "参考停滞"放大成绕圈。
+
+## 9. 滚动目标 v1（phase5a）分析与下一步
+
+**实现**（`--target-mode rolling`）：每拍把目标放在航路上"飞机投影点 + look（2.5 m）"处；距角点 ≤ look 时
+目标就是角点本身（不让 A* 切弯），终点速度沿 bisector 出弯方向 1.2 m/s；目标移动 ≥0.8 m 才重发 goal；
+到达仍由 pacer（半径 0.5 m 或 pass-by 0.5 m/1.5 m 盒）决定。
+
+**得到**：`W1 13/13`、`W2 PASS`、`W6 PASS`（spread 0.125）、无 TIMEOUT、无 pad 站死——比 phase4x 干净得多；
+`GOAL ROLL` 114 次 = 目标更新约 1.6 Hz，SUPER 每次当 new_goal 做 rest2rest，`PlanFromRest failed 55` 次。
+
+**仍不合格**：
+1. **W1b 8/13**：lap1 corner6 真值最近距离 0.500 m 卡在盒边界（差一点），光标卡在 target7，lap2 全部无法计入。
+   pass-by 的 0.5 m 横向盒允许切角到 0.5 m，正好把 W1b 推过界。下一版把 `PASS_BY_M=0.3`、`PASS_BY_LONG=1.0`。
+2. **W4 −0.069 m**：滚动目标让角点通过更"斜"，净空比基线差；需要在角点附近保持目标=角点（已做）并把
+   corner speed 降到 0.9 或把 `robot_r` 从 0.10 提到 0.15 观察。
+3. **12 处绕圈、12 次角点指令停顿（0.2–1.0 s）**：指令位置无 >5 cm 跳变，停顿是 handover 瞬间的
+   SUPER 重规划间隙（new_goal→rest2rest→PlanFromRest failed 55 次），不是参考 retract。
+4. 目标更新 1.6 Hz 对 SUPER 偏快：下一步把 `TARGET_STEP_M` 提到 2.0（≈0.7 Hz）先看绕圈/停顿是否下降；
+   若仍不行，就在 SUPER 侧打补丁：new_goal 且目标前移 < 3 m 时走 `ReplanOnce`（用旧轨迹做 guide）
+   而不是 `PlanFromRest`，让"目标持续推进"在规划器内部平滑实现，而不是靠 plan box 频繁换 goal。
 

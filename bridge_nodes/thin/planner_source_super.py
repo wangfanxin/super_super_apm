@@ -412,6 +412,17 @@ def main() -> int:
     ap.add_argument("--poly-check", type=int, default=0,
                     help="1 = 每秒把多项式在当前时刻求值，与 100 Hz 参考对比并打印误差（零行为改动，"
                          "用来确认系数排布与时钟对得上）。")
+    ap.add_argument("--target-mode", default="corner", choices=("corner", "rolling"),
+                    help="★ 目标持续推进（owner 2026-11-26）★ corner = 历史行为（目标=角点，航点状态机逐点推进）；"
+                         "rolling = 每拍把目标放在**航路上当前位置前方 --target-look-m 米**（不超过角点外 "
+                         "0.8 m），目标随飞机连续前移、绝不停在角点/轨迹末点；到达仍由 pacer 的半径/pass-by "
+                         "判据决定。需要 GOAL_PVA=1（终点带速度）否则目标点会退化成静止终点。")
+    ap.add_argument("--target-look-m", type=float, default=3.0,
+                    help="rolling 模式下目标点超前飞机的航路弧长，m（3 m @1.35 m/s ≈ 2.2 s 前视）。")
+    ap.add_argument("--target-step-m", type=float, default=0.8,
+                    help="目标点移动超过这个距离才重发 goal（避免每拍 new_goal 把 SUPER 的 FSM 打爆）。")
+    ap.add_argument("--target-vref", type=float, default=0.0,
+                    help="rolling 目标点的终点速度大小（m/s）；0 = 用 --corner-speed。方向沿航路切线。")
     ap.add_argument("--corner-carry-m", type=float, default=0.0,
                     help="★ 目标持续推进（carrot）：当 --pre-goal-m 已经把本 leg 的目标推进后，把发给 SUPER 的"
                          "目标点从角点沿**出弯方向**再前移这么多米（不在角点上停车）。与 --goal-lookahead-m 不同："
@@ -846,6 +857,92 @@ def main() -> int:
         #   而 A* 只有 2 m 的余量、切不出大弯 —— 与 §41 的 lead=1 不同（那是离角点 15 m 就换目标，
         #   A* 直接切掉 8-9 m，W1b 只有 7/13）。
         #   到达判据不变：pacer 仍然量到 pacer.i_leg 那个角点（pass-by 盒子）。
+        # ★ WHTF-ROLLING-TARGET (2026-11-26, owner "设置目标！持续推进！") ★
+        #   The stock behaviour re-aims SUPER at each corner, and every SUPER trajectory ENDS AT REST at its
+        #   goal, so the aircraft must decelerate at every corner / at the end of every plan.  MEASURED
+        #   (phase4x): corner-2 first lap overshoot 0.77 m, 325 deg of winding, then 14 s of |cmd v|<0.1.
+        #   Rolling mode instead puts the goal on the ROUTE, `--target-look-m` ahead of the vehicle's own
+        #   projection, capped 0.8 m past the current corner, and carries the route tangent as the terminal
+        #   velocity (PVA).  The goal therefore moves with the aircraft and is never a place to stop; the
+        #   pacer's radius/pass-by test remains the ONLY arrival authority (so W1/W1b bookkeeping is
+        #   untouched).  The goal is re-sent only when the moving target has advanced `--target-step-m`
+        #   (0.8 m) or the leg changed -- a fine-grained resend would restart the FSM's new_goal every tick.
+        tmode = str(getattr(args, "target_mode", "corner"))
+        look = float(getattr(args, "target_look_m", 0.0) or 0.0)
+        step = max(0.1, float(getattr(args, "target_step_m", 0.8) or 0.8))
+        vref = float(getattr(args, "target_vref", 0.0) or 0.0)
+        if vref <= 0.0:
+            vref = float(getattr(args, "corner_speed", 1.2) or 1.2)
+        if tmode == "rolling" and look > 0.0 and state["p_l"] is not None \
+                and 1 <= pacer.i_leg < len(corners_l) - 1:
+            prev = corners_l[pacer.i_leg - 1]
+            cur = corners_l[pacer.i_leg]
+            nxt = corners_l[pacer.i_leg + 1]
+            u = (cur - prev)[:2]
+            Lseg = float(np.linalg.norm(u))
+            if Lseg > 1e-6:
+                u = u / Lseg
+                p_l = np.asarray(state["p_l"], float)
+                s = float(np.clip((p_l[:2] - prev[:2]) @ u, 0.0, Lseg))
+                # 目标点规则（避免切弯）：远处沿本 leg 连续前移；进入"距角点 <= look"后目标**就是角点**
+                # （轨迹穿过角点，W1b 的真值 0.5 m 盒不会被切掉），终点速度给 bisector 出弯速度；
+                # pacer 一到点（半径/pass-by）就换下一条 leg，目标随即落到下一段 3 m 处 —— 飞机不用停。
+                uo = (nxt - cur)[:2]
+                no = float(np.linalg.norm(uo))
+                uo = uo / no if no > 1e-6 else u
+                if (Lseg - s) <= look:
+                    tgt_l = cur[:2]
+                    mode = str(getattr(args, "corner_mode", "bisector"))
+                    if mode == "incoming":
+                        tang = u
+                    elif mode == "outgoing":
+                        tang = uo
+                    else:
+                        bib = u + uo
+                        nb = float(np.linalg.norm(bib))
+                        tang = bib / nb if nb > 1e-6 else uo
+                    v_out_now = float(getattr(args, "corner_speed", 1.2) or 1.2)
+                else:
+                    s_t = s + look
+                    tgt_l = prev[:2] + u * s_t
+                    tang = u
+                    v_out_now = vref
+                tgt_l3 = np.array([tgt_l[0], tgt_l[1], cur[2]], float)
+                last = state.get("roll_last_pt")
+                leg_changed = state.get("roll_last_leg") != pacer.i_leg
+                if last is None or leg_changed or float(np.linalg.norm(tgt_l3 - last)) >= step or force:
+                    state["roll_last_pt"] = tgt_l3.copy()
+                    state["roll_last_leg"] = pacer.i_leg
+                    vel_l = np.array([tang[0] * v_out_now, tang[1] * v_out_now, 0.0], float)
+                    if int(getattr(args, "goal_pva", 0)):
+                        m = MarsMsg()
+                        m.header.stamp = node.get_clock().now().to_msg()
+                        m.header.frame_id = cmd_stream.FRAME_L
+                        m.position.x, m.position.y, m.position.z = (float(tgt_l3[0]), float(tgt_l3[1]),
+                                                                    float(tgt_l3[2]))
+                        m.velocity.x, m.velocity.y, m.velocity.z = (float(vel_l[0]), float(vel_l[1]),
+                                                                    float(vel_l[2]))
+                        m.acceleration.x = m.acceleration.y = m.acceleration.z = 0.0
+                        m.jerk.x = m.jerk.y = m.jerk.z = 0.0
+                        m.yaw, m.yaw_dot = 0.0, 0.0
+                        m.trajectory_id = int(pacer.i_leg + 1)
+                        m.trajectory_flag = 1
+                        goal_pva_pub.publish(m)
+                    else:
+                        g = PoseStamped()
+                        g.header.stamp = node.get_clock().now().to_msg()
+                        g.header.frame_id = cmd_stream.FRAME_L
+                        g.pose.position.x, g.pose.position.y, g.pose.position.z = (float(tgt_l3[0]),
+                                                                                   float(tgt_l3[1]),
+                                                                                   float(tgt_l3[2]))
+                        g.pose.orientation = Quaternion(w=1.0)
+                        goal_pub.publish(g)
+                    print("GOAL ROLL leg %d: target L(%.2f, %.2f) s=%.2f/%.2f m v_ref %.2f%s"
+                          % (pacer.i_leg + 1, tgt_l3[0], tgt_l3[1], float(np.clip(s + look, 0, Lseg)), Lseg, v_out_now,
+                             "  [resend]" if force else ""), flush=True)
+                    state["last_goal_t"] = now_goal()
+            return
+
         pre = float(getattr(args, "pre_goal_m", 0.0) or 0.0)
         sent_i = pacer.i_leg
         # ⚠ 停机坪那一条腿（i_leg=0，竖直起飞）**不能用 pre-goal**：实测 missionA-pg-01（tag 撞名，
