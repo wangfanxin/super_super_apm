@@ -1,0 +1,26 @@
+# BENCH TUNING VARIANT 4 (2026-11-26): the horizontal loop of bench2 (fast p90 0.218 m) with the VERTICAL loop
+# left at the stock values (bench2's PSC_D_POS_P 1.5 oscillated: z p90 0.50 m; bench3 1.2 was worse 0.61 m).
+# A/B target: 6-9 m/s horizontal p90 <= 0.20 m with no vertical penalty.
+WP_SPD       8.0
+WP_ACC       9.0      # ← 10.0 -> 9.0: allows less correction saturation without under-driving 8 m/s^2
+WP_JERK      30.0
+WP_RADIUS_M  0.5
+ATC_ANGLE_MAX 55.0
+ATC_ANG_RLL_P 13.0    # ← 12
+ATC_ANG_PIT_P 13.0    # ← 12
+ATC_RAT_RLL_P 0.18
+ATC_RAT_RLL_I 0.19
+ATC_RAT_RLL_D 0.006
+ATC_RAT_PIT_P 0.18
+ATC_RAT_PIT_I 0.19
+ATC_RAT_PIT_D 0.006
+ATC_RAT_YAW_P 0.35
+ATC_RAT_YAW_I 0.035
+PSC_NE_POS_P 2.8      # ← 2.5
+PSC_NE_VEL_P 3.2      # ← 3.0
+PSC_NE_VEL_I 1.4
+PSC_NE_VEL_D 0.30
+PSC_NE_JERK  180.0    # ← 150
+# vertical loop: STOCK (the stiff variants were worse)
+MOT_THST_HOVER 0.39
+MOT_THST_EXPO 0.65

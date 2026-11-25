@@ -1,0 +1,27 @@
+# BENCH TUNING VARIANT 2 (2026-11-26): stiffer horizontal loop + vertical loop + attitude, WP_ACC 10.
+# A/B against guided_limits_bench.parm on the PVA tracking bench (bench_source.py, /plan/cmd analytic sine).
+# The only differences from bench v1 are marked with  ← tuned.
+WP_SPD       8.0
+WP_ACC       10.0    # ← 8.0 -> 10.0: the sine demands 8 m/s^2 and real tracking adds correction on top
+WP_JERK      30.0
+WP_RADIUS_M  0.5
+ATC_ANGLE_MAX 55.0
+ATC_ANG_RLL_P 12.0   # ← 10 -> 12
+ATC_ANG_PIT_P 12.0   # ← 10 -> 12
+ATC_RAT_RLL_P 0.18   # ← 0.16
+ATC_RAT_RLL_I 0.18
+ATC_RAT_RLL_D 0.006
+ATC_RAT_PIT_P 0.18
+ATC_RAT_PIT_I 0.18
+ATC_RAT_PIT_D 0.006
+ATC_RAT_YAW_P 0.35
+ATC_RAT_YAW_I 0.035
+PSC_NE_POS_P 2.5     # ← 2.0
+PSC_NE_VEL_P 3.0     # ← 2.5
+PSC_NE_VEL_I 1.4     # ← 1.2
+PSC_NE_VEL_D 0.30    # ← 0.25
+PSC_NE_JERK  150.0   # ← 120
+PSC_D_POS_P  1.2     # ← bench2's 1.5 oscillated (z p90 0.52 m); try 1.2
+PSC_D_VEL_P  5.5     # ← 6.0
+MOT_THST_HOVER 0.39
+MOT_THST_EXPO 0.65
