@@ -645,6 +645,19 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 16:50（第 34 条，Phase 3 遗留收尾：extnav 年龄/质量/reset 显式门 + 单元测试）
+
+- 新增 `bridge_nodes/mavlink/nav_gates.py`（无 ROS/MAVLink 依赖的决策表）：`refusal_reason(physical_ok, age, quality,
+  min_quality, max_age)` → `0=sent / 1=physical / 2=stale / 3=quality`，顺序物理>陈旧>质量；`describe()` 给状态行用。
+- bridge 新增参数：`--nav-quality`(默认100)、`--nav-min-quality`(0=关)、`--nav-max-age-s`(0=关)、`--nav-reset-gap-s`(0=关，
+  开启后两次已发送样本间隔超限 → reset_counter++，EKF 接受跳变)；`send_external_nav*()` 的 quality/reset_counter 变成参数。
+- 记录：`nav.csv` 的 `refused` 变为原因码，新增 `quality,reset_counter` 列；状态行加 `nav_age_ref/nav_q_ref/nav_resets`。
+- **默认与交付行为逐位等价**（quality 100、三门全关），不会改变飞行；飞行开法 `BRIDGE_ARGS="--nav-max-age-s 0.3 ..."`。
+- 测试：新增 `tests/check_nav_gates.py` 入门禁；`tests/check_fcu_client.sh` 主 bench 保持 47.1 Hz/relay 500/age-gate PASS，
+  并断言生产默认下 quality=100/reset=0/refused=0 且两列存在。`tests/run_all.sh` GATE: PASS。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

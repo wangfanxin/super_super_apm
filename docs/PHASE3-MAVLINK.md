@@ -361,3 +361,25 @@ merged 与 legacy 的行级结果一致。Phase 3 的**功能目标达成**：br
   （合并不是重写），所以这两个模块继续作为库存在；进入飞行路径的"客户端进程"只有一个。
 - 遗留：extnav 的**年龄门/质量门/reset** 现在是"bridge 侧 age 记录 + nav gate 拒绝计数"，尚未把
   `--nav-max-age-s`/质量阈值做成可配置门限（Phase 3 清单里的下一小步，可在 Phase 4 之后收紧）。
+
+
+## ★ 第 10 步：extnav 的显式年龄/质量/reset 门（2026-11-25 16:45，Phase 3 遗留收尾）★
+
+Phase 3 清单里最后一项"extnav 年龄门/质量/reset"从"隐式行为"变成**显式、可配、可测**的接口：
+
+| 项 | 之前 | 现在 |
+|---|---|---|
+| 拒绝原因 | 只有物理门（`nav_gate_ok`）；年龄只记录 | **命名决策表** `bridge_nodes/mavlink/nav_gates.py::refusal_reason`：`0=sent, 1=physical gate, 2=stale(age), 3=quality floor`，顺序=物理 > 陈旧 > 质量 |
+| 年龄门 | 无（FCU 自己 300 ms 判不健康） | `--nav-max-age-s`（默认 0=关；飞行建议 0.2–0.3） |
+| 质量 | 硬编码 100 | `--nav-quality`（默认 100）+ `--nav-min-quality`（默认 0=关） |
+| reset | 硬编码 0 | `--nav-reset-gap-s`（默认 0=关）：两次**已发送**样本间隔超过该值 → `reset_counter++`，让 EKF3 接受跳变而不是当坏创新拒绝 |
+| 记录 | `nav.csv refused` 是 0/1 | `refused` 现在是原因码，并新增 `quality,reset_counter` 两列；状态行加 `nav_age_ref/nav_q_ref/nav_resets` |
+
+**默认完全等价于交付行为**（quality 100、三道门全关、refused 全 0），因此不改变飞行；要开飞行门限用
+`BRIDGE_ARGS="--nav-max-age-s 0.3 --nav-min-quality 50 --nav-reset-gap-s 0.5"`（run-mission 会把 `$BRIDGE_ARGS` 透传）。
+
+**验证**：
+- `tests/check_nav_gates.py`（新，入门禁 `tests/run_all.sh`）：单元级钉死决策表/顺序/默认 pass-through；
+- `tests/check_fcu_client.sh --bench`（SITL+合成输入，真实 MAVLink 链路）：nav.csv 出现 `quality,reset_counter`
+  两列且生产默认全 pass-through，`nav #331 47.1 Hz`、relay 500 发、age-gate seen -> PASS；
+- `tests/run_all.sh` GATE: PASS。

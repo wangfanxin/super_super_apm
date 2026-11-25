@@ -38,6 +38,9 @@ import json
 import math
 import os
 import sys
+
+# the explicit external-nav refusal table (module-level so it is unit-testable without ROS/MAVLink)
+from mavlink import nav_gates
 import time
 
 import numpy as np
@@ -386,6 +389,16 @@ class BridgeProcess:
         #: monotone floor for the estimator feed's time_usec (EKF3 rejects/ignores a sample whose stamp is
         #: older than the last one it saw; the boot-clock conversion jitters by a few ms)
         self._last_feed_us = 0
+        # explicit extnav gates (see the argument help): all disabled/pass-through by default
+        self._nav_quality = max(0, min(100, int(getattr(args, "nav_quality", 100) or 0)))
+        self._nav_min_quality = int(getattr(args, "nav_min_quality", 0) or 0)
+        self._nav_max_age = float(getattr(args, "nav_max_age_s", 0.0) or 0.0)
+        self._nav_reset_gap = float(getattr(args, "nav_reset_gap_s", 0.0) or 0.0)
+        self._nav_reset_counter = 0
+        self._nav_last_ok_wall = 0.0
+        self.nav_age_refused = 0
+        self.nav_quality_refused = 0
+        self.nav_resets = 0
         #: THE ESTIMATOR FEED'S OWN RECORD (--nav-log): one row per #331 actually sent, so a corrupted feed can
         #: be read back instead of guessed at.  Added in PHASE 3 after `phase3a` and the FCU's runway.
         self.nav_log = None
@@ -608,7 +621,24 @@ class BridgeProcess:
         if now >= self.next_nav:
             self.next_nav = now + 1.0 / self.args.nav_hz
             if self.lio["n"]:
-                _ok = self.nav_gate_ok(self.lio["t_us"], self.lio["p"], self.lio["q"])
+                _phys_ok = self.nav_gate_ok(self.lio["t_us"], self.lio["p"], self.lio["q"])
+                _age = (now - self.lio["last_wall"]) if self.lio["last_wall"] else 0.0
+                # the decision table lives in nav_gates.py so it is unit-testable without a flight
+                _refuse_why = nav_gates.refusal_reason(_phys_ok, _age, self._nav_quality,
+                                                       self._nav_min_quality, self._nav_max_age)
+                _ok = _refuse_why == 0
+                if _refuse_why == 2:
+                    self.nav_age_refused += 1
+                elif _refuse_why == 3:
+                    self.nav_quality_refused += 1
+                if _ok:
+                    if self._nav_last_ok_wall and (now - self._nav_last_ok_wall) > self._nav_reset_gap > 0.0:
+                        self._nav_reset_counter = (self._nav_reset_counter + 1) & 0xFF
+                        self.nav_resets += 1
+                        self.log("bridge: estimator feed resumed after %.2f s -- declaring a RESET to the EKF "
+                                 "(reset_counter=%d)" % (now - self._nav_last_ok_wall,
+                                                         self._nav_reset_counter))
+                    self._nav_last_ok_wall = now
                 if _ok:
                     # ★ THE ESTIMATOR FEED IS STAMPED WITH REAL TIME, NEVER WITH SIMULATION OR FCU TIME ★
                     #   OWNER DIRECTIVE 2026-11-25: "必须用真实 time.time/mono 给的时间，即使是仿真也要尽量实时"
@@ -627,7 +657,9 @@ class BridgeProcess:
                     self._last_feed_us = t_feed
                     self.bridge.send_external_nav_l(t_feed, self.lio["p"], self.lio["q"],
                                                     self.lio["v"], self.calib,
-                                                    z_trim=getattr(self.args, "nav_z_trim_m", 0.0))
+                                                    z_trim=getattr(self.args, "nav_z_trim_m", 0.0),
+                                                    quality=self._nav_quality,
+                                                    reset_counter=self._nav_reset_counter)
                     self.nav_sent += 1
                 if self.nav_log is not None:
                     p_, q_, v_ = self.lio["p"], self.lio["q"], self.lio["v"]
@@ -643,12 +675,13 @@ class BridgeProcess:
                     t_feed_log = locals().get("t_feed", 0) if _ok else 0
                     self.nav_log.write(
                         "%.4f,%d,%d,%.4f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.6f,%.6f,%.6f,%.6f,%d,"
-                        "%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%d,%d,%d,%s,%.1f\n"
+                        "%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%d,%d,%d,%s,%.1f,%d,%d\n"
                         % (now, int(t_feed_log), int(self.lio["t_us"]), age, p_[0], p_[1], p_[2],
                            v_[0], v_[1], v_[2],
-                           q_[0], q_[1], q_[2], q_[3], 0 if _ok else 1,
+                           q_[0], q_[1], q_[2], q_[3], int(_refuse_why),
                            fpos[0], fpos[1], fpos[2], fvel[0], fvel[1], fvel[2],
-                           ekf_ok, ekf_flags, armed, mode, self.nav_hz_measured))
+                           ekf_ok, ekf_flags, armed, mode, self.nav_hz_measured,
+                           int(self._nav_quality), int(self._nav_reset_counter)))
                     self._nav_log_n += 1
                     if self._nav_log_n % 100 == 0:
                         self.nav_log.flush()
@@ -746,11 +779,13 @@ class BridgeProcess:
         # bite?" is a measurable question and the whole point of the clamps is that they should be the
         # plan's OWN envelope (max_vel / max_acc) and therefore almost never bind.  `cv`/`ca`/`sa` are
         # clamped-velocity / clamped-acceleration / slewed-acceleration sample counts since launch.
-        return ("nav_hz=%.1f nav_age=%.2f nav_sent=%d nav_skip=%d lio_hz=%.1f relay=%d sent=%d mode=%s armed=%d "
+        return ("nav_hz=%.1f nav_age=%.2f nav_sent=%d nav_skip=%d nav_age_ref=%d nav_q_ref=%d nav_resets=%d "
+                "lio_hz=%.1f relay=%d sent=%d mode=%s armed=%d "
                 "plan_rx=%d plan_ids=%d plan_age=%.2f plan_flag=%s refused=%d cv=%d ca=%d sa=%d sr=%d"
                 % (self.nav_hz_measured,
                    0.0 if not self.lio["n"] else time.monotonic() - self.lio["last_wall"],
-                   self.nav_sent, self.nav_skipped, self.lio.get("rate_slow", 0.0),
+                   self.nav_sent, self.nav_skipped, self.nav_age_refused, self.nav_quality_refused,
+                   self.nav_resets, self.lio.get("rate_slow", 0.0),
                    1 if self.relay.enabled else 0,
                    self.relay.n_sent, st.mode, 1 if st.armed else 0, self.relay.n_rx,
                    len(self.relay.ids_seen), self.relay.age_s(), self.relay.last_flag,
@@ -823,7 +858,11 @@ class BridgeProcess:
         if getattr(self.args, "nav_log", ""):
             self.nav_log = open(self.args.nav_log, "w")
             self.nav_log.write("t_wall,t_feed_us,t_us,age_s,px,py,pz,vx,vy,vz,qw,qx,qy,qz,refused,"
-                               "fcu_x,fcu_y,fcu_z,fcu_vx,fcu_vy,fcu_vz,ekf_ok,ekf_flags,armed,mode,nav_hz\n")
+                               "fcu_x,fcu_y,fcu_z,fcu_vx,fcu_vy,fcu_vz,ekf_ok,ekf_flags,armed,mode,nav_hz,"
+                               "quality,reset_counter\n")
+            # `refused` is a REASON CODE: 0 = sent, 1 = physical gate, 2 = stale (age gate), 3 = quality
+            # floor.  `quality`/`reset_counter` are the two ODOMETRY fields the Phase-3 spec asks to make
+            # explicit; before 2026-11-25 they were hardcoded 100 / 0 and therefore never visible.
         if getattr(self.args, "wire_log", ""):
             self.wire_log = open(self.args.wire_log, "w")
             # `frame_id` = the MAVLink frame the setpoint goes out in (1 = LOCAL_NED, the only one
@@ -934,6 +973,22 @@ def add_bridge_arguments(ap):
     ap.add_argument("--calib-file", default="")
     ap.add_argument("--wire-hz", type=float, default=50.0)
     ap.add_argument("--nav-hz", type=float, default=48.0)
+    # ---- EXPLICIT EXTERNAL-NAV GATES (PHASE 3 closeout, 2026-11-25) -------------------------------
+    # D3 asks for the estimator feed to have explicit AGE / QUALITY / RESET semantics instead of "whatever
+    # the LIO last said".  Defaults reproduce the delivered behaviour exactly (quality 100, every check
+    # off); the flight values below are exercised by `tests/check_fcu_client.sh --bench`.
+    ap.add_argument("--nav-quality", type=int, default=100,
+                    help="ODOMETRY.quality sent with every sample (0..100).  ArduPilot consumes the sample "
+                         "only if quality >= VISO_QUAL_MIN (default 0); -1 means 'estimator failed'")
+    ap.add_argument("--nav-min-quality", type=int, default=0,
+                    help="refuse to send when --nav-quality is below this (0 = off)")
+    ap.add_argument("--nav-max-age-s", type=float, default=0.0,
+                    help="refuse a LIO sample older than this many seconds (0 = off; ArduPilot itself calls "
+                         "the extnav unhealthy after 300 ms, so a flight value is 0.2-0.3)")
+    ap.add_argument("--nav-reset-gap-s", type=float, default=0.0,
+                    help="a gap between two SENT samples longer than this many seconds declares an estimator "
+                         "reset (reset_counter++), so EKF3 accepts the jump instead of rejecting it "
+                         "(0 = off)")
     ap.add_argument("--fields", dest="setpoint_mode", default="pos", choices=["pos", "posvel", "posvelacc"])
     # ---- CLAMPS ON THE FORWARDED FEED-FORWARD (round 85) -------------------------------------------
     # WHY: opening the acceleration channel (`--fields posvelacc`) hands ArduPilot a number that its

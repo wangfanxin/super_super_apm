@@ -59,9 +59,25 @@ if rows:
           % (len(rows), len(feeds), (min(feeds) if feeds else "n/a"), mono))
     if not mono:
         raise SystemExit(1)
+    # PHASE 3 closeout gates: quality/reset_counter are now FIELDS, and the age gate must refuse (reason 2)
+    # after tests/fake_fcu_inputs.py stops the LIO stream at t=6 s (bench runs ~10 s).
+    if "quality" not in rows[0] or "reset_counter" not in rows[0]:
+        print("nav.csv: FAIL -- quality/reset_counter columns missing (Phase 3 gates not wired)")
+        raise SystemExit(1)
+    # production defaults: quality 100, every explicit gate OFF -> reason 0 everywhere, reset_counter 0.
+    # The gate DECISION TABLE itself is unit-tested in tests/check_nav_gates.py (no flight needed).
+    quals = sorted({int(r["quality"]) for r in rows})
+    resets = sorted({int(r["reset_counter"]) for r in rows})
+    reasons = sorted({int(r["refused"]) for r in rows})
+    print("nav.csv: quality=%s reset_counter=%s refused=%s (production defaults)"
+          % (quals, resets, reasons))
+    if quals != [100] or resets != [0] or reasons != [0]:
+        print("nav.csv: FAIL -- production defaults are not pass-through")
+        raise SystemExit(1)
 else:
     print("nav.csv: MISSING")
 INNER
 tail -3 "$D/fcu.log"
+
 echo "logs: $D (fcu.log, setpoints.csv, wire.csv)"
 exit $RC

@@ -560,7 +560,8 @@ class MavlinkBridge(Bridge):
         self._sent_positions += 1
         return p_f
 
-    def send_external_nav_l(self, t_us: int, p_l, q_l, v_l, calib, z_trim=0.0):
+    def send_external_nav_l(self, t_us: int, p_l, q_l, v_l, calib, z_trim=0.0,
+                            quality: int = 100, reset_counter: int = 0):
         """The LIO's pose in **L**, fed to the FCU in ONE conversion -- the estimator path's L -> wire.
 
         The counterpart of `send_cmd` on the other side of the bridge: the mission used to do this
@@ -585,9 +586,11 @@ class MavlinkBridge(Bridge):
             p_f[2] += float(z_trim)
         q_f = frames.q_from_R(calib.R_WL @ frames.R_from_q(q_l))
         v_f = None if v_l is None else frames.l_to_wire_velocity(v_l, calib)
-        self.send_external_nav(t_us, p_f, q_f, v_f)
+        self.send_external_nav(t_us, p_f, q_f, v_f, quality=quality,
+                               reset_counter=reset_counter)
 
-    def send_external_nav(self, t_us: int, p_f, q_f, v_f=None):
+    def send_external_nav(self, t_us: int, p_f, q_f, v_f=None, quality: int = 100,
+                          reset_counter: int = 0):
         """The LIO's pose in F (ENU labels, z up), sent as ODOMETRY in the frame pair the firmware reads.
 
         EVERY field is converted here, and the quaternion is the one that cost a flight:
@@ -624,7 +627,7 @@ class MavlinkBridge(Bridge):
             float(v_body_frd[0]), float(v_body_frd[1]), float(v_body_frd[2]),
             0.0, 0.0, 0.0,
             [0.0] * 21, [0.0] * 21,
-            0, mavutil.mavlink.MAV_ESTIMATOR_TYPE_VISION, 100)
+            int(reset_counter), mavutil.mavlink.MAV_ESTIMATOR_TYPE_VISION, int(quality))
         self._sent_nav += 1
 
     # ---- convenience for the harness --------------------------------------------------------
