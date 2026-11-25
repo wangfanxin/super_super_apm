@@ -195,6 +195,10 @@
 **风险**：合并后状态机/流控边界增多；yaw 只有一条转换路径后要回归 ego 臂 → 用同一趟回放做单元级对比。
 
 ### Phase 4 — 轻量仿真与 rviz 完善（1–2 天；D2：不引入 Gazebo）
+> **状态：[代码完成-待 A/B 切换] 2026-11-25。** 见 [PHASE4-SIM.md](PHASE4-SIM.md)：图案整窗均匀抽点 +
+> 窗口逐扫描前进（`--new-lidar`/`SIM_LIDAR_SCHEDULER=new`，**默认仍 legacy**）、`--scan-csv` 每帧 CSV 且 H6 改读它、
+> `sim/rviz/pipeline.rviz` + `scripts/viz_bridge.py` + `scripts/replay_bag_rviz.sh` 组成单一回放入口。
+> 首趟新调度飞行整圈 13/13 但 W6 spread 0.379 > 0.15 ⇒ 按计划先做 3 趟 A/B 再切默认。
 
 **做什么**
 1. 修 **图案窗口只在启动时加载一次**（`start` 随扫描推进）与 **12000 点=60 ms 突发**（按整窗均匀抽点或默认 20000）两个问题。

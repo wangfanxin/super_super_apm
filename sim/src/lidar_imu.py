@@ -235,6 +235,16 @@ class Sensor:
         self.accel_bias = np.asarray(accel_bias, dtype=float) * np.ones(3)
         self.rng = np.random.default_rng(seed)
 
+    def set_pattern(self, rays, times):
+        """PHASE 4: advance to the next window of the vendor pattern (non-repetitive sensor).
+
+        Cheap by design: `rays`/`times` are numpy views into the pre-loaded pattern, so a 10 Hz scan does
+        not re-read a 16 MB CSV.  Legacy scheduling keeps the ONE window loaded at startup and never calls
+        this -- that is what `SIM_LIDAR_LEGACY=1` reproduces.
+        """
+        self.rays = rays
+        self.times = times
+
     def scan(self, buf: TruthBuffer, t_start_us: int):
         """Cast one scan whose points span [t_start, t_start + times[-1]] with per-point poses."""
         t_pts = t_start_us + np.rint(self.times * 1e6).astype(np.int64)
@@ -513,6 +523,18 @@ def main() -> int:
                          "scan matching and any S<->W round trip cannot see it.  The pillar direction "
                          "test in tools/pillar-fit.py is what can, and this flag proves it")
     ap.add_argument("--points", type=int, default=20000, help="points per scan")
+    ap.add_argument("--scan-csv", default="",
+                    help="PHASE 4: one row per scan attempt (t_start_us,cast_ms,points,reason); H6 reads it")
+    ap.add_argument("--pattern-window-s", type=float, default=0.0,
+                    help="seconds of the vendor pattern one scan uses (0 = 1/scan-hz).  With the legacy "
+                         "scheduler this is ignored: it uses only the first --points rows")
+    ap.add_argument("--legacy-lidar", action="store_true",
+                    help="legacy scheduler: one fixed pattern window loaded at startup, contiguous rows "
+                         "(this is the DEFAULT until the 3-flight A/B is done)")
+    ap.add_argument("--new-lidar", action="store_true",
+                    help="PHASE 4 scheduler: each scan uses the NEXT 1/scan-hz window of the vendor pattern "
+                         "and its points are spread uniformly over the whole window.  Also selected by "
+                         "SIM_LIDAR_SCHEDULER=new; SIM_LIDAR_LEGACY=1 forces the legacy path")
     ap.add_argument("--scan-hz", type=float, default=10.0)
     ap.add_argument("--imu-hz", type=float, default=200.0)
     ap.add_argument("--cloud-topic", default="/livox/lidar")
@@ -575,7 +597,47 @@ def main() -> int:
               "  pass --pattern, or --allow-synth for a smoke test only (a synthesised pattern has a\n"
               "  different blind zone and repeats, so no measurement may be taken with it).")
         return 1
-    rays, times, src = raycast.load_pattern(pattern, n=args.points)
+    # PHASE 4: TWO SCHEDULERS.  `legacy` is what the delivered flights used: ONE window of the vendor
+    # pattern, loaded at startup from the first --points rows (so 12 000 points = a 60 ms burst inside a
+    # 100 ms period) and never advanced.  The default is the corrected one: every scan uses the NEXT
+    # --pattern-window-s of the pattern (a real non-repetitive MID-360) and its points are spread over that
+    # whole window.  `SIM_LIDAR_LEGACY=1` (or --legacy-lidar) switches back for the A/B.
+    # DEFAULT IS STILL LEGACY.  The corrected scheduler exists and is unit-checked (scripts/check_pattern.sh)
+    # and bench-checked (scans.csv spans the full period, window advances), but the plan requires a
+    # 3-flight A/B before it becomes the default: the first new-scheduler flight finished the whole tour
+    # (13/13) yet its W6 lag spread was 0.379 s against the 0.15 bound, i.e. a change this sensor-side is
+    # visible in the control rows and needs the A/B set before flipping.
+    _want_new = bool(args.new_lidar) or os.environ.get("SIM_LIDAR_SCHEDULER", "legacy") == "new"
+    legacy_lidar = (not _want_new) or bool(args.legacy_lidar) or \
+        os.environ.get("SIM_LIDAR_LEGACY", "0") == "1"
+    pattern_all = None
+    pattern_dt = None
+    window_rows = 0
+    scan_index = 0
+    if legacy_lidar:
+        rays, times, src = raycast.load_pattern(pattern, n=args.points)
+    else:
+        rays_all, times_all, src = (None, None, "synthesised")
+        pattern_ok = False
+        if pattern and os.path.exists(pattern):
+            try:
+                rays_all, times_all, src = raycast.load_pattern_all(pattern)
+                pattern_ok = True
+            except Exception as exc:                            # noqa: BLE001
+                print("  WARNING: could not load the whole pattern (%s); falling back to legacy window"
+                      % exc, flush=True)
+                rays, times, src = raycast.load_pattern(pattern, n=args.points)
+        if not pattern_ok:
+            rays, times, src = raycast.load_pattern(pattern, n=args.points)
+        else:
+            pattern_all = rays_all
+            pattern_times = times_all
+            pattern_dt = float(np.median(np.diff(times_all))) if len(times_all) > 1 else 5e-6
+            window_s = args.pattern_window_s if args.pattern_window_s > 0 else 1.0 / args.scan_hz
+            window_rows = max(1, int(round(window_s / max(pattern_dt, 1e-9))))
+            idx0 = raycast.window_indices(args.points, 0, window_rows, len(rays_all))
+            rays = rays_all[idx0]
+            times = times_all[idx0] - times_all[idx0][0]
     if "synth" in src.lower() and not args.allow_synth:
         print("REFUSING to run on a synthesised pattern (%s)" % src)
         return 1
@@ -585,8 +647,11 @@ def main() -> int:
         rays = rays.copy()
         rays[:, 0] = -rays[:, 0]
         print("MIRRORED AZIMUTH (deliberately wrong configuration)")
-    print("pattern: %s (%s), %d points spanning %.6f s" % (
-        pattern or "synthesised", src, len(rays), float(times[-1]) if len(times) else -1.0))
+    print("pattern: %s (%s), %d points spanning %.6f s%s" % (
+        pattern or "synthesised", src, len(rays), float(times[-1]) if len(times) else -1.0,
+        "" if legacy_lidar else
+        "  [PHASE 4 scheduler: window %.3f s = %d rows, advanced per scan]"
+        % ((window_rows * pattern_dt) if window_rows else 0.0, window_rows)))
 
     sensor = Sensor(world, rays, times, mount_pitch=pitch,
                     range_noise=0.0 if args.no_noise else args.range_noise,
@@ -666,6 +731,20 @@ def main() -> int:
     empty_scans = 0
     imu_published = 0
     points_total = 0
+    scan_fh = None
+    if args.scan_csv:
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(args.scan_csv)), exist_ok=True)
+            scan_fh = open(args.scan_csv, "w")
+            scan_fh.write("t_start_us,cast_ms,points,reason\n")
+            print("  per-scan CSV -> %s" % args.scan_csv, flush=True)
+        except Exception as exc:                                # noqa: BLE001
+            print("  WARNING: cannot write --scan-csv %s: %s" % (args.scan_csv, exc), flush=True)
+
+    def _scan_row(t_us, cast_ms, npts, reason):
+        if scan_fh is not None:
+            scan_fh.write("%d,%.3f,%d,%s\n" % (int(t_us), float(cast_ms), int(npts), reason))
+
     t_start_wall = time.monotonic()
     last_report = t_start_wall
     if args.truth_topic:
@@ -789,8 +868,17 @@ def main() -> int:
                 behind = int((newest_us - next_scan_us) // scan_period_us)
                 if behind > 0:
                     skipped_scans += behind
+                    for _b in range(behind):
+                        _scan_row(next_scan_us + _b * scan_period_us, -1.0, 0, "behind")
                 next_scan_us = int(newest_us)
                 if buf.window_clean(next_scan_us, next_scan_us + scan_win_us):
+                    if pattern_all is not None:
+                        # PHASE 4: the NEXT window of the vendor pattern (non-repetitive sensor); the
+                        # points are spread uniformly over it, so the cloud covers the whole scan period.
+                        rows = raycast.window_indices(args.points, scan_index * window_rows,
+                                                      window_rows, len(pattern_all))
+                        sensor.set_pattern(pattern_all[rows], pattern_times[rows] - pattern_times[rows][0])
+                        scan_index += 1
                     pts_s, idx, rng = sensor.scan(buf, next_scan_us)
                     if len(pts_s) == 0:
                         # ★ round 88 ★ an EMPTY cloud is what kills the LIO: `Output()` feeds it to
@@ -798,17 +886,20 @@ def main() -> int:
                         # (core ../dsh_core.super_lio_node.*, `div %r9` with rax = r9 = 0).  Never
                         # publish one; the LIO simply sees one frame fewer.
                         empty_scans += 1
+                        _scan_row(next_scan_us, sensor.last_cast_ms, 0, "empty")
                         print("  WARNING: scan at %d produced 0 returns -- not published (empty clouds "
                               "crash the LIO)" % next_scan_us, flush=True)
                     else:
-                        out.cloud(next_scan_us, pts_s, times[idx], sensor.intensity)
+                        out.cloud(next_scan_us, pts_s, sensor.times[idx], sensor.intensity)
                         scans += 1
                         points_total += len(pts_s)
+                        _scan_row(next_scan_us, sensor.last_cast_ms, len(pts_s), "ok")
                 else:
                     # A hole in the truth inside this window would make pose_at interpolate
                     # across it and hand the estimator a cloud that describes a trajectory
                     # nobody flew (see TruthBuffer.window_clean).  Drop the scan instead.
                     skipped_scans += 1
+                    _scan_row(next_scan_us, -1.0, 0, "truth_hole")
                 next_scan_us += scan_period_us
 
             # ---- 3. ROS plumbing.  Publishing does not require spinning; the executor only has
@@ -843,6 +934,9 @@ def main() -> int:
         if sock is not None:
             stop_reader.set()
             sock.close()
+        if scan_fh is not None:
+            scan_fh.flush()
+            scan_fh.close()
 
     wall = time.monotonic() - t_start_wall
     print("\nsim/lidar_imu report")

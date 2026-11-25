@@ -572,6 +572,23 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 14:55（第 29 条，Phase 4 代码完成：图案窗口/每帧 CSV/rviz 回放入口；默认仍 legacy 待 A/B）
+
+- **图案窗口修正**：`raycast.load_pattern_all()` 读整个 1 s 图案；`window_indices()` 在 `1/scan_hz` 整窗内均匀取点；
+  每次扫描窗口前移（`Sensor.set_pattern`，numpy 视图）。bench 实测：12000 点也覆盖 **0.099995 s**（原 0.059995 s），
+  窗口 `0.100 s = 20000 rows, advanced per scan`；`--legacy-lidar`/`SIM_LIDAR_LEGACY=1` 可回滚。
+- **每帧 CSV**：`lidar_imu --scan-csv` 每扫描尝试一行（`t_start_us,cast_ms,points,reason`）；run-mission 总是写
+  `$OUT/scans.csv`；**accept H6 优先读 scans.csv**（阈值不变，粒度变细），无文件时回退旧聚合。
+- **rviz 回放**：`sim/rviz/pipeline.rviz`（world/truth/LIO/FCU/plan/cloud）、`scripts/viz_bridge.py`（odometry→Path、
+  PositionCommand→Pose/Path）、`scripts/replay_bag_rviz.sh`（calib→静态 TF、起适配器、bag play、rviz2）；
+  `scripts/run_rviz.sh` 默认配置同步。点云不进 bag，需要时 `BAG_CLOUDS=1`。
+- `scripts/check_pattern.sh` 增加断言（整窗覆盖 + 逐扫描前进）；`tests/run_all.sh` GATE PASS。
+- **新调度首飞 `phase4i`**：整圈 13/13、正常 LAND；H6 以 `[per-scan: scans.csv]` 读出（p50 18.5 ms / skipped 12）；
+  但 **W6 lag spread 0.379 s > 0.15**（H5 False 是落地后 truth 尾巴的老窗口伪影）。按计划默认仍是 legacy，
+  下一轮做 3 趟 A/B（legacy vs new）再决定切换。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

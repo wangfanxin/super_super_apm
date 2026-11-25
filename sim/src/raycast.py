@@ -180,6 +180,52 @@ def default_pattern_path() -> str | None:
     return None
 
 
+def load_pattern_all(path: str):
+    """Load the WHOLE pattern file: (rays (N,2) az/el rad, times (N,) s from pattern start, source).
+
+    PHASE 4: the flight used to load only the FIRST `n` rows of the file, i.e. with 12 000 points it cast
+    a 60 ms burst at the start of every 100 ms scan period and never advanced through the pattern.  Both
+    are wrong for a non-repetitive MID-360: a scan must span the whole period and each scan must use the
+    NEXT window of the vendor pattern.  `load_pattern` is kept for the legacy path (`SIM_LIDAR_LEGACY=1`)
+    and for tools that want a fixed window; this loader is what the scan scheduler builds its windows from.
+    """
+    import os
+
+    import numpy as np
+
+    with open(path) as fh:
+        head = fh.readline()
+    if "Zenith" not in head:
+        raise ValueError("%s: not the real MID-360 pattern (header lacks 'Zenith')" % path)
+    a = np.loadtxt(path, delimiter=",", skiprows=1, usecols=(0, 1, 2))
+    if a.ndim != 2 or len(a) < 1000:
+        raise ValueError("%s: pattern has too few rows" % path)
+    t = a[:, 0] - a[0, 0]
+    step = float(np.median(np.diff(t))) if len(t) > 1 else 0.0
+    if step > 0.5:                                   # index column, not seconds
+        t = t / MID360_POINT_RATE_HZ
+    az = np.radians(a[:, 1])
+    el = np.radians(90.0 - a[:, 2])
+    return np.column_stack([az, el]), t, os.path.basename(path)
+
+
+def window_indices(n: int, start_row: int, window_rows: int, total_rows: int):
+    """`n` row indices spread UNIFORMLY over [start_row, start_row+window_rows) (wrapping the pattern).
+
+    Uniform, not contiguous: a scan's points have to cover the whole scan period, and the vendor pattern's
+    row order is time order.  When n >= window_rows every row of the window is used.
+    """
+    import numpy as np
+
+    start_row = int(start_row) % max(1, total_rows)
+    rows = (start_row + np.arange(int(window_rows))) % total_rows
+    if n >= window_rows:
+        idx = rows
+    else:
+        idx = rows[np.linspace(0, window_rows - 1, int(n)).round().astype(int)]
+    return idx
+
+
 def load_pattern(path: str | None, n: int = 20000, start: int = 0):
     """Return (rays, times, source).
 

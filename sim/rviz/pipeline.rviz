@@ -1,0 +1,232 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /TF1
+        - /Truth (world_w)1
+        - /LIO (lio_world)1
+        - /Plan reference1
+      Splitter Ratio: 0.5
+    Tree Height: 700
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Time
+    Name: Time
+    SyncMode: 0
+    SyncSource: ""
+    Experimental: false
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_common/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 30
+      Color: 160; 160; 164
+      Alpha: 0.4
+    - Class: rviz_common/TF
+      Name: TF
+      Enabled: true
+      Show Names: false
+      Marker Scale: 1
+    - Class: rviz_default_plugins/Odometry
+      Name: Truth (world_w)
+      Enabled: true
+      Topic:
+        Value: /sim/truth/odom
+        Depth: 50
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Position Tolerance: 0.01
+      Angle Tolerance: 0.05
+      Keep: 1
+      Shape:
+        Alpha: 1
+        Color: 255; 255; 0
+        Shaft Length: 1
+        Shaft Radius: 0.05
+        Head Length: 0.3
+        Head Radius: 0.1
+      Covariance:
+        Value: false
+    - Class: rviz_default_plugins/Odometry
+      Name: LIO estimate (lio_world)
+      Enabled: true
+      Topic:
+        Value: /lio/robo/odom
+        Depth: 50
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Position Tolerance: 0.01
+      Angle Tolerance: 0.05
+      Keep: 1
+      Shape:
+        Alpha: 1
+        Color: 0; 220; 255
+        Shaft Length: 1
+        Shaft Radius: 0.05
+        Head Length: 0.3
+        Head Radius: 0.1
+      Covariance:
+        Value: false
+    - Class: rviz_default_plugins/Odometry
+      Name: FCU estimate (W)
+      Enabled: true
+      Topic:
+        Value: /fcu/odom
+        Depth: 50
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Volatile
+      Position Tolerance: 0.01
+      Angle Tolerance: 0.05
+      Keep: 1
+      Shape:
+        Alpha: 0.9
+        Color: 255; 0; 200
+        Shaft Length: 0.8
+        Shaft Radius: 0.04
+        Head Length: 0.2
+        Head Radius: 0.08
+      Covariance:
+        Value: false
+    - Class: rviz_default_plugins/Path
+      Name: Truth path
+      Enabled: true
+      Topic:
+        Value: /viz/truth_path
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Color: 255; 255; 0
+      Alpha: 0.9
+    - Class: rviz_default_plugins/Path
+      Name: LIO path
+      Enabled: true
+      Topic:
+        Value: /viz/lio_path
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Color: 0; 220; 255
+      Alpha: 0.9
+    - Class: rviz_default_plugins/Path
+      Name: Plan reference (W)
+      Enabled: true
+      Topic:
+        Value: /viz/plan_path
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Line Style:
+        Line Width: 0.05
+        Value: Lines
+      Color: 0; 255; 120
+      Alpha: 0.9
+    - Class: rviz_default_plugins/Pose
+      Name: Plan command (current)
+      Enabled: true
+      Topic:
+        Value: /viz/plan_pose
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Shape:
+        Alpha: 1
+        Color: 0; 255; 120
+        Shaft Length: 0.8
+        Shaft Radius: 0.04
+        Head Length: 0.25
+        Head Radius: 0.09
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Super-LIO cloud (world)
+      Enabled: true
+      Topic:
+        Value: /lio/cloud_world
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Style: Points
+      Size (Pixels): 2
+      Size (m): 0.02
+      Color Transformer: Intensity
+      Position Transformer: XYZ
+      Alpha: 0.9
+      Decay Time: 0
+      Color: 240; 240; 240
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Livox scan (sensor frame)
+      Enabled: false
+      Topic:
+        Value: /livox/lidar
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Style: Points
+      Size (Pixels): 2
+      Size (m): 0.02
+      Color Transformer: Intensity
+      Position Transformer: XYZ
+      Alpha: 0.7
+      Decay Time: 0
+      Color: 200; 200; 255
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: World (pillars / pad)
+      Enabled: true
+      Topic:
+        Value: /sim/world_markers
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+  Enabled: true
+  Global Options:
+    Background Color: 30; 30; 34
+    Fixed Frame: world_w
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 28
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 1.5
+      Pitch: 0.55
+      Yaw: 0.8
+      Name: Current View
+      Target Frame: world_w
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1500
+  X: 60
+  Y: 40

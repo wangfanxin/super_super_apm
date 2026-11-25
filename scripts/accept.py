@@ -290,21 +290,49 @@ def main():
     #   then scan-matches across it and diverges (yaw steps up to 154 deg were recorded), after which the
     #   FCU follows the bad estimate out of the fence.  So this row is a VALIDITY check: when it fails, the
     #   control numbers below describe a starved sensor, not the controller.
-    try:
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        import lidar_stall  # noqa: E402
-        _st = lidar_stall.parse(os.path.join(args.run, "lidar_imu.log"))
-    except Exception:                                   # noqa: BLE001  (a missing log is not a crash)
-        _st = None
+    # PHASE 4: the LiDAR simulator writes ONE ROW PER SCAN (t_start_us,cast_ms,points,reason); when that
+    # file exists it is the source of this row (the aggregated 2 s report lines remain the fallback so an
+    # older sortie can still be graded).  No threshold is changed: p50/p99/max of cast_ms and the number of
+    # non-"ok" rows answer exactly the same question with per-frame precision.
+    scan_csv = os.path.join(args.run, "scans.csv")
+    _st = None
+    if os.path.isfile(scan_csv):
+        try:
+            import csv as _csv
+            import statistics as _stat
+            casts, skipped = [], 0
+            with open(scan_csv) as fh:
+                for row in _csv.DictReader(fh):
+                    reason = (row.get("reason") or "").strip()
+                    if reason == "ok":
+                        casts.append(float(row.get("cast_ms") or 0.0))
+                    else:
+                        skipped += 1
+            if casts:
+                _st = {"cast_p50": _stat.median(casts),
+                       "cast_max": max(casts),
+                       "skipped": skipped,
+                       "source": "scans.csv"}
+        except Exception:                               # noqa: BLE001
+            _st = None
+    if _st is None:
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import lidar_stall  # noqa: E402
+            _st = lidar_stall.parse(os.path.join(args.run, "lidar_imu.log"))
+            if _st is not None:
+                _st["source"] = "lidar_imu.log"
+        except Exception:                               # noqa: BLE001  (a missing log is not a crash)
+            _st = None
     if _st is None:
         R.row("H6", "the LiDAR simulator kept its scan budget", None,
               "no lidar_imu.log -- cannot confirm, so a starved sensor would look like bad control")
     else:
         _ok = (_st["cast_max"] <= 100.0) and (_st["skipped"] <= 20)
         R.row("H6", "the LiDAR simulator kept its scan budget", _ok,
-              "raycast p50 %.1f ms, MAX %.1f ms (gate 100), scans skipped %d (gate 20)\n"
+              "raycast p50 %.1f ms, MAX %.1f ms (gate 100), scans skipped %d (gate 20) [per-scan: %s]\n"
               "%s"
-              % (_st["cast_p50"], _st["cast_max"], _st["skipped"],
+              % (_st["cast_p50"], _st["cast_max"], _st["skipped"], _st.get("source", "aggregate"),
                  "" if _ok else "a skipped scan is a cloud gap: Super-LIO then scan-matches across it and\n"
                                 "diverges (yaw steps up to 154 deg were measured), and the FCU follows the bad\n"
                                 "estimate out of the fence.  THE CONTROL ROWS BELOW DESCRIBE A STARVED SENSOR"))

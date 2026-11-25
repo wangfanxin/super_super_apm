@@ -17,7 +17,10 @@ fi
 #   bash scripts/run_rviz.sh -d ...   # 换配置文件
 set -uo pipefail
 ROOT=${DSH_ROOT}
-CFG=${1:-"$SIM_ROOT/rviz/rviz_super.rviz"}
+# PHASE 4: the single replay/debug entry point.  For a recorded sortie prefer
+#   bash scripts/replay_bag_rviz.sh <sortie-dir>      (bag + TF + adapters + this config)
+# The live view below shows the same topics when the stack is running.
+CFG=${1:-"$SIM_ROOT/rviz/pipeline.rviz"}
 
 if [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
   echo "没有 DISPLAY/WAYLAND_DISPLAY：WSL 里先用 WSLg，或在 Windows 侧起 X server 后"

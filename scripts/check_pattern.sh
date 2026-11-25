@@ -12,6 +12,7 @@ python3 - "$R" <<'PY'
 import os, sys
 R = sys.argv[1]
 sys.path.insert(0, os.path.join(R, "sim", "src"))
+import numpy as np  # noqa: E402
 import raycast  # noqa: E402
 
 p = raycast.default_pattern_path()
@@ -41,6 +42,25 @@ print("loader              : %s" % src)
 print("azimuth   deg       : %.2f .. %.2f (expect ~0..360)" % (az[0] * 57.2958, az[1] * 57.2958))
 print("elevation deg       : %.2f .. %.2f (expect ~-7..+52)" % (el[0] * 57.2958, el[1] * 57.2958))
 ok = (("Zenith" in head) and nrows >= 800000 and el[0] < 0 and (el[1] * 57.2958) > 1.0)
+
+# ---- PHASE 4: the SCAN WINDOW the corrected scheduler uses --------------------------------
+# The bug this guards: `load_pattern(n=12000)` returned the FIRST 12000 rows, i.e. a 60 ms burst inside a
+# 100 ms scan period, and the same window was reused for every scan of the flight.  The corrected scheduler
+# takes `n` rows UNIFORMLY from a full `1/scan_hz` window and advances that window every scan.
+rays_all, times_all, _src = raycast.load_pattern_all(p)
+dt = float(times_all[-1] - times_all[0]) / max(1, len(times_all) - 1)
+window_rows = int(round(1.0 / (10.0 * dt)))
+idx0 = raycast.window_indices(20000, 0, window_rows, len(rays_all))
+idx1 = raycast.window_indices(12000, window_rows, window_rows, len(rays_all))
+span0 = float(times_all[idx0][-1] - times_all[idx0][0])
+span1 = float(times_all[idx1][-1] - times_all[idx1][0])
+advance_ok = not np.array_equal(idx0[:12000], idx1)
+print("window rows @10 Hz  : %d (one scan period %.4f s)" % (window_rows, dt * window_rows))
+print("20000 pts span      : %.6f s (expect the FULL scan period, not a burst)" % span0)
+print("12000 pts span      : %.6f s (uniformly thinned across the same window)" % span1)
+print("window advances     : %s (scan k+1 uses the next rows of the vendor pattern)"
+      % ("yes" if advance_ok else "NO -- same rows every scan"))
+ok = ok and span0 > 0.9 * dt * window_rows and span1 > 0.9 * dt * window_rows and advance_ok
 print("RESULT              : %s" % ("OK" if ok else "SUSPECT -- see sim/pattern/README.md"))
 sys.exit(0 if ok else 1)
 PY
