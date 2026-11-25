@@ -497,3 +497,25 @@ z 误差 ≤0.10 m（PSC_NE_POS/VEL 加硬、PSC_D 垂直环、ATC 姿态环、�
    "旧轨迹终点作为 guide 的延长段 + 新目标"重新规划一次；
 3. 到点判定改为单调 route-progress（角点之后才推进），配合 1.2 m 的提前目标（phase8b 已证明可把绕圈降到 0）。
 
+### 15.1 继续扫参数（02:50–03:05）：corner speed 与 arrive gate 的组合
+
+| 趟 | 配置 | W1 | W1b | W6 | 绕圈 | 中段停顿 | ExpTraj failed | Traj finish | 质量结论 |
+|---|---|---|---|---|---|---|---|---|---|
+| 8a | arrive 0.3 / corner 1.2 | 13/13 | ✅ | ✅ | 7 | 9 次 8.6 s | 69 | 25 | 差 |
+| 8b | arrive 1.2 / corner 1.2 | 13/13 | ❌12/13 | ✅ | **0** | 6 次 5.9 s | 64 | 15 | 无圈但 W1b 挂 |
+| 8c | arrive 0.3 / corner 1.35 | 13/13 | ✅ | ❌ | 6 | 12 次 10.9 s | 82 | 26 | 差 |
+| **8d** | arrive 0.3 / **corner 0.8** | 13/13 | ✅ | ✅ | **2** | **3 次 6.1 s** | **44** | **11** | **当前最佳** |
+| 8e | arrive 0.3 / corner 0.5 | 13/13 | ✅ | ✅ | 4 | 7 次 7.4 s | 65 | 21 | 比 0.8 差 |
+| 8f | arrive 0.8 / corner 0.8 | 13/13 | ✅ | ✅ | **0** | 5 次 8.9 s | 52 | 13 | 无圈但跟踪 0.68 m、PlanFromRest failed 66 |
+| 8g | 滚动目标（pose goal, look 3 m, step 2 m） | ❌ | ❌ | ❌ | - | - | - | - | plan box 层滚动目标再次不可用 |
+
+**结论**：`corner 0.8 + arrive 0.3` 把换目标失败从 69 降到 44、Traj finish 从 25 降到 11，绕圈 7→2、中段停顿 9→3；
+但"轨迹结束→PlanFromRest"这条路径仍然存在（11 次），是剩余 2 个圈与停顿的唯一来源。
+**plan box 层滚动目标（8g）复测再次失败**（W1/W1b/W6 全挂），确认必须改 SUPER 内部，而不是继续调 plan box 参数。
+
+**下一版（planner 侧，round 8 开始）**：
+1. 在 `super_planner` 的 new_goal 路径上修 `GenerateExpTrajectory failed` 的原因（具体失败分支：corridor/A* 还是 MINCO
+   的 Omg/thr/Pos violation），目标是换目标时 ReplanOnce 成功率接近 100%；
+2. 若失败，不能让 committed 轨迹自然结束进入 WAIT_GOAL，而是"延长旧轨迹 + 新目标"再规划一次；
+3. 到点判定在 plan box 内改为单调 route-progress（配合 arrive 0.8），目标是绕圈=0 且 W1b 全过。
+
