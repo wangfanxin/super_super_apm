@@ -57,6 +57,9 @@ def main() -> int:
     ap.add_argument("--climb-s", type=float, default=6.0)
     ap.add_argument("--hold-s", type=float, default=3.0)
     ap.add_argument("--return-s", type=float, default=4.0)
+    ap.add_argument("--lead-s", type=float, default=0.0,
+                    help="publish the reference this many seconds AHEAD (predictive lead): compensates the "
+                         "measured 0.05 s pipeline/estimator lag.  0 = no lead (raw reference)")
     ap.add_argument("--cmd-rate", type=float, default=100.0)
     ap.add_argument("--cmd-topic", default="/plan/cmd")
     args = ap.parse_args()
@@ -151,8 +154,8 @@ def main() -> int:
             return np.array([0.0, 0.0, args.z]), np.zeros(3), np.zeros(3), FLAG_COMPLETED
         return np.array([0.0, 0.0, args.z]), np.zeros(3), np.zeros(3), FLAG_COMPLETED
 
-    print("bench_source: %.0f Hz, z %.2f, omega %.2f rad/s, amps %s, segments %d"
-          % (args.cmd_rate, args.z, args.omega, amps, len(segs)), flush=True)
+    print("bench_source: %.0f Hz, z %.2f, omega %.2f rad/s, amps %s, segments %d, lead %.3f s"
+          % (args.cmd_rate, args.z, args.omega, amps, len(segs), args.lead_s), flush=True)
     for kind, t_k, dur, A in segs:
         print("   seg %-6s t=%6.2f..%6.2f %s" % (kind, t_k, t_k + dur,
                                                  "" if A is None else "A=%.2f (peak v %.2f, a %.2f)"
@@ -160,7 +163,7 @@ def main() -> int:
 
     def tick():
         tt = time.monotonic() - t0
-        p_w, v_w, a_w, flag = ref_at(tt)
+        p_w, v_w, a_w, flag = ref_at(tt + float(args.lead_s))
         # W -> L for the command stream (the bridge converts L -> W again with the same calib)
         p_l = calib_obj.R_WL.T @ (p_w - calib_obj.t_WL)
         v_l = calib_obj.R_WL.T @ v_w

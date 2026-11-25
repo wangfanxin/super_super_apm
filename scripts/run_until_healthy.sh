@@ -213,7 +213,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
     # obstacles.  Peak speed = A*omega (1..8 m/s) and peak accel = A*omega^2 (1..8 m/s^2).  This is the arm
     # the firmware's FF/PID is tuned on ("先有一个几乎完美的飞机设置").
     PLANNER="$ROOT/bridge_nodes/planner/bench_source.py"
-    CMD_ARGS="$CALIB_ARG --z ${Z_M:-2.0} --omega ${BENCH_OMEGA:-1.0} --amps ${BENCH_AMPS:-1,2,3,4,5,6,8}"
+    CMD_ARGS="$CALIB_ARG --z ${Z_M:-2.0} --omega ${BENCH_OMEGA:-1.0} --amps ${BENCH_AMPS:-1,2,3,4,5,6,8} --lead-s ${BENCH_LEAD_S:-0}"
   elif [ "$WHAT" = "bench" ]; then
     # AIRCRAFT-CAPABILITY BENCH (2026-11-26, owner: "先有一个几乎完美的飞机设置，再考虑飞路径"):
     # the BUILT-IN rectangle plan box on an OPEN world (bench_open.yaml, 30 m square, no pillars) with the
