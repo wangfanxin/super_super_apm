@@ -91,6 +91,15 @@ class MavlinkBridge(Bridge):
         """
         # ask for what we need; SR*_* defaults are ~0 in SITL
         self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_LOCAL_POSITION_NED, self.position_hz)
+        # PHASE 3: THE FCU'S OWN BOOT CLOCK.  ODOMETRY #331 carries a time_usec that EKF3 compares with its
+        # own boot time; our samples are stamped in SIMULATION time, so the age the EKF sees is whatever the
+        # offset between the two bases happens to be (MEASURED on the FCU's BIN: 0.63 s on a healthy legacy
+        # sortie, 1.61 s on the merged client -- and at 1.6 s the position loop diverged).  SYSTEM_TIME gives
+        # that offset directly, so the estimator feed can be stamped in the clock the EKF actually uses.
+        try:
+            self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_SYSTEM_TIME, 2.0)
+        except Exception:
+            pass
         self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE, self.attitude_hz)
         self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_EKF_STATUS_REPORT, 5.0)
         self._request_message(mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT, 1.0)
@@ -105,6 +114,21 @@ class MavlinkBridge(Bridge):
             self.mav.target_system, self.mav.target_component,
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
             msg_id, int(1e6 / hz), 0, 0, 0, 0, 0)
+
+    def fcu_boot_now_us(self):
+        """The FCU's own boot clock, extrapolated to NOW, or None if SYSTEM_TIME has not been seen/ is stale.
+
+        THE ESTIMATOR FEED IS STAMPED WITH THIS (see request_rates): EKF3 compares ODOMETRY's time_usec with
+        the boot clock, and stamping the samples in simulation time leaves a base offset that varies per
+        sortie (0.63 s healthy, 1.61 s on the merged client -> divergence).
+        """
+        st = self._state
+        if not getattr(st, "fcu_boot_us", 0) or not getattr(st, "fcu_boot_wall", 0.0):
+            return None
+        age = time.monotonic() - st.fcu_boot_wall
+        if age > 3.0:
+            return None
+        return int(st.fcu_boot_us + age * 1e6)
 
     def poll(self):
         while True:
@@ -122,10 +146,18 @@ class MavlinkBridge(Bridge):
                 self._state.armed = bool(m.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
                 self._state.mode = MODE_NAME.get(m.custom_mode, "mode%d" % m.custom_mode)
                 self._state.last_heartbeat_us = int(time.monotonic() * 1e6)
+            elif t == "SYSTEM_TIME":
+                # time_boot_ms is the FCU's own scheduler clock; remember when WE saw it so the bridge can
+                # convert "now" into the FCU's boot base (see `fcu_boot_now_us`)
+                self._state.fcu_boot_us = int(getattr(m, "time_boot_ms", 0)) * 1000
+                self._state.fcu_boot_wall = time.monotonic()
             elif t == "EKF_STATUS_REPORT":
                 # the flags bit that matters here: EKF_OK / const pos mode.  Report what it says.
                 self._state.ekf_ok = bool(m.flags & mavutil.mavlink.EKF_POS_HORIZ_ABS) or \
                     bool(m.flags & mavutil.mavlink.EKF_CONST_POS_MODE) is False
+                # PHASE 3: keep the RAW flags too -- "which aiding source is alive" is exactly what a run whose
+                # EKF estimate diverges has to be read from, and the boolean above throws that away.
+                self._state.ekf_flags = int(getattr(m, "flags", 0))
             elif t == "GPS_RAW_INT":
                 self._state.gps_fix = m.fix_type
             elif t == "GLOBAL_POSITION_INT":

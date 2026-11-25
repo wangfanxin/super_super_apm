@@ -452,6 +452,23 @@ wire liveness、yaw 单点转换）；然后 Phase 4（sim 图案窗口/每帧 C
 
 ---
 
+## 2026-11-25 09:45（第 21 条，Phase 3 第三步：extnav 时间戳改用 FCU boot 时钟；单连接已被排除）
+
+- **从 FCU 的 BIN 读出关键测量**：`VISP.RTimeUS` vs 本地时间 = EKF 看到的 extnav 年龄。legacy（phase2m）
+  0.631 s，merged（phase3e）**1.611 s**。我们的 ODOMETRY 用仿真时间戳，而 EKF 用 boot 时钟比，1.6 s 的旧数据让
+  位置环滞后发散。
+- **修复**：请求 `SYSTEM_TIME`（2 Hz），把每条 331 的 time_usec 改写成 "FCU boot-now − 样本年龄"，并加严格单调
+  下限。phase3f 的 BIN 实测：**VISP 年龄 p50 0.007 s / max 0.058 s**，`Ign=0`。
+- 但 merged 仍然失控（phase3f/3g），且 phase3g 的 BIN 显示失控前 3 s 有一条 **mode 9 LAND, Rsn=2 (GCS_COMMAND)**，
+  来源待查；`phase3h` 用 **--dual-link**（一个进程、一个 node、两个连接，即历史架构）同样失败 ⇒ **单连接共享
+  被排除**，问题在"两个半身共处同一进程/pump"。
+- 本轮改动：`--nav-log` 增加 FCU 侧列（ekf_ok/flags/armed/mode/nav_hz）；`--dual-link` 诊断/回退模式；
+  LIO 差分速度改用消息时间戳 dt + `--nav-vmax` 限幅；bench 校验时间戳落在 FCU boot 时钟里。
+- **下一步 bisect**：merged 进程 + legacy supervisor 进程，判定是 bridge 半身还是 supervisor 半身在合并进程里
+  改变了行为；同时抓 serial0 上 class-76 的来源，解释 phase3g 的意外 LAND。
+
+---
+
 ## 2026-11-25 00:25（第 1 条，Phase 0 进行中，约 1h20m）
 
 **阶段**：Phase 0（仓库自包含）——3/4 完成；Phase 1 代码已就绪。

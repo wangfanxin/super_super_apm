@@ -42,10 +42,25 @@ sleep 1
 python3 bridge_nodes/mavlink/fcu_client.py --bench --bench-seconds 10 \
     --mav tcp:127.0.0.1:5890 \
     --calib-file "$R/calib/calib.json" \
-    --setpoint-log "$D/setpoints.csv" --wire-log "$D/wire.csv" \
+    --setpoint-log "$D/setpoints.csv" --wire-log "$D/wire.csv" --nav-log "$D/nav.csv" \
     --phase-log "$D/phase.csv" \
     > "$D/fcu.log" 2>&1
 RC=$?
+python3 - "$D" <<'INNER'
+import csv, os, sys
+path = sys.argv[1] + "/nav.csv"
+rows = list(csv.DictReader(open(path))) if os.path.isfile(path) else []
+if rows:
+    feeds = [int(r["t_feed_us"]) for r in rows if int(r["t_feed_us"])]
+    # the fake inputs are stamped with the ROS SYSTEM clock, so t_feed (FCU boot clock) can only be
+    # sanity-checked as "present and in the FCU's boot range" -- a real sortie is checked by nav.csv itself
+    print("nav.csv: %d rows; %d stamped in the FCU boot clock (first t_feed=%s us, i.e. %s)"
+          % (len(rows), len(feeds),
+             (min(feeds) if feeds else "n/a"),
+             "OK" if feeds and 0 < min(feeds) < 10**9 else "BAD"))
+else:
+    print("nav.csv: MISSING")
+INNER
 tail -3 "$D/fcu.log"
 echo "logs: $D (fcu.log, setpoints.csv, wire.csv)"
 exit $RC

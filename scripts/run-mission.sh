@@ -1162,7 +1162,9 @@ if [ "${FCU_CLIENT:-legacy}" = "merged" ]; then
     # PHASE 3: ONE process, ONE MAVLink link, ONE rclpy node (bridge_nodes/mavlink/fcu_client.py).
     # The bridge half keeps 84/331 and the wire/setpoint CSVs; the supervisor half keeps class-76, the
     # phase log and the guards, and its pump loop drives the shared link.
-    $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $CALIB_ARG \
+    FCU_DUAL_ARG=""
+    [ "${FCU_DUAL:-0}" = "1" ] && FCU_DUAL_ARG="--dual-link --mav-supervisor tcp:127.0.0.1:${PORT1:-5781}"
+    $AUX_PREFIX python3 "$BRIDGE/mavlink/fcu_client.py" --mav "tcp:127.0.0.1:${PORT0:-5780}" $FCU_DUAL_ARG $CALIB_ARG \
         --nav-hz 48 --wire-hz 50 $YAW_ARG ${BRIDGE_ARGS:-} \
         --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
         --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \

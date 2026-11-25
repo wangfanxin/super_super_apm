@@ -383,6 +383,9 @@ class BridgeProcess:
         #: how many step-velocities were clamped / how often the stamps and the wall clock disagreed
         self.nav_v_clamped = 0
         self.nav_dt_mismatch = 0
+        #: monotone floor for the estimator feed's time_usec (EKF3 rejects/ignores a sample whose stamp is
+        #: older than the last one it saw; the boot-clock conversion jitters by a few ms)
+        self._last_feed_us = 0
         #: THE ESTIMATOR FEED'S OWN RECORD (--nav-log): one row per #331 actually sent, so a corrupted feed can
         #: be read back instead of guessed at.  Added in PHASE 3 after `phase3a` and the FCU's runway.
         self.nav_log = None
@@ -607,17 +610,47 @@ class BridgeProcess:
             if self.lio["n"]:
                 _ok = self.nav_gate_ok(self.lio["t_us"], self.lio["p"], self.lio["q"])
                 if _ok:
-                    self.bridge.send_external_nav_l(self.lio["t_us"], self.lio["p"], self.lio["q"],
+                    t_feed = int(self.lio["t_us"])
+                    # ★ STAMP THE FEED IN THE FCU'S OWN BOOT CLOCK (PHASE 3) ★
+                    #   The EKF compares ODOMETRY.time_usec with its boot clock.  Our samples are in
+                    #   simulation time, and the offset between the two bases is not constant: the FCU's
+                    #   own BIN showed 0.63 s on a healthy legacy sortie and 1.61 s on the merged client.
+                    #   Re-stamping the SAME sample as "boot-now minus how old it is" removes the base offset
+                    #   entirely, so the EKF sees fresh external nav instead of 1.6 s-old data.
+                    boot_now = self.bridge.fcu_boot_now_us() if self.bridge is not None else None
+                    if boot_now is not None and self.lio["last_wall"]:
+                        age_wall = max(0.0, now - self.lio["last_wall"])
+                        t_feed = int(boot_now - age_wall * 1e6)
+                    # STRICTLY MONOTONIC: the boot-clock conversion plus a jittering sample age can step the
+                    # stamp back by a few ms between two sends, and an extnav sample stamped older than the
+                    # previous one is a sample EKF3 throws away (MEASURED 2026-11-25 phase3f: 878 of 4658
+                    # sends stepped backwards by up to 7 ms).
+                    t_feed = max(t_feed, self._last_feed_us + 1000)
+                    self._last_feed_us = t_feed
+                    self.bridge.send_external_nav_l(t_feed, self.lio["p"], self.lio["q"],
                                                     self.lio["v"], self.calib,
                                                     z_trim=getattr(self.args, "nav_z_trim_m", 0.0))
                     self.nav_sent += 1
                 if self.nav_log is not None:
                     p_, q_, v_ = self.lio["p"], self.lio["q"], self.lio["v"]
                     age = now - self.lio["last_wall"] if self.lio["last_wall"] else 0.0
+                    st_ = self.bridge.state() if self.bridge is not None else None
+                    if st_ is not None:
+                        fpos, fvel = st_.pos, st_.vel
+                        ekf_ok, ekf_flags = int(bool(st_.ekf_ok)), int(getattr(st_, "ekf_flags", 0))
+                        armed, mode = int(bool(st_.armed)), str(st_.mode)
+                    else:
+                        fpos, fvel = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+                        ekf_ok, ekf_flags, armed, mode = 0, 0, 0, ""
+                    t_feed_log = locals().get("t_feed", 0) if _ok else 0
                     self.nav_log.write(
-                        "%.4f,%d,%.4f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.6f,%.6f,%.6f,%.6f,%d\n"
-                        % (now, int(self.lio["t_us"]), age, p_[0], p_[1], p_[2], v_[0], v_[1], v_[2],
-                           q_[0], q_[1], q_[2], q_[3], 0 if _ok else 1))
+                        "%.4f,%d,%d,%.4f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.6f,%.6f,%.6f,%.6f,%d,"
+                        "%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%d,%d,%d,%s,%.1f\n"
+                        % (now, int(t_feed_log), int(self.lio["t_us"]), age, p_[0], p_[1], p_[2],
+                           v_[0], v_[1], v_[2],
+                           q_[0], q_[1], q_[2], q_[3], 0 if _ok else 1,
+                           fpos[0], fpos[1], fpos[2], fvel[0], fvel[1], fvel[2],
+                           ekf_ok, ekf_flags, armed, mode, self.nav_hz_measured))
                     self._nav_log_n += 1
                     if self._nav_log_n % 100 == 0:
                         self.nav_log.flush()
@@ -791,7 +824,8 @@ class BridgeProcess:
                               "fcu_x,fcu_y,fcu_z,fcu_vx,fcu_vy,fcu_vz,lio_x,lio_y,lio_z,yaw_cmd\n")
         if getattr(self.args, "nav_log", ""):
             self.nav_log = open(self.args.nav_log, "w")
-            self.nav_log.write("t_wall,t_us,age_s,px,py,pz,vx,vy,vz,qw,qx,qy,qz,refused\n")
+            self.nav_log.write("t_wall,t_feed_us,t_us,age_s,px,py,pz,vx,vy,vz,qw,qx,qy,qz,refused,"
+                               "fcu_x,fcu_y,fcu_z,fcu_vx,fcu_vy,fcu_vz,ekf_ok,ekf_flags,armed,mode,nav_hz\n")
         if getattr(self.args, "wire_log", ""):
             self.wire_log = open(self.args.wire_log, "w")
             # `frame_id` = the MAVLink frame the setpoint goes out in (1 = LOCAL_NED, the only one

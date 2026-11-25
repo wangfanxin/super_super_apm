@@ -128,3 +128,45 @@ run-mission 自动带 `--nav-log $OUT/nav.csv`）。同时把 LIO 位置差分�
 多次小断流；而 331 的位置/姿态/限幅速度在跑飞期间本身是**合理**的（|v| ≤3.3 m/s、四元数归一）。
 下一步查：这些断流是否让 EKF 进入 dead-reckoning（加速度计零偏 → 估计以 ~0.9 m/s² 发散），
 以及断流根因（merged 的 supervisor pump 在 preflight/arm 期间的分支阻塞）。
+
+
+## 第 3 步（2026-11-25 09:00–09:40）：extnav 时间戳改成 FCU 时钟；单连接/双连接都排除
+
+### 用 FCU 自己的 BIN 读出了真实年龄（关键测量）
+`flight.BIN` 的 `VISP/VISV` 记录含 `RTimeUS`（消息里的 time_usec）与本地时间，二者之差就是 **EKF 看到的 extnav
+数据年龄**：
+
+| 飞行 | 模式 | VISP 年龄 p50 | 结果 |
+|---|---|---|---|
+| `missionA-phase2m`（legacy） | 两连接 | **0.631 s** | 正常 13 段飞行 |
+| `missionA-phase3e`（merged） | 单连接 | **1.611 s** | 起飞后 20 s 内失控 |
+
+也就是说：我们的 ODOMETRY `time_usec` 用的是**仿真时间**，而 EKF 拿它和 **FCU 自己的 boot 时钟**比，两个时间基
+的差在两种模式下不同（legacy 0.63 s / merged 1.61 s）——1.6 s 的"旧数据"会让位置环滞后并最终发散。
+
+**修复**：向 FCU 请求 `SYSTEM_TIME`（2 Hz），用 `time_boot_ms` 估计 FCU 的 boot 时钟，把每条 331 的
+`time_usec` 改写成 **"FCU boot-now − 该样本的年龄"**，并加严格单调下限（回退到旧时间基时也不会倒退）。
+实测（`phase3f` 的 BIN）：**VISP 年龄 p50 0.007 s / max 0.058 s**，`Ign=0`（全部被接收）。
+
+### 但 merged 仍然失败（所以时间戳不是唯一原因）
+- `phase3f`（单连接 + FCU 时钟）：VISP 年龄 7 ms，仍然在 GO 后 2 分钟内失控（模型爬到 4.7 m、FCU 估计停在
+  1.7–2.3 m，然后 EKF/位置环把模型压到地面）。
+- `phase3g`：BIN 的 `MODE` 记录显示 boot 50.77 有一次 **mode 9 = LAND，Rsn=2 = GCS_COMMAND**，比
+  "SIM Hit ground" 早 3 s —— 说明失控前 FCU 收到过一条我们没料到的 LAND；`fcu_client.log` 里 supervisor
+  的 abort 在那之后。这条 LAND 的来源仍待查（唯一会发 class-76 的是 supervisor，而它的日志没有对应行）。
+- `phase3h`（**--dual-link**：同一进程、同一个 node，但 class-76 走 serial1、84/331 走 serial0 —— 即历史两连接
+  架构合并进一个进程）：同样失败。**⇒ 单连接共享被排除**；问题在"两个半身共处同一进程/同一 pump"这一侧。
+
+### 代码改动（本轮）
+- `mavlink_impl`：请求并解析 `SYSTEM_TIME`，`fcu_boot_now_us()`；`bridge` 用 `--nav-log` 记录每条的
+  `t_feed_us`（实际时间戳）与 FCU 侧 `ekf_ok/ekf_flags/armed/mode/nav_hz`（BIN/VISP 的遥测对照）。
+- `bridge_node`：`--feed-clock`（默认 fcu）时间戳改写 + 单调下限；LIO 差分速度用**消息时间戳**的 dt（墙钟兜底）
+  + `--nav-vmax` 限幅；`nav.csv` 增加 FCU 侧列。
+- `fcu_client`：`--dual-link`（诊断/回退：一个进程、一个 node、两个连接）。
+- `tests/check_fcu_client.sh`：bench 也验证"时间戳落在 FCU boot 时钟里"（470/470 条）。
+
+### 下一步（bisect 计划）
+1. **merged 进程 + legacy supervisor 进程**（bridge 半身在 merged 进程里，class-76 由原来的独立 supervisor 发）：
+   若这样能飞，问题在 supervisor-in-merged-process（pump 结构/回调顺序）；若不能，问题在 bridge-in-merged-process。
+2. 查 phase3g 里那条 `Rsn=2` 的 LAND 是谁发的（抓 serial0 上所有 class-76 的源：给 `MavlinkBridge` 加
+   `command_long` 日志，或对比 supervisor 日志时间）。

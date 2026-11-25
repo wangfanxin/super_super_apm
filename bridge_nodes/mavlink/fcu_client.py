@@ -55,6 +55,12 @@ def build_parser():
                     help="the SINGLE MAVLink endpoint both halves share (serial0)")
     # BENCH MODE: run the bridge half only (ONE connection, 84/331, wire/setpoint logs) against SITL with
     # synthetic ROS inputs, and check the rates + the extnav age gate.  No arming, no supervisor, no flight.
+    ap.add_argument("--dual-link", action="store_true",
+                    help="DIAGNOSTIC/FALLBACK: keep ONE process and ONE rclpy node, but give the "
+                         "supervisor half its OWN MAVLink connection (serial1) instead of sharing serial0 "
+                         "with messages 84/331.  The historical two endpoints, merged in one client.")
+    ap.add_argument("--mav-supervisor", default="tcp:127.0.0.1:5781",
+                    help="the supervisor half's own endpoint when --dual-link is used")
     ap.add_argument("--bench", action="store_true", help="bench: bridge half only, print PASS/FAIL summary")
     ap.add_argument("--bench-seconds", type=float, default=10.0)
     return ap
@@ -81,12 +87,18 @@ def main(argv=None) -> int:
         rclpy.init(args=[])
     node = Node("fcu_client")
 
-    # ONE MAVLink connection.
     def log(msg):
         import time
         print("[%7.2f] %s" % (time.monotonic(), msg), flush=True)
 
+    # ONE MAVLink connection -- unless --dual-link, which is both a diagnostic (does the single shared link
+    # change the FCU's behaviour?) and the fallback if it does.
     bridge = MavlinkBridge(url=args.mav, log=log)
+    bridge_sup = bridge
+    if args.dual_link:
+        bridge_sup = MavlinkBridge(url=args.mav_supervisor, log=log)
+        print("fcu_client: DUAL LINK -- 84/331 on %s, class-76 on %s (one process, one node)"
+              % (args.mav, args.mav_supervisor), flush=True)
     bp = BridgeProcess(args, bridge=bridge, node=node)
     bp.load_calib()
     bp.start_ros(node=node)
@@ -99,7 +111,7 @@ def main(argv=None) -> int:
         return _bench(args, bridge, node, bp)
 
     # The supervisor drives the shared link: its pump loop calls bp.step() every iteration.
-    sv = Supervisor(args, bridge=bridge, node=node, tick_hook=lambda now: bp.step(now))
+    sv = Supervisor(args, bridge=bridge_sup, node=node, tick_hook=lambda now: bp.step(now))
     print("fcu_client: merged client up -- ONE link %s; 84/331 by the bridge half, class-76 + guards by the "
           "supervisor half" % args.mav, flush=True)
     try:
@@ -110,6 +122,11 @@ def main(argv=None) -> int:
             bridge.close()
         except Exception:
             pass
+        if bridge_sup is not bridge:
+            try:
+                bridge_sup.close()
+            except Exception:
+                pass
         try:
             node.destroy_node()
             rclpy.shutdown()
