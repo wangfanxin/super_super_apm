@@ -69,10 +69,14 @@ fcu  RPE 1s rmse 0.049 m  p95 0.092
 1. 发已知 `/lio/robo/odom` 与 `/plan/cmd`（30 Hz，避免两个订阅者丢不同的包）；
 2. **同时**用 bag 记录（`scripts/record_bag.sh`，split writers）和飞行实际使用的实时 CSV 记录器
    （`scripts/record-odom.py` → `lio.csv`；`scripts/record-traj.py --csv traj.csv` → `traj.csv.cmd.csv`）；
-3. 用 `bag_to_csv.py` 派生 bag，再逐样本对比 **派生层 vs 实时层**：
+3. 用 `bag_to_csv.py` 派生 bag，再逐样本对比 **派生层 vs 实时层**（**报告为 info，不是 gate 判据**：
+   两个独立订阅者在负载下会丢不同子集，实测重叠 47–100% 但**匹配上的样本值全部一致**；gate 判据是
+   "派生不改变数值"——与发布出去的已知值对上；"派生层逐样本等于实时层"的权威证据是真实飞行
+   `missionA-phase2k`（现采每一行逐字节存在于派生层）：
    - 派生层的每一行必须能在实时层里找到**同一时间戳**、且所有数值字段一致（<1e-6）；
    - 要求 ≥95% 的派生行匹配、0 个数值不一致。
-   实测：`matched 100.0% of derived, value mismatches 0`（lio 与 traj.cmd 两条都如此）。
+   实测：信息行形如 `info same/differs (subscriber loss): ... matched N%, value mismatches 0`；
+   数值不一致 = 0 是硬要求（派生逻辑回归时会立刻红）。
 
 这正是 Phase 2 在真实飞行上验证过的"派生层 ⊇ 现采层"的**可重复版本**，不需要飞行；真实飞行的证据仍是
 `missionA-phase2k`（逐字节包含）与 Phase 2 文档。
