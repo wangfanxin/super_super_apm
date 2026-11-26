@@ -193,7 +193,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --corner-speed-list "${CORNER_SPEED_LIST:-${CORNER_SPEED:-2.0}}" \
 --ref-no-retract ${REF_NO_RETRACT:-0} \
 --ref-no-fold ${REF_NO_FOLD:-0} \
---ref-retract-dr ${REF_RETRACT_DR:-0} \
+--ref-retract-dr ${REF_RETRACT_DR:-0} --ref-retract-dr-hold-s ${REF_RETRACT_DR_HOLD_S:-0.4} \
 --ref-final-slew ${REF_FINAL_SLEW:-0} \
 --ref-ff ${REF_FF:-0} \
 --ref-gov-kp ${REF_GOV_KP:-0} \

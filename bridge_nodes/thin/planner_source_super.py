@@ -273,6 +273,9 @@ def main() -> int:
                     help=">0 = 在发布路径的**最后一层**统一做速度连续性：所有覆盖（hold/no-retract/governor）"
                          "只产生期望速度，这里对 (p,v) 一起限幅（|dv| <= 该值*dt），绑定时用积分位置保持 p/v 自洽。"
                          "这样交接处不会出现 1->0 m/s 的阶跃（实测该阶跃导致角点速度塌陷）。0=关。")
+    ap.add_argument("--ref-retract-dr-hold-s", type=float, default=0.4,
+                    help="--ref-retract-dr 时，retract 初期保持上一拍速度**不衰减**的最长时间（s）；"
+                         "超过后按 REF_V_SLEW 衰减。默认 0.4 s。")
     ap.add_argument("--ref-retract-dr", type=int, default=0,
                     help="1 = 当 --ref-no-retract 触发（新参考落到后方）时，不要冻结+零速，而是沿上一次"
                          "前进方向继续滑行（速度按 REF_V_SLEW 衰减），从而保持速度连续、不在角点掉速。"
@@ -1439,6 +1442,7 @@ def main() -> int:
                 retract = float(d @ state["last_dir"])      # <0 means the target is behind
                 if retract < -0.05:
                     state["n_retract"] = state.get("n_retract", 0) + 1
+                    state["_rdr_hit"] = True
                     if int(getattr(args, "ref_retract_dr", 0)) and state.get("last_dir") is not None:
                         # WHTF-RETRACT-DR (2026-11-27 round 7): 冻结+零速会让参考速度在交接处突然塌到 0，
                         # 实测这就是角点 0.0-0.3 m/s 的直接来源。改为沿上一拍前进方向继续滑行，
@@ -1446,7 +1450,19 @@ def main() -> int:
                         _vlast = float(state.get("pub_speed_nz", 0.0))
                         _dt = max(1e-3, now - float(state.get("last_pub_t", now - 1.0 / max(1.0, args.cmd_rate))))
                         _dec = max(1.0, float(getattr(args, "ref_v_slew", 0.0) or 3.0))
-                        _spn = max(0.0, _vlast - _dec * _dt)
+                        _t0 = state.get("rdr_t0")
+                        if _t0 is None:
+                            _t0 = now
+                            state["rdr_t0"] = now
+                        _hold_s = float(getattr(args, "ref_retract_dr_hold_s", 0.4) or 0.4)
+                        if (now - float(_t0)) <= _hold_s:
+                            _spn = _vlast            # 交接初期：速度不减，位置沿旧方向继续走
+                        else:
+                            _spn = max(0.0, _vlast - _dec * _dt)
+                        state["rdr_n"] = int(state.get("rdr_n", 0)) + 1
+                        if state["rdr_n"] in (1, 20, 100, 500):
+                            print("RETRACT-DR #%d: hold %.2f s, speed %.2f m/s, t0-age %.2f s"
+                                  % (state["rdr_n"], _hold_s, _spn, now - float(_t0)), flush=True)
                         if _spn > 0.05:
                             s.p = np.asarray(state["last_pub"], float) + state["last_dir"] * (_spn * _dt)
                             s.v = np.asarray(state["last_dir"], float) * _spn
@@ -1762,6 +1778,8 @@ def main() -> int:
         _spn_pub = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
         if _spn_pub > 0.2:
             state["pub_speed_nz"] = _spn_pub
+        if not state.pop("_rdr_hit", False):
+            state["rdr_t0"] = None
         state["last_pub"] = s.p.copy()
         state["last_pub_t"] = now
         # ★ 参考低通（第 20 轮，--ref-lp-tau；默认 0 = 关）★
