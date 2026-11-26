@@ -399,6 +399,7 @@ namespace super_planner {
 
         // use hot init or not, just prepare a guide path, a guide t, init and fina state and sfc for exp traj opt
         StatePVAJ pos_init_state, pos_fina_state;
+        bool used_general_bc = false;   ///< WHTF-GENERAL-BC (patch 17) -- for the zero-start retry below
         PolytopeVec sfc;
         vec_Vec3f guide_path;
         // the guide_stamp saves a TT
@@ -435,7 +436,24 @@ namespace super_planner {
             /// 0.5 m/s, missionA-pg-01).  Injecting the measured velocity keeps the handover
             /// continuous.  Everything else -- SFC, A*, MINCO, the terminal rest at the goal -- is
             /// untouched.
-            if (cfg_.hot_start_en) {
+            if (cfg_.general_bc_en) {
+                /// WHTF-GENERAL-BC (patch 17).  The vehicle is a CONTINUOUS system: at a handover it is
+                /// moving (and accelerating) while the planner starts a fresh MINCO problem.  Hand the
+                /// optimiser the measured state so the new trajectory starts on the same physical state
+                /// -- no brake-to-zero, no reference cusp.  The caps are the planner's own envelope.
+                Vec3f v0 = robot_state_.v;
+                const double vn0 = v0.norm();
+                const double v_cap = cfg_.exp_traj_cfg.max_vel;
+                if (vn0 > v_cap && vn0 > 1e-6) { v0 *= v_cap / vn0; }
+                if (vn0 > 1e-3) { pos_init_state.col(1) = v0; }
+                Vec3f a0 = robot_state_.a;
+                const double an0 = a0.norm();
+                const double a_cap = cfg_.exp_traj_cfg.max_acc;
+                if (an0 > a_cap && an0 > 1e-6) { a0 *= a_cap / an0; }
+                if (an0 > 1e-3) { pos_init_state.col(2) = a0; }
+                used_general_bc = true;
+                cout << " -- [SUPER] GENERAL-BC: start from measured state" << endl;
+            } else if (cfg_.hot_start_en) {
                 Vec3f v0 = robot_state_.v;
                 const double vn0 = v0.norm();
                 const double v_cap = cfg_.exp_traj_cfg.max_vel * 0.6;
@@ -835,6 +853,22 @@ namespace super_planner {
                                            guide_stamp,
                                            sfc,
                                            out_traj);
+        if (!temp_ret && used_general_bc) {
+            /// WHTF-GENERAL-BC RETRY (patch 17): a goal the current momentum cannot reach must not put
+            /// the FSM into a failing loop -- retry ONCE from the historical zero-velocity start.
+            ros_ptr_->warn(" -- [SUPER] GENERAL-BC: optimiser rejected the measured start state, "
+                           "retrying from rest");
+            pos_init_state.col(1).setZero();
+            pos_init_state.col(2).setZero();
+            sfc = original_sfc;
+            temp_ret = exp_traj_opt_->optimize(pos_init_state,
+                                               pos_fina_state,
+                                               guide_path,
+                                               guide_stamp,
+                                               sfc,
+                                               out_traj);
+            used_general_bc = false;
+        }
         time_consuming_[EXP_TRAJ_OPT] = t_exp_opt.stop();
         {
             VecDf init_ts;
