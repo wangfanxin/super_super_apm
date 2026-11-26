@@ -184,6 +184,8 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --pass-by-m ${PASS_BY_M:-0.0} \
 --pass-by-long-m ${PASS_BY_LONG_M:-0.0} \
 --corner-carry-m ${CORNER_CARRY_M:-0} \
+--corner-exit-look-m ${CORNER_EXIT_LOOK_M:-0} \
+--corner-exit-trigger-m ${CORNER_EXIT_TRIGGER_M:-3.0} \
 --target-mode ${TARGET_MODE:-corner} \
 --target-look-m ${TARGET_LOOK_M:-3.0} \
 --target-step-m ${TARGET_STEP_M:-0.8} \

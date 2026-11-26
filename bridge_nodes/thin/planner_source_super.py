@@ -423,6 +423,14 @@ def main() -> int:
                     help="目标点移动超过这个距离才重发 goal（避免每拍 new_goal 把 SUPER 的 FSM 打爆）。")
     ap.add_argument("--target-vref", type=float, default=0.0,
                     help="rolling 目标点的终点速度大小（m/s）；0 = 用 --corner-speed。方向沿航路切线。")
+    ap.add_argument("--corner-exit-look-m", type=float, default=0.0,
+                    help="★ WHTF-CORNER-EXIT (2026-11-26, owner 的设计) ★ 条件式前视：离当前角点还剩 "
+                         "--corner-exit-trigger-m 米以内时，把目标点从**角点**改到**角点沿出弯方向再前 "
+                         "look 米**；远离角点时目标仍是角点。于是轨迹终点落在角点之后（旧轨迹不在角点结束），"
+                         "而接近段仍然瞄着角点（不会在 10 m 外就切弯）。终点速度取出弯方向 × --corner-speed，"
+                         "所以经过角点时参考不停。0=关（历史行为）。")
+    ap.add_argument("--corner-exit-trigger-m", type=float, default=3.0,
+                    help="--corner-exit-look-m 的触发距离（离角点多少米内切换目标），m。")
     ap.add_argument("--corner-carry-m", type=float, default=0.0,
                     help="★ 目标持续推进（carrot）：当 --pre-goal-m 已经把本 leg 的目标推进后，把发给 SUPER 的"
                          "目标点从角点沿**出弯方向**再前移这么多米（不在角点上停车）。与 --goal-lookahead-m 不同："
@@ -991,7 +999,25 @@ def main() -> int:
                     if d_now < pre:
                         sent_i = pacer.i_leg + 1
                         state["pre_goal_leg"] = pacer.i_leg
-        if sent_i == state["goal_i"] and not force:
+        # ★ WHTF-CORNER-EXIT：条件式"角点后前视"★ 目标是否已经切换过（每个 leg 只发一次）
+        exit_look = float(getattr(args, "corner_exit_look_m", 0.0) or 0.0)
+        exit_trig = float(getattr(args, "corner_exit_trigger_m", 3.0) or 3.0)
+        exit_active = False
+        exit_first_send = False
+        if exit_look > 0.0 and pre <= 0.0 and 1 <= pacer.i_leg < len(corners_l) - 1:
+            if state.get("exit_goal_leg") == pacer.i_leg:
+                exit_active = True
+            else:
+                p_w_now = here_w()
+                if p_w_now is not None:
+                    d_now = float(np.linalg.norm(np.asarray(p_w_now, float)[:2]
+                                                 - corners_w[pacer.i_leg][:2]))
+                    if d_now < exit_trig:
+                        state["exit_goal_leg"] = pacer.i_leg
+                        exit_active = True
+            if exit_active and state.get("exit_sent_leg") != pacer.i_leg:
+                exit_first_send = True
+        if sent_i == state["goal_i"] and not force and not exit_first_send:
             return
         if sent_i == state["goal_i"] and force and (now_goal() - state["last_goal_t"]) < 1.0:
             return
@@ -999,6 +1025,8 @@ def main() -> int:
             state["stale_resends"] = 0
         state["goal_i"] = sent_i
         state["last_goal_t"] = now_goal()
+        if exit_active:
+            state["exit_sent_leg"] = pacer.i_leg
         g = PoseStamped()
         g.header.stamp = node.get_clock().now().to_msg()
         g.header.frame_id = cmd_stream.FRAME_L
@@ -1045,6 +1073,17 @@ def main() -> int:
             if n > 1e-6:
                 pl[0] += la * d[0] / n
                 pl[1] += la * d[1] / n
+        # ★ WHTF-CORNER-EXIT：把目标从角点移到"角点 + 出弯方向 × look" ★
+        exit_vout_dir = None
+        if exit_active:
+            uo = corners_l[pacer.i_leg + 1] - corners_l[pacer.i_leg]
+            no = float(np.linalg.norm(uo[:2]))
+            if no > 1e-6:
+                pl = corners_l[pacer.i_leg].copy()
+                pl[0] += exit_look * uo[0] / no
+                pl[1] += exit_look * uo[1] / no
+                gi_t = pacer.i_leg
+                exit_vout_dir = np.array([uo[0] / no, uo[1] / no, 0.0])
         # ★ PVA GOAL（--goal-pva 1）★
         #   目标仍然是这个角点（所以 W1b 不会被放宽），但把**离开角点的速度**一起告诉 SUPER：
         #   方向 = 出弯方向（本角点 → 下一个角点），大小 = --corner-speed。SUPER 的轨迹终点因此
@@ -1054,7 +1093,12 @@ def main() -> int:
         # ⚠ 停机坪那一腿（index 0，竖直起飞）**必须 v=0**：实测 missionA-pv-01，给它一个 2 m/s 的
         #   水平出弯速度后，MINCO 每拍都报 "Omg or thr or Pos violation"（4881 次），
         #   一条轨迹都优化不出来，飞机 265 s 原地悬停（路径 4.5 m）。最后的航点同理要给 0（要停）。
-        if carry_active:
+        if exit_vout_dir is not None:
+            # extended-corner goal: keep moving along the outgoing leg at the corner speed
+            if int(getattr(args, "goal_pva", 0)):
+                vc = float(args.corner_speed)
+                vout = np.array([vc * exit_vout_dir[0], vc * exit_vout_dir[1], 0.0])
+        elif carry_active:
             # carrot 目标的终点速度就是出弯方向（若把 bisector/incoming 也叠上去，终点速度方向与出弯不一致，
             # 飞机会在角点后再拐一次 —— 这正是要消除的"绕弯"）
             uo = corners_l[pacer.i_leg + 1] - corners_l[pacer.i_leg]
