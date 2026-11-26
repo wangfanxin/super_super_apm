@@ -945,3 +945,65 @@ cmd - truth = (cmd - FCU 估计) + (FCU 估计 - truth)
 真值残余高度变化与水平加速度不相关（r≈-0.08），是垂直环自身的小幅振荡；19g（VEL_P 2.0 再软化）
 因 H6/H5 抖动无效，尚未定论。
 
+## 29. 更正：EKF 并不"差"——之前 0.15 m 里 0.12 m 是高度基准；以及前视/终点机制清单（2026-11-26 13:20）
+
+### 29.1 跟踪误差分解的更正（去掉 z 基准后重算）
+
+把 `fcu-truth` 的高度中位偏置（+0.12 m 基准）扣除后再分解：
+
+| 趟 | EKF↔真值 水平误 p50/p90 | 跟随(cmd−EKF) p50/p90 | 跟踪(cmd−truth) p50/p90 | 定位占误差能量 |
+|---|---|---|---|---|
+| 9f | **0.052 / 0.086 m** | 0.143 / 0.205 m | 0.151 / 0.224 m | **12 %** |
+| 19f | **0.047 / 0.101 m** | 0.141 / 0.462 m | 0.152 / 0.481 m | **5 %** |
+
+- **EKF 的水平定位其实很好（5 cm p50 / 9–10 cm p90）**，与原始 LIO（6–9 cm）一致；
+- 之前的 0.15 m 是 **3D 误差被 +0.12 m 高度基准主导**（原始 LIO 高度只差 1.4 cm）；
+- 跟踪误差的主项是 **跟随（cmd→飞机）**，不是定位；而跟随误差在角点处暴涨（19f 角点 0.46 m）；
+- 置信度实验（VISO 0.10→0.03）只把 EKF 时延 +60→+10–30 ms，误差没降 —— 与"EKF 差"的判断一致修正：
+  **不需要再调外源置信度**；若要继续压定位，可选做"bridge 发真实协方差 + VISO_DELAY_MS 按实测 30–60 ms
+  重标定"，但收益上限 ~5 cm。
+
+### 29.2 前视/终点机制清单（现有实现）
+
+**SUPER 内部（hku_super/config/super_planner_hex.yaml）**
+
+| 参数 | 当前值 | 含义 |
+|---|---|---|
+| `planning_horizon` | 16.0 m | 一条轨迹的 guide 路径最多覆盖多远 |
+| `receding_dis` | 1.0 m | 10 Hz 重规划时沿旧轨迹保留/重接的长度 |
+| `replan_forward_dt` | 0.1 s | 重规划起点在**轨迹时间**上提前多少 |
+| `replan_rate` / `replan_time_limit` | 10 Hz / 0.35 s | 重规划频率 / 单次墙钟预算 |
+| `corridor_bound_dis` / `corridor_line_max_length` | 0.8 / 1.0(6.0) m | 走廊生成 |
+| `goal_pva_en` / `hot_start_en` / `goal_vel_en` | true / true / false | 终点 PVA / 热启动 / 终点速度（另一路） |
+
+**plan box 目标与前视（本次飞行的默认值）**
+
+| 参数 | 本次值 | 作用 |
+|---|---|---|
+| `--arrive-m` | 0.3 | 离角点多近就派发下一个 goal |
+| `--pre-goal-m` | **0（关）** | 离角点 M 米时把**下一个角点**当 goal → 当前角点成为内部点 |
+| `--goal-lookahead-m` | **0（关）** | goal 沿出弯方向前推 M 米（角点不再是终点） |
+| `--corner-carry-m` | **0（关）** | 仅在 pre-goal 生效时，把 goal 再沿出弯方向推 0.5–1.0 m |
+| `--goal-lead` | **0（关）** | goal 直接给 k 个航点之后（跳过角点） |
+| `--pass-by-m` / `--pass-by-long-m` | 0 / 0 | 到达判据：越过航点平面/盒子（配合切角） |
+| `--target-mode` / `--target-look-m` / `--target-step-m` | corner / (3.0) / (0.8) | rolling=连续 carrot 目标（本趟未用） |
+| `--corner-mode` / `--corner-speed` | bisector / 1.2 | PVA 终点速度方向/大小 |
+
+**终点是怎么算的（代码事实）**：plan box 把**单个 goal 点**发给 SUPER；SUPER `PathSearch` 用 A* 到该 goal，
+`guide_path.back() == goal` 附近；`pos_fina_state.col(0) = guide_path.back()`，`col(1)=goal_v`（PVA 时）。
+所以**每条轨迹的终点位置就是 goal**；`goal_pva` 只让末速度非零，不把末点移出角点。这就是"旧路径在角点结束"的机制。
+
+### 29.3 owner 的方案 -> 现有开关
+
+"前视 3 m；到角点前一直瞄角点；离角点 3 m 内瞄到角点之后" = **`PRE_GOAL_M=3.0` + `CORNER_CARRY_M≈0.8`**
+（当前角点作为轨迹内部点、终点落在下一角点/角点后 0.8 m）。另一条是 `GOAL_LOOKAHEAD_M=3.0`
+（终点在角点后 3 m，但角点无硬约束，需 `PASS_BY_M` 判到达）。
+
+历史结论（旧栈，**没有** patch14/slew/z 修正）：pre-goal 1.5 曾死锁（stale-resend 已修）；
+pre-goal 1.2+carry 0.8 造成 W1b 8/13 与接触（phase4z）；goal-lookahead 0.8 切角 W1b 挂（phase8i）。
+**这些需要在当前栈上重测**。
+
+若要"角点硬约束 + 终点在角点后"，SUPER 目前**没有 via 点**支持；需要 patch `generateExpTraj`：
+先 A* 到 via（角点），再 A* 到 goal（角点后 3 m），拼 guide 路径、统一走廊后做单条 MINCO；
+终点=goal，角点是走廊内部点。改动集中在 frontend，风险是跨角点走廊/SFC 的连续性与可行性。
+
