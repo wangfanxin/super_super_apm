@@ -767,3 +767,19 @@ SUPER 短暂停顿时 governor 继续用 ≤1 m/s 爬向目标，`s_ref` 累积�
 2. 修好后预期同时拿到：巡航 ≥2.5 m/s、W4 正余量、跟踪 p90 ≤0.2；
 3. 然后 4 m/s（同一套 governor），再做 6/8（大世界 + map_size 32 折中）。
 
+## 24. round 18：governor 与 hold 解耦；16c 拿到"最安全的轨迹"但仍慢（08:18–08:40）
+
+- 修复：governor 在 SUPER 断流/hold 拍**完全旁路**（`state["is_hold"]`），不再用 catch-up 速度爬行。
+- 16a/16b 因主机/DDS 抖动无效（16a lidar starvation max 3.17 s → 估计器丢失；16b LIO 收不到点云）。
+- **16c（2.5 m/s，governor along=2 修后，8000 点，DDS 清理后）**：
+  - W1b **13/13**、W4 **+0.037 m CLEAR**、W6 pass、Q4 p90 **0.110 m** —— 安全性与跟踪是历次最好；
+  - 但真值速度 p50 0.58 / p90 0.67（W2 挂），中段指令 hold **76 次 28.7 s**，绕圈 8。
+- 诊断：hold 的来源是 **SUPER 自身在 2.5 m/s 下频繁进入静默/规划失败**（切目标 Traj finish + PlanFromRest），
+  governor 忠实跟随慢参考；也就是说 2.5 m/s 的瓶颈仍是**规划可用性**，不是控制。
+
+**下一轮（round 19）**：
+1. 统计 16c 的 SUPER 静默区间（时长/位置/失败类型），把 `replan_time_limit` 从 0.35 提到 0.8，
+   并把 corner speed 提到 2.0（让 SUPER 在角点不把速度压到 0）；
+2. 目标：W2 巡航 p90 ≥2.2 且保持 W4 正余量、Q4 ≤0.2；
+3. 然后 4 m/s（沿用 governor），再 6/8 m/s。
+

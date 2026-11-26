@@ -1209,6 +1209,7 @@ def main() -> int:
         #   flown here as a monotone ramp to the vertical-leg target, shaped by the rate limiter,
         #   and SUPER takes over from leg 2 onward.
         on_vertical_leg = (pacer.i_leg == 0)
+        state["is_hold"] = False
         _ref_age = (now - state["ref_wall"]) if state["ref_wall"] else 0.0
         _dr_s = float(getattr(args, "ref_deadreckon_s", 0.0) or 0.0)
         if (_dr_s > 0.0 and not on_vertical_leg and ref is not None and state["n_ref"] > 0
@@ -1228,6 +1229,12 @@ def main() -> int:
                 print("REF DEAD-RECKON #%d: SUPER silent %.2f s, extrapolating |v| %.2f m/s for %.2f s"
                       % (state["dr_n"], _ref_age, float(np.linalg.norm(_v_dr[:2])), _dt), flush=True)
         elif on_vertical_leg or ref is None or _ref_age > args.stale_s:
+            # WHTF-GOV-HOLD-FIX (2026-11-26): while SUPER is silent the plan box must HOLD, not creep.  The
+            # arc-sync governor used to keep driving toward the SUPER target at up to --ref-catchup-mps, so
+            # s_ref ran ahead of s_plan (phase15a: s_err -16.7 m) and the catch-up cap then pinned the whole
+            # sortie at 1 m/s (W2 failed at p90 0.67).  Marking the tick as a hold lets the governor bypass
+            # entirely: (s_plan, s_ref) only advance on real SUPER samples.
+            state["is_hold"] = True
             s = hold_sample(force_vertical=on_vertical_leg)
         else:
             # ★★ yaw 在这一拍换算成飞控的罗盘航向（第 88 轮审查 F2）★★
@@ -1472,7 +1479,7 @@ def main() -> int:
         #   位置和速度由同一个 v 产生，所以处处自洽、处处连续，速度天然有界。
         #   注意它**每拍都要跑**：第一版把它写进了 `if nadv > 1e-3`（只在有位移的那拍更新），
         #   那样静止的拍就不会收敛。
-        if args.ref_gov_kp > 0.0:
+        if args.ref_gov_kp > 0.0 and not state.get("is_hold"):
             if state.get("p_ref") is None:
                 state["p_ref"] = s.p.copy()
             dtg = (now - state["last_pub_t"]) if state.get("last_pub_t") is not None \
