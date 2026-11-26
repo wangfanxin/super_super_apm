@@ -56,6 +56,10 @@ namespace super_planner {
         /// Start the rest-to-rest plan (PlanFromRest) from the MEASURED velocity
         /// instead of zero.  See super_planner.cpp's generateExpTraj comment.
         bool hot_start_en;
+        /// WHTF-HOTRATIO (patch 22, 2026-11-27): fraction of max_vel used to cap the injected start
+        /// velocity.  0.6 (historical) makes every new trajectory start at 0.81 m/s at 1.35 max_vel,
+        /// so the corner can never carry >=1 m/s no matter what the governor asks.
+        double hot_start_vel_ratio;
         /// WHTF-GENERAL-BC (patch 17): hand the optimiser the MEASURED start velocity AND acceleration
         /// (and, through goal_pva_en, the goal's terminal velocity/acceleration) instead of assuming a
         /// rest boundary.  Default false keeps the delivered behaviour.
@@ -118,6 +122,7 @@ namespace super_planner {
             loader.LoadParam("super_planner/goal_yaw_en", goal_yaw_en, false);
             loader.LoadParam("super_planner/goal_pva_en", goal_pva_en, false);
             loader.LoadParam("super_planner/hot_start_en", hot_start_en, false);
+            loader.LoadParam("super_planner/hot_start_vel_ratio", hot_start_vel_ratio, 0.6);
             loader.LoadParam("super_planner/general_bc_en", general_bc_en, false);
             loader.LoadParam("super_planner/visual_process", visual_process, false);
             loader.LoadParam("super_planner/use_fov_cut", use_fov_cut, false);

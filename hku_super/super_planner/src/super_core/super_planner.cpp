@@ -456,7 +456,7 @@ namespace super_planner {
             } else if (cfg_.hot_start_en) {
                 Vec3f v0 = robot_state_.v;
                 const double vn0 = v0.norm();
-                const double v_cap = cfg_.exp_traj_cfg.max_vel * 0.6;
+                const double v_cap = cfg_.exp_traj_cfg.max_vel * cfg_.hot_start_vel_ratio;   // WHTF-HOTRATIO
                 if (vn0 > v_cap && vn0 > 1e-6) {
                     v0 *= v_cap / vn0;
                 }
