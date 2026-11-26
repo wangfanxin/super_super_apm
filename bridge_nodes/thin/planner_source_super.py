@@ -1859,6 +1859,31 @@ def main() -> int:
                               % (state["final_slew_n"], _n, _a, float(np.linalg.norm(_vdes[:2]))),
                               flush=True)
         state["pub_prev"] = (np.asarray(p_pub, float).copy(), np.asarray(v_pub, float).copy())
+        # ★★ LOWSPEED PROVENANCE (round 18, temporary) ★★ which stage turns 0.8 m/s into 0.2?
+        _vrp = float(np.linalg.norm(np.asarray(v_pub, float)[:2]))
+        _now_ls = now
+        if _vrp < 0.30 and not state.get("is_hold"):
+            if _now_ls - float(state.get("ls_last", 0.0)) > 0.5:
+                state["ls_last"] = _now_ls
+                _refv = 0.0
+                if state.get("ref") is not None:
+                    try:
+                        _refv = float(np.linalg.norm(np.asarray(state["ref"][1], float)[:2]))
+                    except Exception:  # noqa: BLE001
+                        _refv = -1.0
+                _sv = float(np.linalg.norm(np.asarray(state.get("v_slew", np.zeros(3)), float)[:2]))
+                _pre_lp = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
+                print("LOWSPEED raw=%.2f slew=%.2f pre_lp=%.2f final=%.2f age=%.2f hold=%d "
+                      "retract=%d gate=%d clamped=%d leg=%d"
+                      % (_refv, _sv, _pre_lp, _vrp,
+                         (now - state["ref_wall"]) if state["ref_wall"] else -1.0,
+                         1 if state.get("is_hold") else 0,
+                         int(state.get("n_retract", 0)), int(state.get("gate_n", 0)),
+                         int(state.get("_clamped", 0)), pacer.i_leg + 1), flush=True)
+        try:
+            state["_clamped"] = 1 if clamped else 0
+        except Exception:  # noqa: BLE001
+            state["_clamped"] = int(state.get("_clamped", 0))
         m = CmdMsg()
         m.header.stamp = node.get_clock().now().to_msg()
         m.header.frame_id = s.frame_id

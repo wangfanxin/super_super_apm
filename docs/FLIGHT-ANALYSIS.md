@@ -780,3 +780,21 @@ PLANDBG new_goal: dur=9.71  v_start=0.346  v_min(1.2s)=0.087  v(0.5s)=0.346
 结论：0.0 m/s 的短零步不是（或不只是）no-retract 这一段造成的；需要定位 **plan-box 发布链路里是哪一阶段把
 0.8 m/s 打成 0.2**（slew / clamp / no_retract / hold / z-hold / LP 各阶段的输入输出）。下一轮（round 18）
 加"低速溯源"日志（|v|<0.3 时打印每个 stage 的速度），一趟即可定位，然后针对那一层修。
+
+## 57. 低速溯源第一轮：SUPER 给的 0.80 → 发布出去只剩 0.27（2026-11-27 round 18）
+
+54b（agile + no-retract，带 LOWSPEED 溯源日志；该趟因 LIO feed stale 最终无效，但 101 条日志可用）：
+
+```
+LOWSPEED raw=0.80 slew=0.00 pre_lp=0.27 final=0.27 age=0.01 hold=0 retract=4 gate=0 clamped=1 leg=4
+LOWSPEED raw=0.96 slew=0.00 pre_lp=0.00 final=0.00 age=0.01 hold=0 retract=7 gate=0 clamped=1 leg=8
+```
+- `raw`（SUPER 参考速度）= **0.80–0.96 m/s**（再次确认 SUPER 不给低速）；
+- `clamped=1`：位置限幅在角点绑定了；`final` 只有 **0.27 / 0.00**；
+- `slew=0.00` 是因为这趟**没有启用 REF_V_SLEW**（我最近几轮命令里没带 REF_V_SLEW=3.0）——
+  注意 round 7 修的 dt bug 仍在，但既然 slew 关闭就不起作用；
+- 说明掉速发生在 `ref构建 → 限幅 → no_retract` 这段（最可疑的是限幅/no_retract 分支对 `s.v` 的改写，
+  以及 clamp 绑定期间速度前馈没有跟着位置走）。
+
+下一轮（round 19）：① 带 `REF_V_SLEW=3.0`（已修 dt）重飞一次，看 slew 是否能把 0.8→0 的跳变抹平；
+② 在 ref 构建处标记分支来源（SUPER 样本 / hold / no_retract / gate），把 0.27 的来源钉死。
