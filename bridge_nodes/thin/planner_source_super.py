@@ -464,6 +464,14 @@ def main() -> int:
                          "PlannerFromRest stall (repeated PathSearch start dbg, aircraft holding 3.1 m from the "
                          "next corner) and this 3.0 s threshold killed the sortie (W1 6/13).  A stall is not a "
                          "reason to abandon a good tour: raise it to give the planner time to escape.")
+    ap.add_argument("--ref-z-offset-m", type=float, default=0.0,
+                    help="★ WHTF-Z-DATUM (2026-11-26) ★ add this many metres to the PUBLISHED altitude.  "
+                         "MEASURED phase9f forensics: the command z is constant 2.022 m, the truth flies "
+                         "1.869 m, and the FCU's own altitude estimate is +0.122 m above the truth while the "
+                         "raw LIO is +0.014 m - i.e. the EKF/extnav ALTITUDE DATUM is ~0.12 m above the "
+                         "world datum (calib t_WL z is +0.1156 m).  The vehicle holds the commanded altitude "
+                         "in the FCU frame, so compensating the published z by the measured datum makes the "
+                         "truth fly the altitude the mission asks for.  0 = historical behaviour.")
     ap.add_argument("--ref-v-slew", type=float, default=0.0,
                     help="★ WHTF-REF-VSLEW (2026-11-26) ★ slew limit on the commanded VELOCITY (m/s^2).  0 = off."
                          " MEASURED flight_quality Q3: the reference VELOCITY steps by up to 0.40-0.53 m/s in"
@@ -1722,7 +1730,9 @@ def main() -> int:
         m = CmdMsg()
         m.header.stamp = node.get_clock().now().to_msg()
         m.header.frame_id = s.frame_id
-        m.position.x, m.position.y, m.position.z = (float(p_pub[0]), float(p_pub[1]), float(p_pub[2]))
+        _zoff = float(getattr(args, "ref_z_offset_m", 0.0) or 0.0)
+        m.position.x, m.position.y = float(p_pub[0]), float(p_pub[1])
+        m.position.z = float(p_pub[2]) + _zoff          # WHTF-Z-DATUM: altitude datum compensation
         m.velocity.x, m.velocity.y, m.velocity.z = (float(v_pub[0]), float(v_pub[1]), float(v_pub[2]))
         m.acceleration.x, m.acceleration.y, m.acceleration.z = (float(a_pub[0]), float(a_pub[1]),
                                                                 float(a_pub[2]))
@@ -1733,6 +1743,9 @@ def main() -> int:
         m.trajectory_flag = int(s.trajectory_flag)
         cmd_pub.publish(m)
 
+    if float(getattr(args, "ref_z_offset_m", 0.0) or 0.0) != 0.0:
+        print("CMD Z DATUM: publishing z + %+0.4f m (compensates the measured EKF altitude datum; the "
+              "mission z stays the planning frame's z)" % float(args.ref_z_offset_m), flush=True)
     timer = node.create_timer(1.0 / max(1.0, args.cmd_rate), on_timer)
 
     def on_status():
