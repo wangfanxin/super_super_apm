@@ -269,6 +269,11 @@ def main() -> int:
     ap.add_argument("--ref-no-retract", type=int, default=0,
                     help="1 = 参考**永不后退**：若新参考落在当前指令点的后方（沿当前前进方向的分量为负），"
                          "就保持当前指令点不动，直到新规划追上来。0=关（老行为）。")
+    ap.add_argument("--ref-no-fold", type=int, default=0,
+                    help="1 = 参考路径**禁止掉头**：若这一拍发布的位移与上一拍方向夹角 >90°（折返），"
+                         "就把位移里“向后”的分量投影掉（只保留横向分量），并把速度前馈改成实际的 "
+                         "dp/dt。目标：交接处参考不折向（CUSP 5/趟 -> 0），角点不再速度塌陷。"
+                         "0=关（老行为）。")
     ap.add_argument("--ref-gov-kp", type=float, default=0.0,
                     help=">0 时启用参考调速器：把参考变成真正的一条轨迹（位置与速度自洽、处处连续），"
                          "而不是每拍夹一下。状态 p_ref，每拍 v = clamp(v_super + kp*(p_super - p_ref), "
@@ -1668,6 +1673,30 @@ def main() -> int:
             s.a = _a * float(args.ref_ff_gain)
         adv = s.p - prev_pub if prev_pub is not None else np.zeros(3)
         nadv = float(np.linalg.norm(adv))
+        # ★★ WHTF-NO-FOLD (2026-11-27 round 4) ★★ 交接处参考路径禁止"掉头"：
+        #   实测（23c/27b/28b/28c）每次换轨迹后参考都会在低速度下折向 120-180°，CUSP 5 次/趟，
+        #   同一时刻速度塌陷到 0.0-0.35 m/s。这里把这一拍的位移里"沿上一拍方向向后"的分量投影掉
+        #   （保留横向分量，所以拐弯仍然允许），并把速度前馈改成真实的 dp/dt，保证位置/速度自洽。
+        if int(getattr(args, "ref_no_fold", 0)) and nadv > 1e-3 and state.get("cusp_dprev") is not None:
+            _dp = np.asarray(state["cusp_dprev"], float)
+            _np = float(np.linalg.norm(_dp))
+            if _np > 1e-3:
+                _u = _dp / _np
+                _along = float(adv[:2] @ _u)
+                if _along < 0.0:
+                    _perp = adv[:2] - _along * _u
+                    s.p[0] = float(prev_pub[0]) + float(_perp[0])
+                    s.p[1] = float(prev_pub[1]) + float(_perp[1])
+                    _dtf = max(1e-3, now - float(state.get("last_pub_wall", now - 1.0 / max(1.0, args.cmd_rate))))
+                    s.v = np.zeros(3)
+                    s.v[:2] = _perp / _dtf
+                    s.a = np.zeros(3)
+                    adv = s.p - prev_pub
+                    nadv = float(np.linalg.norm(adv))
+                    state["fold_n"] = int(state.get("fold_n", 0)) + 1
+                    if state["fold_n"] in (1, 5, 20, 100, 500):
+                        print("NOFOLD #%d: suppressed a fold (|dp| %.3f m) at L(%.2f, %.2f)"
+                              % (state["fold_n"], nadv, float(s.p[0]), float(s.p[1])), flush=True)
         if nadv > 1e-3:
             state["last_dir"] = adv / nadv
         # ★★ CUSP WATCH（第 89 轮）：参考路径在腿中**掉头**的那一下 ★★
