@@ -46,7 +46,11 @@ docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
   phase23c-z-t.png               高度：指令/真值/FCU/LIO（W3 bias +0.003）
   phase23c-corner-forensics.png  六角点法医（按速度着色）
   phase23c-lowspeed-census.png   低速段普查（<0.5 m/s，分类着色）
-  phase23c-corner{1..6}-zoom.png 每角点放大
+  phase23c-corner{1..6}-zoom.png 每角点放大（含躯干 box + 机身半径环 + 膨胀环 + 净空着色）
+  phase23c-clearance.png         障碍物+机身半径+膨胀环的净空图（青色=自由/红=接触；含 body margin 与 W4 数值）
+
+
+  phase9f-clearance.png          同上（历史最佳趟的对照）
 
 == 机体能力台架
   bench-1kg-8ms.png             1 kg/250 mm 机体 8 m/s 台架（max 8.34 m/s、8 m/s²、51.6°）

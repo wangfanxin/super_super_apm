@@ -29,6 +29,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import _paths as _P  # noqa: E402
 import _figfont  # noqa: E402
+import _plot_obstacles as OBS  # noqa: E402
+
+OBS_R, OBS_INFL, OBS_ZSPLIT = OBS.geometry(root=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+OBS_RING_M = 3.2
 
 import matplotlib  # noqa: E402
 
@@ -170,13 +174,13 @@ def main() -> int:
         fig, ax = plt.subplots(figsize=(7.2, 7.2), dpi=160)
         fig.patch.set_facecolor("#0f1116")
         ax.set_facecolor("#0f1116")
-        for p in pillars:
-            try:
-                r = float(p.get("r", 0.1)); x, y = float(p["x"]), float(p["y"])
-            except Exception:  # noqa: BLE001
-                continue
-            ax.add_patch(Rectangle((x - r, y - r), 2 * r, 2 * r, facecolor="#6b7280",
-                                   edgecolor="none", alpha=0.85, zorder=1))
+        # ★ owner rule (2026-11-26): every trunk drawn as its real box PLUS the body-radius and the
+        #   map-inflation rounded-square rings, so "did it fly inside the body radius?" is visible.
+        _vs_xy = np.column_stack([E[vs[0]["i0"]:vs[0]["i1"] + 1], N[vs[0]["i0"]:vs[0]["i1"] + 1]])
+        _z_med = float(np.median(U))
+        _mmin, _imin, _obs_handles = OBS.draw_obstacles(
+            ax, pillars, _z_med, robot_r=OBS_R, inflation=OBS_INFL, z_split=OBS_ZSPLIT,
+            path_xy=_vs_xy, ring_m=OBS_RING_M, zorder=1)
         # the rest of the ring, faint, for orientation
         rx = [c[0] for c in ring] + [ring[0][0]]
         ry = [c[1] for c in ring] + [ring[0][1]]
@@ -192,11 +196,11 @@ def main() -> int:
             sel = slice(v["i0"], v["i1"] + 1)
             tt = t[sel]
             color = ["#38bdf8", "#22d3ee", "#a78bfa", "#f472b6"][li % 4]
-            # time-graded truth path: dark -> bright, so the direction is visible
-            for q in range(len(tt) - 1):
-                frac = q / max(1, len(tt) - 1)
-                ax.plot(E[sel][q:q + 2], N[sel][q:q + 2], "-", color=color, alpha=0.25 + 0.75 * frac,
-                        lw=2.0, zorder=4)
+            # truth path coloured by the EXACT body-edge margin; a faint time-graded line keeps direction
+            _xy_sel = np.column_stack([E[sel], N[sel]])
+            _mmap = OBS.body_margin(_xy_sel, pillars, U[sel], OBS_R, OBS_ZSPLIT)
+            _hc = OBS.plot_clearance_path(ax, _xy_sel, _mmap, lw=2.4, zorder=5)
+            ax.plot(_xy_sel[:, 0], _xy_sel[:, 1], "-", color=color, alpha=0.35, lw=0.8, zorder=4)
             # direction arrow every ~1.2 s
             last = -1e9
             for q in range(1, len(tt) - 1):
@@ -214,9 +218,11 @@ def main() -> int:
             sp_cmd = float(np.min(cspd[(tc >= tmin - 1.0) & (tc <= tmax + 1.0)])) if (
                 (tc >= tmin - 1.0) & (tc <= tmax + 1.0)).sum() else float("nan")
             ov = [e for e in loops if e[0] <= tmax and e[1] >= tmin]
-            cap.append("visit %d: t=%.1f..%.1f s, closest %.2f m, min speed truth %.2f / cmd %.2f m/s%s"
+            _mmin_v = float(np.nanmin(_mmap))
+            cap.append("visit %d: t=%.1f..%.1f s, closest %.2f m, min speed truth %.2f / cmd %.2f m/s, "
+                       "body margin min %+.3f m%s"
                        % (li + 1, tmin, tmax, v["dmin"], sp_truth, sp_cmd,
-                          ", LOOP" if ov else ""))
+                          _mmin_v, ", LOOP" if ov else ""))
             n_visits_total += 1
         # trajectory-id handovers inside the window (new goal sent here)
         for (th, id0, id1) in switches:

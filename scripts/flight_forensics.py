@@ -367,12 +367,17 @@ def main() -> int:
     ax = axs[0, 0]
     for j, lab in enumerate("xyz"):
         ax.plot(tt, e_loc_fcu[w, j], "-", color=[C_TRUTH, C_FCU, C_LIO][j], lw=0.8, label="FCU est - truth %s" % lab)
+    ax.plot(tt, e_loc_fcu[w, 2] - np.median(e_loc_fcu[w, 2]), "--", color=C_FCU, lw=0.9, alpha=0.9,
+            label="FCU est - truth z, fixed datum removed")
     ax.axhline(0, color="#6b7280", lw=0.6)
     ax.set_ylabel("error (m)")
     ax.set_title("FCU estimate error vs truth (W frame)", color=FG, fontsize=9, loc="left")
     ax.legend(fontsize=7, framealpha=0.25, facecolor="#111827", edgecolor="#374151", labelcolor=FG)
     ax = axs[0, 1]
     ax.plot(tt, np.linalg.norm(e_loc_fcu, axis=1)[w], "-", color=C_FCU, lw=0.8, label="|FCU - truth|")
+    ax.plot(tt, np.linalg.norm(e_loc_fcu[w] - np.r_[0.0, 0.0, np.median(e_loc_fcu[w, 2])], axis=1)
+            if False else np.linalg.norm(e_loc_fcu[w] - np.array([0.0, 0.0, np.median(e_loc_fcu[w, 2])]), axis=1),
+            "--", color=C_FCU, lw=0.8, alpha=0.85, label="|FCU - truth|, fixed z datum removed")
     ax.plot(tL, np.linalg.norm(e_lio, axis=1)[lw], "-", color=C_LIO, lw=0.6, alpha=0.8, label="|LIO - truth|")
     ax.set_ylabel("|error| (m)")
     ax.set_title("estimator error magnitude", color=FG, fontsize=9, loc="left")
@@ -394,7 +399,11 @@ def main() -> int:
     ax.set_xlabel("per-axis FCU error (m)")
     ax.set_title("per-axis error histogram", color=FG, fontsize=9, loc="left")
     ax.legend(fontsize=7, framealpha=0.25, facecolor="#111827", edgecolor="#374151", labelcolor=FG)
-    fig.suptitle("%s  LIO / FCU estimate vs truth (x=W-x, y=W-y, z=altitude)" % tag, color=FG, fontsize=10)
+    _zbias = float(np.median(e_loc_fcu[w, 2]))
+    fig.suptitle("%s  LIO / FCU estimate vs truth (x=W-x, y=W-y, z=altitude)\n"
+                 "FCU z carries the FIXED %.3f m external-nav datum (calib t_WL z = +0.1156 m, applied in "
+                 "send_external_nav_l); the dashed curves remove it" % (tag, _zbias),
+                 color=FG, fontsize=9.5)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     p = os.path.join(a.outdir, short + "-lio-truth.png")
     fig.savefig(p, facecolor=fig.get_facecolor())
@@ -442,10 +451,19 @@ def main() -> int:
     axs[0].plot(lio_t[_lw_fig] - tc[win][0], lio_all_W[_lw_fig, 2], "-", color=C_LIO, lw=0.6, alpha=0.8,
                 label="raw LIO z (L->W)")
     axs[0].set_ylabel("z (m)")
-    axs[0].set_title("altitude: command is constant %.2f m; the datum offset is the estimator/calibration, "
-                     "not a control failure" % np.median(cmd_p[w, 2]), color=FG, fontsize=9, loc="left")
+    axs[0].set_title("altitude: command is constant %.2f m; the fixed part is the t_WL z datum and the "
+                     "wiggle is the EKF z error that the altitude loop tracks" % np.median(cmd_p[w, 2]),
+                     color=FG, fontsize=9, loc="left")
     axs[0].legend(fontsize=7.5, framealpha=0.25, facecolor="#111827", edgecolor="#374151", labelcolor=FG)
     axs[1].plot(tt, (tp_l[:, 2] - cmd_p[:, 2])[w], "-", color=C_TRUTH, lw=0.8, label="truth - commanded")
+    _t_dyn = (tp_l[:, 2] - np.median(tp_l[w, 2]))[w]
+    _e_dyn = (e_loc_fcu[:, 2] - np.median(e_loc_fcu[w, 2]))[w]
+    try:
+        _rho = float(np.corrcoef(_t_dyn, _e_dyn)[0, 1])
+    except Exception:  # noqa: BLE001
+        _rho = float("nan")
+    axs[1].plot(tt, _e_dyn, "--", color=C_FCU, lw=0.8, alpha=0.9,
+                label="FCU z error dyn (bias removed), corr with truth dyn %+.2f" % _rho)
     axs[1].axhline(zb, color=C_CMD, ls="--", lw=0.9, label="datum (median) %+0.3f m" % zb)
     axs[1].axhline(0, color="#6b7280", lw=0.6)
     axs[1].set_ylabel("m")

@@ -107,6 +107,8 @@ python3 scripts/accept.py --run .runs/missionA-demo01-01-01 --world sim/worlds/f
   误差分解、高度、六角点法医、低速段 census
 - `phase9f-*`：历史最佳（旧）——同一套图
 - `bench-1kg-8ms.png` / `bench-pva-8ms.png`：1 kg 机体 8 m/s 能力台架
+- `phase23c-clearance.png` / `phase9f-clearance.png`：按“躯干 box + 机身半径 + 0.2 m 膨胀”画的净空图
+  （轨迹按精确 body margin 着色；判断有没有飞进机身半径看这张，不要只看 W4 的一个数）
 - 验收脚本要求的固定证据：`INDEX.txt`、`world-hex12.png`、`lap1-paths.png`、`lap2-paths.png`、
   `vxyz-t.png`、`lio-err-t.png`
 
