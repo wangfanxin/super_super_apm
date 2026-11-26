@@ -76,7 +76,7 @@ W4 加入"路线在任务高度带的采样"等）。默认关闭，**所有正�
 
 ## 当前基线（2026-11-26）
 
-- 历史最佳实飞：`phase9f-01-01` —— 除 H2 外 15/15 行全过；W4 **+0.027 m CLEAR**、W6 p90 0.262、W2 p90 1.43。
-- 新基准（9f+，待飞确认）：9f 的几何/角点设置 + `REF_Z_OFFSET/REF_Z_HOLD` + 垂直环软化；
-  预期把 W3 bias 从 −0.113 修到 ~+0.02，同时保留 W4 CLEAR。
-- 基线航班与证据：`docs/evidence/phase9f-*`（详见 `docs/evidence/INDEX.txt`）。
+- 当前最佳（9f+，已确认）：`phase23c-01-01` —— 除 H2 外 **15/15 行全过**；W4 **+0.009 m CLEAR**、
+  W3 bias **+0.003**、W6 p90 0.280、W2 p90 1.44、W1b 13/13、高度残差 p50 2.2 cm。
+- 历史最佳（旧）：`phase9f-01-01` —— W4 +0.027 CLEAR、W6 p90 0.262，但 W3 bias −0.113（高度基准未修）。
+- 基线航班与证据：`docs/evidence/phase23c-*`、`phase9f-*`（详见 `docs/evidence/INDEX.txt`）。

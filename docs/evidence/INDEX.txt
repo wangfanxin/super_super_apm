@@ -1,8 +1,8 @@
 docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
 
 只保留三类图：
-  1) 历史最佳实飞（phase9f，1.35 m/s）
-  2) 当前轮次（phase21a，新机制实验/对照）
+  1) 历史最佳实飞（phase9f）与当前最佳（phase23c = 9f+，1.35 m/s）
+  2) 当前轮次（phase23c：9f+ 首次确认，除 H2 外 15/15）
   3) 机体能力台架（1 kg 机体 8 m/s）
 加上验收脚本要求的固定证据文件。其余历史趟的图已按 owner 要求清理（git 历史仍保留）。
 
@@ -33,25 +33,20 @@ docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
   phase9f-corner5-zoom.png     corner5 放大
   phase9f-corner6-zoom.png     corner6 放大
 
-== phase21a（当前轮次：小前视 0.6 m 实验，W4 接触的中段低速证据）
-  phase21a-topdown.png         整趟俯视图
-  phase21a-topdown-lap1.png    第1圈
-  phase21a-topdown-lap2.png    第2圈
-  phase21a-topdown-launch.png  起飞段
-  phase21a-xyz-t.png           xyz-t
-  phase21a-vnorm.png           速度2-范数
-  phase21a-speed-t.png         |v_xy| / |v_z|
-  phase21a-lio-truth.png       LIO/FCU vs 真值
-  phase21a-tracking-decomp.png 跟踪分解
-  phase21a-z-t.png             高度
-  phase21a-corner-forensics.png 六角点法医
-  phase21a-lowspeed-census.png 低速段普查
-  phase21a-corner1-zoom.png    corner1 放大
-  phase21a-corner2-zoom.png    corner2 放大
-  phase21a-corner3-zoom.png    corner3 放大
-  phase21a-corner4-zoom.png    corner4 放大
-  phase21a-corner5-zoom.png    corner5 放大
-  phase21a-corner6-zoom.png    corner6 放大
+== phase23c（当前最佳：9f+ 首次确认；除已知 H2 外 15/15 行通过）
+  phase23c-topdown.png           整趟俯视图
+  phase23c-topdown-lap1.png      第1圈
+  phase23c-topdown-lap2.png      第2圈
+  phase23c-topdown-launch.png    起飞段
+  phase23c-xyz-t.png             xyz-t
+  phase23c-vnorm.png             速度 2-范数（真值 vs 指令）
+  phase23c-speed-t.png           |v_xy| / |v_z|
+  phase23c-lio-truth.png         LIO/FCU vs 真值误差（新增图）
+  phase23c-tracking-decomp.png   跟踪 = 执行 + 定位 分解
+  phase23c-z-t.png               高度：指令/真值/FCU/LIO（W3 bias +0.003）
+  phase23c-corner-forensics.png  六角点法医（按速度着色）
+  phase23c-lowspeed-census.png   低速段普查（<0.5 m/s，分类着色）
+  phase23c-corner{1..6}-zoom.png 每角点放大
 
 == 机体能力台架
   bench-1kg-8ms.png             1 kg/250 mm 机体 8 m/s 台架（max 8.34 m/s、8 m/s²、51.6°）

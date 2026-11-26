@@ -8,8 +8,8 @@ MAVLink 桥 + supervisor、真值采集、验收与出图工具，全部在本�
 
 | 项 | 状态 |
 |---|---|
-| **新最佳配置（9f+）** | 定义见下；**尚未单独飞过**，是把已验证的两部分合并：9f 的几何/角点参数 + 21a 的配置修复 |
-| 历史最佳实飞（1.35 m/s） | **phase9f-01-01**：除已知 P0（H2）外验收全过；W1/W1b 13/13、W4 **+0.027 m CLEAR**、W6 p90 0.262、中段指令停顿 0 |
+| **当前最佳（9f+，已确认）** | **phase23c-01-01**：除已知 P0（H2）外 **15/15 行全过**；W1/W1b 13/13、W4 **+0.009 m CLEAR**、W3 bias **+0.003**、W6 p90 0.280、W2 p90 1.44 |
+| 历史最佳实飞（旧） | **phase9f-01-01**：W4 **+0.027 m CLEAR**、W6 p90 0.262、W3 bias -0.113（高度基准未修） |
 | 机体 | `sim/models/quad_1kg_250mm.json`（1.0 kg / 250 mm）；台架实测 8.34 m/s、PVA 8 m/s 跟踪 p90 0.24 m |
 | 地图 | 冻结 SPEC 地图 `sim/worlds/forest_hex12.yaml`（六边形半径 10 m、边长 10 m、3 圈、522 柱、柱距 1.0 m） |
 | 速度阶梯 | 1.35 m/s 已可用；2.5/4 m/s 在**大世界**上有正项但未达标；8 m/s 仅在机体能力台架达成 |
@@ -103,8 +103,9 @@ python3 scripts/accept.py --run .runs/missionA-demo01-01-01 --world sim/worlds/f
 只保留**历史最佳轮次**（phase9f：1.35 m/s 最好实飞）、**当前轮次**（phase21a：新机制实验）
 和机体能力台架图；其余历史趟的图已按 owner 要求清理。
 
-- `phase9f-*`：topdown 整趟/分圈、xyz-t、速度 2-范数、LIO/估计误差、误差分解、高度、六角点法医、低速段 census
-- `phase21a-*`：同上（当前轮次，含 W4 接触与中段低速的定位证据）
+- `phase23c-*`：当前最佳（9f+ 确认）——topdown 整趟/分圈、xyz-t、速度 2-范数、LIO/估计误差、
+  误差分解、高度、六角点法医、低速段 census
+- `phase9f-*`：历史最佳（旧）——同一套图
 - `bench-1kg-8ms.png` / `bench-pva-8ms.png`：1 kg 机体 8 m/s 能力台架
 - 验收脚本要求的固定证据：`INDEX.txt`、`world-hex12.png`、`lap1-paths.png`、`lap2-paths.png`、
   `vxyz-t.png`、`lio-err-t.png`
