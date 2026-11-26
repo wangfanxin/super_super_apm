@@ -64,6 +64,32 @@ namespace fsm {
 
         TimeConsuming replan_once_time("replan_once_time", false);
 
+        /// WHTF-DEFER-HANDOVER (patch 19, 2026-11-27).  A new goal that arrives while the committed
+        /// trajectory still contains the corner turn must NOT be re-planned yet: MEASURED phase34a/36a,
+        /// re-planning 0.3 m before every corner makes MINCO slow the new trajectory to 0.14-0.34 m/s
+        /// (a smooth commanded dip, not a hold) so the aircraft stops at every corner.  Fly the old turn
+        /// to its end first; `Traj finish` then re-enters GENERATE_TRAJ with the new goal and the plan
+        /// starts after the turn instead of in the middle of it.
+        if (gi_.new_goal) {
+            double _hb_swt = 0.0;
+            bool _hb_fin = false;
+            planner_ptr_->getOneHeartbeatTime(_hb_swt, _hb_fin);
+            planner_ptr_->lockCommittedTraj();
+            const double _hb_total = planner_ptr_->getCommittedPositionTrajectory().getTotalDuration();
+            planner_ptr_->unlockCommittedTraj();
+            const double _hb_elapsed = ros_ptr_->getSimTime() - _hb_swt;
+            const double _hb_remain = _hb_total - _hb_elapsed;
+            if (!_hb_fin && _hb_total > 0.0 && _hb_remain > 0.08 && _hb_remain < 2.0) {
+                static int _hb_n = 0;
+                _hb_n++;
+                if (_hb_n % 50 == 1) {
+                    cout << " -- [Fsm] DEFER-HANDOVER: new goal kept waiting, the committed turn still "
+                            "has " << _hb_remain << " s to fly." << endl;
+                }
+                return;
+            }
+        }
+
         RET_CODE ret_code;
         if (gi_.new_goal) {
             /// WHTF-SMOOTH-HANDOVER (patch 14, 2026-11-26).  A NEW GOAL is first handed to the ordinary

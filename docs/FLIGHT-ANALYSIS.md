@@ -573,3 +573,23 @@ plan-box 的 `--ref-no-retract`（新参考点落在已发布点后方时**不�
 （`ReplanOnce(new_goal=false)` 路径），让新轨迹继承已转好的弯；用 patch17 的降级重试防失败循环，
 同时保留 no-retract。若 patch19 在 FSM 里不安全，则改用"提前 1.0 m 派发下一个目标（PRE_GOAL）+ no-retract"
 让新规划有空间在运动中过弯，再不行就在 SUPER 里给新目标航点加"速度下限"约束。
+
+## 44. 交接延迟（patch 19）首测：机制没真正触发（2026-11-27 round 5）
+
+新增 **patch 19 `WHTF-DEFER-HANDOVER`**（`hku_super/patches/patch_super_defer_handover.py`，已 apply/重编译）：
+当新目标到达时，若旧 committed trajectory 还能飞 >0.08 s，就**先不重规划**，把旧轨迹里"已经转好的弯"飞完
+（`Traj finish` 后再 `PlanFromRest`），从根上避免"在角点前 0.3 m 重起规划导致 MINCO 减速转向"。
+
+37a（agile + no-retract + patch19）：15 行全过，W4 **+0.094**、W6 p90 **0.235**、Q2 −0.006 PASS、Q3 0.180 PASS、
+Q1 4 段、Q4 FAIL（角点 cmd 最低 0.20–0.41、真值最低 0.01–0.17 m/s）。
+**但 DEFER-HANDOVER 日志只出现 1 次**（Traj finish 19 次）→ 机制几乎没生效：
+- 说明新目标到达后，处理路径不是"replan 回调里 gi_.new_goal"这一条（很可能是主 FSM 的
+  WAIT_GOAL→GENERATE_TRAJ 先消费掉了 new_goal，patch19 的 remain 判据没机会出手）；
+- CUSP 4 次，角点特性与之前相同。
+
+38a（更激进的转弯规划配置 `super_planner_hex_turn.yaml`：max_acc 8 / jerk 30 / omg 4）因 **LIO feed stale
+（1.61 s，主机抖动）** abort，无效；主机抖动近期约 50% 频次导致无效趟。
+
+下一步：① 把 patch19 的判据挪到 FSM 主路径（WAIT_GOAL/GENERATE_TRAJ 里也一样按"旧轨迹还剩多少"做延迟），
+或直接在 plan-box 用 SUPER 心跳/多项式时长延迟派发下一个 goal；② 再试 `ARRIVE_M=0.15`（更贴近角点才派发）；
+③ 主机 clean 后复测 turn 配置。
