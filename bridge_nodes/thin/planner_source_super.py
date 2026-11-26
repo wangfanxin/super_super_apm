@@ -1134,6 +1134,7 @@ def main() -> int:
                 vc = float(args.corner_speed)
             if nv > 1e-6:
                 vout = np.array([vc * u[0] / nv, vc * u[1] / nv, 0.0])
+        state["last_goal_pt_l3"] = np.array([float(pl[0]), float(pl[1]), float(pl[2])], float)
         if int(getattr(args, "goal_pva", 0)):
             m = MarsMsg()
             m.header.stamp = node.get_clock().now().to_msg()
@@ -1191,6 +1192,32 @@ def main() -> int:
                                     else cmd_stream.TRAJECTORY_STATUS_READY)
 
     def on_timer():
+        # ★ WHTF-CARROT-WATCHDOG (2026-11-26) ★  在没有到达、没有超时的情况下，pacer 的 leg 长期不前进是
+        #   "extended goal / carrot 死锁"的直接症状（phase20a：切角 0.54 m 让到达判据错过，plan box 每拍
+        #   重发同一个延伸目标，SUPER 反复 rest-to-rest 规划，飞机在延伸点附近绕圈 7 次）。这里把症状
+        #   打印出来，下一次飞行不用再靠事后回溯才发现。
+        try:
+            _p = state.get("p_l")
+            _g = state.get("last_goal_pt_l3")
+            _v = state.get("v_l")
+            if _p is not None and _g is not None and not pacer.done:
+                _leg = int(pacer.i_leg)
+                if state.get("wd_leg") != _leg:
+                    state["wd_leg"] = _leg
+                    state["wd_since"] = time.monotonic()
+                else:
+                    _dt = time.monotonic() - float(state.get("wd_since", time.monotonic()))
+                    _spd = float(np.linalg.norm(np.asarray(_v, float)[:2])) if _v is not None else 0.0
+                    _d = float(np.linalg.norm(np.asarray(_p, float)[:2] - _g[:2]))
+                    if _dt > 1.5 and _d < 0.6 and _spd < 0.30:
+                        if time.monotonic() - float(state.get("wd_last_print", 0.0)) > 1.5:
+                            state["wd_last_print"] = time.monotonic()
+                            print("CARROT WATCHDOG: leg %d has not advanced for %.1f s while the vehicle is "
+                                  "%.2f m from the sent goal and moving %.2f m/s -- extended-goal deadlock "
+                                  "suspected (arrival gate missed after a corner cut?)"
+                                  % (_leg + 1, _dt, _d, _spd), flush=True)
+        except Exception:                                # noqa: BLE001
+            pass
         # 还没收到过任何参考 → 每秒重发 goal（否则首个 goal 在 fsm_node 建好订阅前就丢了，永不唤醒）
         # ★ WHTF-STALE-GOAL-RESEND (2026-11-25) ★ ALSO resend when a reference HAS been seen but the stream
         #   has gone quiet for >0.8 s.  MEASURED phase4w (PRE_GOAL_M=1.5 + latching): SUPER reached the
