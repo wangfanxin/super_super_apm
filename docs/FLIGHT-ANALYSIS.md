@@ -867,3 +867,16 @@ LOWSPEED raw=0.80 slew=0.80 pre_lp=0.29 final=0.29 age=0.01 hold=0 retract=0 gat
 单靠 plan-box 调参无法同时满足"参考≥1"和"跟踪≤0.25"。
 下一步（round 23）：**把整档速度抬上去**——`super_planner_hex_fast.yaml`（max_vel 2.5）+ corner 1.35 + GOV_MIN 1.0，
 让**规划本身**就 ≥1 m/s，参考不再逆着规划走；若跟踪/净空能接受，就直接满足"全程 ≥1 m/s"并顺势进入速度阶梯 4 m/s。
+
+## 62. 整档提速 2.5 m/s：规划本身 ≥1 m/s 成立，但控制跟不上（2026-11-27 round 23）
+
+64a（`super_planner_hex_fast.yaml` max_vel 2.5 + corner **1.35** + `GOV_MIN=1.0` + agile）：
+- **指令速度 min/p1/p5 = 1.00 m/s（全程）**，规划角点终点 1.35；
+- 角点**正圈**真值最低 **0.42–0.62**（≥0.4），truth<0.25 时间 ≈0；
+- 但 **Q3 1.183、W6 p90 1.123（max 3.0）**、path/net 2.2–5.4（明显绕圈）、W4 −0.089 接触；
+- W2 速度 p90 3.56 / max 6.02（实际飞得比规划快——参考和飞机都在振荡）。
+
+→ 2.5 m/s 在 3 m 走廊里**控制（agile PSC）跟不上**，需要为 2.5 档重调姿态/速度环（或更大世界/更宽走廊）。
+下一轮（round 24）：先回到 1.35 档，用 61a 配置（corner1.2 + GOV_MIN1.0）**配合更硬的速度环**
+（新建 `guided_limits_bench5_vert_agile2.parm`：PSC_NE_VEL_P 4.5→6.0、PSC_NE_POS_P 3.0→3.5），
+看能否把 Q3 从 0.68 压到 ≤0.25 同时保住角点真值 ≥0.4；若成功再谈 2.5 档。
