@@ -606,3 +606,18 @@ Q1 4 段、Q4 FAIL（角点 cmd 最低 0.20–0.41、真值最低 0.01–0.17 m/
 飞机跟的是一个自相矛盾的 PVA。
 下一步（round 7）：把速度连续性做进 plan-box 的**最后一层**（所有 override 之后统一次：
 新参考接管时对速度矢量做 accel 限幅 + 方向不折返，并保证 p/v 自洽），然后重测 Q4 角点最低速。
+
+## 46. 速度层根因：REF_V_SLEW 一直没生效 + no-retract 把速度清零（2026-11-27 round 7）
+
+1. **BUG**：`REF_V_SLEW` 的 slew 时间步用的是 `state["last_pub_wall"]`，而这个键**从未被赋值** →
+   `_dt_slew = 0` → `REF_V_SLEW` 事实上从未限速。已改用 `last_pub_t`（每拍发布时赋值）。
+2. 仍有第二层覆盖：`--ref-no-retract` 触发时会把 `s.v` **直接清零**（1 拍内 1→0 m/s = 100 m/s²），
+   slew 之后再清零；这就是角点参考速度平滑塌陷的直接来源。
+3. 新增 `--ref-retract-dr`（41a）：retract 时不冻结+清零，而是沿上一拍方向**继续滑行**、速度按 slew 衰减。
+   41a（agile + no-retract + retract-dr + REF_V_SLEW=3）：
+   **Q1 中段低速 3–4 段 → 1 段（目前最好）**、Q3 0.240 PASS、W6 0.329；但 W4 **−0.052 接触**、Q2 **−0.157**、
+   角点 cmd 最低仍 0.01–0.15（Q4 未过）→ 不采纳（净空代价太大）。
+
+下一步（round 8）：把速度连续性做成 plan-box 的**统一最后一层**——所有覆盖（hold、no-retract、governor）
+只产生"期望速度"，最后由一个 stateful 限幅器（|dv/dt| ≤ REF_V_SLEW、方向不折返、p/v 自洽）统一输出；
+然后用 `REF_RETRACT_DR=1` 的滑行作为 hold 的平滑替代，重测 Q4。

@@ -269,6 +269,10 @@ def main() -> int:
     ap.add_argument("--ref-no-retract", type=int, default=0,
                     help="1 = 参考**永不后退**：若新参考落在当前指令点的后方（沿当前前进方向的分量为负），"
                          "就保持当前指令点不动，直到新规划追上来。0=关（老行为）。")
+    ap.add_argument("--ref-retract-dr", type=int, default=0,
+                    help="1 = 当 --ref-no-retract 触发（新参考落到后方）时，不要冻结+零速，而是沿上一次"
+                         "前进方向继续滑行（速度按 REF_V_SLEW 衰减），从而保持速度连续、不在角点掉速。"
+                         "0=老行为（冻结位置并清零速度）。")
     ap.add_argument("--ref-no-fold", type=int, default=0,
                     help="1 = 参考路径**禁止掉头**：若这一拍发布的位移与上一拍方向夹角 >90°（折返），"
                          "就把位移里“向后”的分量投影掉（只保留横向分量），并把速度前馈改成实际的 "
@@ -1263,7 +1267,13 @@ def main() -> int:
         # ★ WHTF-REF-VSLEW：指令速度的 slew 限制（0 = 关）★
         #   位置保持规划器给的点（位置本来就有速率钳位），只把速度限制成飞机跟得上的变化率。
         if float(getattr(args, "ref_v_slew", 0.0) or 0.0) > 0.0 and state.get("n_ref", 0) > 0:
-            _dt_slew = max(0.0, now - state.get("last_pub_wall", now))
+            # ★ BUGFIX 2026-11-27 (round 7) ★ `last_pub_wall` 从未被赋值：state.get(..., now) 恒取默认值
+            #   now ⇒ `_dt_slew = 0` ⇒ `_a = 0` ⇒ 但 `_n > _a` 时仍按 0 缩放，速度被**冻在 v_slew**？
+            #   实际后果是 slew 分支的行为不可预测（多数拍被钳到 0 变化后又被覆盖）。真正的“上一拍发布
+            #   时刻”是 `last_pub_t`（on_timer 末尾赋值）。修好后 REF_V_SLEW 才真正限制速度方向跳变：
+            #   交接处实测指令 |dv/dt| 曾达 4.5-16.9 m/s²（远超 3.0），这就是角点速度塌陷的机制。
+            _dt_slew = max(1e-4, now - state["last_pub_t"]) if state.get("last_pub_t") is not None \
+                else 1.0 / max(1.0, args.cmd_rate)
             _a = float(args.ref_v_slew) * _dt_slew
             _v = np.asarray(s.v, float)
             _vlast = state.get("v_slew")
@@ -1424,10 +1434,26 @@ def main() -> int:
             if args.ref_no_retract and state.get("last_dir") is not None and n > 1e-6:
                 retract = float(d @ state["last_dir"])      # <0 means the target is behind
                 if retract < -0.05:
-                    s.p = state["last_pub"].copy()
-                    s.v = np.zeros(3)
-                    s.a = np.zeros(3)
                     state["n_retract"] = state.get("n_retract", 0) + 1
+                    if int(getattr(args, "ref_retract_dr", 0)) and state.get("last_dir") is not None:
+                        # WHTF-RETRACT-DR (2026-11-27 round 7): 冻结+零速会让参考速度在交接处突然塌到 0，
+                        # 实测这就是角点 0.0-0.3 m/s 的直接来源。改为沿上一拍前进方向继续滑行，
+                        # 速度按 REF_V_SLEW（或 3 m/s²）衰减，位置与速度自洽，等新参考追上来。
+                        _vlast = float(state.get("pub_speed_nz", 0.0))
+                        _dt = max(1e-3, now - float(state.get("last_pub_t", now - 1.0 / max(1.0, args.cmd_rate))))
+                        _dec = max(1.0, float(getattr(args, "ref_v_slew", 0.0) or 3.0))
+                        _spn = max(0.0, _vlast - _dec * _dt)
+                        if _spn > 0.05:
+                            s.p = np.asarray(state["last_pub"], float) + state["last_dir"] * (_spn * _dt)
+                            s.v = np.asarray(state["last_dir"], float) * _spn
+                            s.a = np.zeros(3)
+                            state["retract_dr_n"] = int(state.get("retract_dr_n", 0)) + 1
+                        else:
+                            s.p = state["last_pub"].copy(); s.v = np.zeros(3); s.a = np.zeros(3)
+                    else:
+                        s.p = state["last_pub"].copy()
+                        s.v = np.zeros(3)
+                        s.a = np.zeros(3)
                     d = np.zeros(3)
                     n = 0.0
             clamped = n > cap
@@ -1729,6 +1755,9 @@ def main() -> int:
                                             or (now - state["ref_wall"]) > args.stale_s) else "super"),
                               flush=True)
             state["cusp_dprev"] = adv[:2].copy()
+        _spn_pub = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
+        if _spn_pub > 0.2:
+            state["pub_speed_nz"] = _spn_pub
         state["last_pub"] = s.p.copy()
         state["last_pub_t"] = now
         # ★ 参考低通（第 20 轮，--ref-lp-tau；默认 0 = 关）★
