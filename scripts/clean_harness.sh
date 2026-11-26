@@ -54,3 +54,11 @@ if [ -n "${MYLOCK:-}" ] && [ -f "$MYLOCK" ]; then
     rm -f "$MYLOCK"; echo "clean_mine: 清掉死锁 $MYLOCK (pid $pid)"
   fi
 fi
+
+# ★ DDS 共享内存清理（2026-11-26，MEASURED）★
+#   phase16b/17c 的失败共同点：LIO 进程初始化完成、lidar 正常发云，但 LIO **一条点云都没收到**
+#   （supervisor 报 "the LIO sample ... is 3.99 s old"，H3 挂、飞机不起飞）。手动 `ros2 daemon stop` +
+#   删除 /dev/shm/fastrtps_* 后下一次飞行即恢复正常（16c、13a 等）。Fast-DDS 的共享内存段/端口在
+#   大量 sortie 之后会残留，导致新进程之间发现失败。清理它们是幂等的、只影响我自己的会话。
+ros2 daemon stop >/dev/null 2>&1 || true
+rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* /dev/shm/fastdatachannel_* 2>/dev/null || true
