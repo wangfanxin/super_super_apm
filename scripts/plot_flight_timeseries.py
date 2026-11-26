@@ -6,7 +6,9 @@
 
 Three figures:
   xyz-t   E, N, U against time                (truth vs command)
-  vxyz-t  vE, vN, vU against time             (truth vs command velocity)
+  vnorm-t |v| = sqrt(vx^2+vy^2+vz^2) against time, with |v_xy| and signed v_z below
+          (owner, 2026-11-26: "把 vxyz 改成速度平方和的根(2norm)来看" -- the per-axis traces hide how the
+           speed collapses at a corner; the 2-norm is the number the controller and the acceptance rows use)
   speed-t |v_xy|, |v_z| against time          (same streams, the numbers the controller lives on)
 The vertical dashed lines are the measured lap boundaries (truth passing within 1.2 m of corner 1, same rule
 as the top view); red bands are the LOOP events from scripts/analyze_loops.py, so "the aircraft circled here"
@@ -172,19 +174,23 @@ def main() -> int:
     plt.close(fig)
     print("written: %s" % p1)
 
-    # ---- vxyz-t ----
+    # ---- vnorm-t: the 2-norm, not the per-axis traces (owner's round-326 ask) ----
+    sp3_t = np.sqrt(vE ** 2 + vN ** 2 + vU ** 2)
+    sp3_c = np.sqrt(cvx ** 2 + cvy ** 2 + cvz ** 2)
+    spxy_t = np.hypot(vE, vN)
+    spxy_c = np.hypot(cvx, cvy)
     fig, axs = plt.subplots(3, 1, figsize=(13, 8.2), sharex=True, dpi=150)
     fig.patch.set_facecolor("#0f1116")
-    draw(axs[0], t, vE, tc, cvx, "vE (m/s)", events, laps)
-    draw(axs[1], t, vN, tc, cvy, "vN (m/s)", events, laps)
-    draw(axs[2], t, vU, tc, cvz, "vU (m/s)", events, laps)
+    draw(axs[0], t, sp3_t, tc, sp3_c, "|v| = sqrt(vx^2+vy^2+vz^2)  (m/s)", events, laps)
+    draw(axs[1], t, spxy_t, tc, spxy_c, "|v_xy| (m/s)", events, laps)
+    draw(axs[2], t, vU, tc, cvz, "v_z (m/s)", events, laps)
     axs[2].set_xlabel("time (s, sim clock)", color="#d1d5db")
     axs[0].legend(loc="upper left", fontsize=7.5, framealpha=0.25, facecolor="#111827",
                   edgecolor="#374151", labelcolor="#e5e7eb")
-    fig.suptitle("missionA-%s  velocity vs time (truth solid, command dashed) — red bands = loop events"
+    fig.suptitle("missionA-%s  SPEED 2-NORM vs time (truth solid, command dashed) — red bands = loop events"
                  % tag, color="#e5e7eb", fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
-    p2 = prefix + "-vxyz-t.png"
+    p2 = prefix + "-vnorm-t.png"
     fig.savefig(p2, facecolor=fig.get_facecolor())
     plt.close(fig)
     print("written: %s" % p2)
