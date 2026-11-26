@@ -327,6 +327,10 @@ def main() -> int:
     ap.add_argument("--ref-catchup-mps", type=float, default=0.5,
                     help="参考最多可以比规划自己快多少（m/s）。这是 ke2-01-01 那个'追缺口追到 6 m/s、"
                          "飞出场地'的直接修复：参考只许追赶，不许超过它追的那条轨迹太多。")
+    ap.add_argument("--ref-gov-min-mps", type=float, default=0.0,
+                    help="参考调速器的**最小速度下限**（m/s）：>0 时调速器输出速度幅值不低于该值"
+                         "（只放大、不改变方向）。目标：角点/交接处参考不停在 0.2-0.3 m/s，"
+                         "把「全程 ≥1 m/s」从指令层先做出来。0=关。")
     ap.add_argument("--ref-gov-ks", type=float, default=4.0,
                     help="弧长同步的增益（1/s），只在 --ref-gov-along 2 时用。参考速度 = 规划速度 + "
                          "ks×(规划弧长 − 参考弧长)；规划在动时它就不会归零（老的一阶投影律在拐弯必停，"
@@ -1553,6 +1557,7 @@ def main() -> int:
                 v_eff = (s.p - state["last_pub"]) / max(dt, 1e-3)
                 s.v = v_eff
                 s.a = np.zeros(3)
+        state["_v_after_clamp"] = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
         # 记住**真的走出去的**方向：`--ref-no-retract` 用它判断"新参考是不是在后方"。
         # 只在实际前进了 >1 mm 时更新，所以悬停/冻结的那几拍不会把方向设成 0。
         prev_pub = state["last_pub"]
@@ -1739,7 +1744,14 @@ def main() -> int:
             # `--ref-ff-gain` scales what the FCU is told to move at; the POSITION is unchanged, so a
             # gain < 1 asks the position loop to do more of the work (which is the way to tell whether
             # the overshoot comes from the feed-forward compounding with the position error).
+            _vmin = float(getattr(args, "ref_gov_min_mps", 0.0) or 0.0)
+            if _vmin > 0.0:
+                _nrm = float(np.linalg.norm(np.asarray(vg, float)[:2]))
+                if _nrm > 0.05 and _nrm < _vmin:
+                    vg[:2] = vg[:2] * (_vmin / _nrm)
+                    state["gov_floor_n"] = int(state.get("gov_floor_n", 0)) + 1
             s.v = vg.copy() * float(args.ref_ff_gain)
+            state["_v_after_gov"] = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
             # ★ 加速度前馈（第 88 轮补）★ 以前这里是 `s.a = np.zeros(3)`，实测线上 |a| 恒等于 0。
             #   现在发 v 的差分：由调速器自己的限速保证 |a| ≤ --ref-gov-acc，再按规划器上界钳一次。
             _a = np.zeros(3)
@@ -1825,6 +1837,7 @@ def main() -> int:
         #   发布路径上，让飞控也收到更平滑的参考。
         #   实现放在 src/whtf/ros/ref_lp.py（纯 numpy，可单测：scripts/test_ref_lp.py 断言
         #   τ=0 严格直通、直流增益 1、无过冲、不超前、dt≤0 不动状态）。
+        state["_v_before_lp"] = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
         _tau = float(getattr(args, "ref_lp_tau", 0.0) or 0.0)
         if _tau > 0.0:
             st_lp = state.get("lp")
@@ -1880,13 +1893,15 @@ def main() -> int:
                 _sv = float(np.linalg.norm(np.asarray(state.get("v_slew", np.zeros(3)), float)[:2]))
                 _pre_lp = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
                 print("LOWSPEED raw=%.2f slew=%.2f pre_lp=%.2f final=%.2f age=%.2f hold=%d "
-                      "retract=%d gate=%d clamped=%d src=%s vslew=%.2f clamp=%d dlast=%.2f leg=%d"
+                      "retract=%d gate=%d clamped=%d src=%s vslew=%.2f clamp=%d vclamp=%.2f vgov=%.2f vb_lp=%.2f dlast=%.2f leg=%d"
                       % (_refv, _sv, _pre_lp, _vrp,
                          (now - state["ref_wall"]) if state["ref_wall"] else -1.0,
                          1 if state.get("is_hold") else 0,
                          int(state.get("n_retract", 0)), int(state.get("gate_n", 0)),
                          int(state.get("_clamped", 0)), str(state.get("_src", "?")),
                          float(state.get("_v_after_slew", -1.0)), int(state.get("_clamp_hit", 0)),
+                         float(state.get("_v_after_clamp", -1.0)), float(state.get("_v_after_gov", -1.0)),
+                         float(state.get("_v_before_lp", -1.0)),
                          float(np.linalg.norm(np.asarray(s.p, float)[:2] - np.asarray(state["last_pub"], float)[:2]))
                          if state.get("last_pub") is not None else -1.0,
                          pacer.i_leg + 1), flush=True)

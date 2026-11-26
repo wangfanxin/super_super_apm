@@ -173,6 +173,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --settle-speed ${SETTLE_SPEED:-1.5} --settle-s ${SETTLE_S:-0.5} \
 --vertical-first-m $Z_M --vertical-hold-s 3.0 \
 --ref-max-speed-mps ${REF_MAX_MPS:-6.0} --ref-max-speed-z-mps ${REF_MAX_Z_MPS:-1.5} \
+--ref-clamp-m ${REF_CLAMP_M:-1.2} \
 --ref-z-hold ${REF_Z_HOLD:-0} --ref-z-tol ${REF_Z_TOL:-0.20} --ref-z-latch-m ${REF_Z_LATCH_M:-1.60} \
 --entry-max-speed-mps ${ENTRY_MAX_MPS:-0} \
 --goal-lookahead-m ${GOAL_LOOKAHEAD_M:-0.0} \
@@ -203,6 +204,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-gov-along ${REF_GOV_ALONG:-0} \
 --ref-gov-ks ${REF_GOV_KS:-4.0} \
 --ref-gov-dec ${REF_GOV_DEC:-2.0} \
+--ref-gov-min-mps ${REF_GOV_MIN:-0} \
 --ref-along-floor ${REF_ALONG_FLOOR:-0} \
 --ref-catchup-mps ${REF_CATCHUP_MPS:-0.5} \
 --ref-lead-s ${REF_LEAD_S:-0} \
