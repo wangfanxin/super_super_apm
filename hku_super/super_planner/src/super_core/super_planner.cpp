@@ -767,15 +767,10 @@ namespace super_planner {
             Vec3f gv(gi_.goal_v[0], gi_.goal_v[1], 0.0);
             const double gvn = gv.norm();
             if (gvn > 0.10) {
-                const Vec3f u = gv / gvn;
                 const Vec3f tail_start = guide_path.back();
                 const double stamp0 = guide_stamp.empty() ? 0.0 : guide_stamp.back();
                 const double v_ref = std::max(cfg_.exp_traj_cfg.max_vel, 1e-3);
-                /// ROUNDED TAIL (phase24a 教训): a straight tail appended AFTER the corner leaves a sharp
-                /// vertex in the guide path and SearchPolytopeOnPath failed 571 times ("corridor failed"),
-                /// so the planner produced no reference at all.  Insert the first tail point along the
-                /// IN/OUT bisector: the guide now turns the corner in two ~30 deg steps instead of one
-                /// 60 deg step, then runs straight along the terminal velocity for the corridor + MINCO.
+                Vec3f u = gv / gvn;
                 Vec3f u_in(1.0, 0.0, 0.0);
                 if (guide_path.size() >= 2) {
                     const Vec3f a = guide_path[guide_path.size() - 2];
@@ -784,22 +779,61 @@ namespace super_planner {
                     const double dn = d.norm();
                     if (dn > 1e-6) { u_in = d / dn; }
                 }
-                Vec3f u_mid = u_in + u;
-                u_mid.z() = 0.0;
-                const double unm = u_mid.norm();
-                if (unm > 1e-6) { u_mid = u_mid / unm; } else { u_mid = u; }
-                const double d1 = 0.35 * cfg_.pva_tail_len;
-                const double d2 = 0.70 * cfg_.pva_tail_len;
-                const double d3 = cfg_.pva_tail_len;
-                guide_path.emplace_back(tail_start + u_mid * d1);
-                guide_stamp.emplace_back(stamp0 + d1 / v_ref);
-                guide_path.emplace_back(tail_start + u * d2);
-                guide_stamp.emplace_back(stamp0 + d2 / v_ref);
-                guide_path.emplace_back(tail_start + u * d3);
-                guide_stamp.emplace_back(stamp0 + d3 / v_ref);
-                if (cfg_.print_log) {
-                    ros_ptr_->info(" -- [SUPER] PVA-TAIL: appended " + std::to_string(cfg_.pva_tail_len)
-                                   + " m run-out past the goal");
+                double tail_len = cfg_.pva_tail_len;
+                if (cfg_.pva_tail_adaptive) {
+                    /// WHTF-ADAPTIVE-TAIL (patch 20, 2026-11-27).  The outgoing direction is not always the
+                    /// free direction in this forest (c2 has a pillar 1.0 m past the corner).  Sample 9
+                    /// directions in +-60 deg, march the inflated map in 5 cm steps, pick the longest
+                    /// KNOWN_FREE run with a small penalty for deviating from goal_v.  The corner remains
+                    /// the A* endpoint / guide interior point; only the run-out after it moves.
+                    double best_score = -1e9, best_free = 0.0;
+                    Vec3f best_dir = u;
+                    for (int k = -4; k <= 4; ++k) {
+                        const double th = static_cast<double>(k) * M_PI / 12.0;   // +-60 deg, 15 deg steps
+                        Vec3f cd(std::cos(th) * u.x() - std::sin(th) * u.y(),
+                                 std::sin(th) * u.x() + std::cos(th) * u.y(), 0.0);
+                        double fre = 0.0;
+                        for (double dd = 0.15; dd <= cfg_.pva_tail_len + 1e-9; dd += 0.05) {
+                            const Vec3f p = tail_start + cd * dd;
+                            if (map_ptr_->getInfGridType(p) != rog_map::GridType::KNOWN_FREE) { break; }
+                            fre = dd;
+                        }
+                        const double score = fre - 0.02 * std::abs(static_cast<double>(k));
+                        if (score > best_score) { best_score = score; best_dir = cd; best_free = fre; }
+                    }
+                    if (best_free >= 0.35) {
+                        tail_len = std::min(cfg_.pva_tail_len, best_free - 0.05);
+                        u = best_dir;
+                        gi_.goal_v[0] = static_cast<float>(u.x() * gvn);
+                        gi_.goal_v[1] = static_cast<float>(u.y() * gvn);
+                        gi_.goal_v[2] = 0.0f;
+                        if (cfg_.print_log) {
+                            cout << " -- [SUPER] ADAPTIVE-TAIL: free run " << best_free
+                                 << " m, tail " << tail_len << " m, dir (" << u.x() << "," << u.y()
+                                 << ")" << endl;
+                        }
+                    } else {
+                        tail_len = 0.0;
+                    }
+                }
+                if (tail_len > 0.05) {
+                    Vec3f u_mid = u_in + u;
+                    u_mid.z() = 0.0;
+                    const double unm = u_mid.norm();
+                    if (unm > 1e-6) { u_mid = u_mid / unm; } else { u_mid = u; }
+                    const double d1 = 0.35 * tail_len;
+                    const double a2 = 0.70 * tail_len;
+                    const double d3 = tail_len;
+                    guide_path.emplace_back(tail_start + u_mid * d1);
+                    guide_stamp.emplace_back(stamp0 + d1 / v_ref);
+                    guide_path.emplace_back(tail_start + u * a2);
+                    guide_stamp.emplace_back(stamp0 + a2 / v_ref);
+                    guide_path.emplace_back(tail_start + u * d3);
+                    guide_stamp.emplace_back(stamp0 + d3 / v_ref);
+                    if (cfg_.print_log) {
+                        ros_ptr_->info(" -- [SUPER] PVA-TAIL: appended " + std::to_string(tail_len)
+                                       + " m run-out past the goal");
+                    }
                 }
             }
         }

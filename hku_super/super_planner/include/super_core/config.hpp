@@ -69,6 +69,9 @@ namespace super_planner {
         /// WHTF-PVA-TAIL (patch 15): length (m) of a straight run-out appended past a PVA goal along the
         /// goal's terminal velocity, so the trajectory does not END on the corner.  0 = historical behaviour.
         double pva_tail_len;
+        /// WHTF-ADAPTIVE-TAIL (patch 20): choose the run-out direction/length from the map's free space
+        /// instead of always following goal_v.  Only active when pva_tail_len > 0.
+        bool pva_tail_adaptive;
         double safe_corridor_line_max_length;
         // for fov cut
         double sensing_horizon;
@@ -125,6 +128,7 @@ namespace super_planner {
             loader.LoadParam("super_planner/planning_horizon", planning_horizon, 10.0);
             loader.LoadParam("super_planner/receding_dis", receding_dis, 5.0);
             loader.LoadParam("super_planner/pva_tail_len", pva_tail_len, 0.0);
+            loader.LoadParam("super_planner/pva_tail_adaptive", pva_tail_adaptive, false);
             loader.LoadParam("super_planner/robot_r", robot_r, 0.3);
             loader.LoadParam("super_planner/iris_iter_num", iris_iter_num, 1);
             loader.LoadParam("super_planner/yaw_mode", yaw_mode, 1);
