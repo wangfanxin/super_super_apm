@@ -757,6 +757,62 @@ namespace super_planner {
         const bool connected_goal = (guide_path.back().head(2) - gi_.goal_p.head(2)).norm() < cfg_.resolution * 2;
         out_exp_traj_info.setGoalConnectedFlag(connected_goal);
 
+        /// WHTF-GUIDE-ROUND (patch 21, 2026-11-27 round 14).  A sharp polyline guide gives MINCO thin
+        /// corridor polytopes at the corner, so it brakes to 0.0-0.2 m/s before turning (MEASURED every
+        /// corner of the 1.35 m/s arm).  Replace each >45 deg vertex with a quadratic-Bezier rounding arc
+        /// (radius guide_round_radius) when the arc is known-free.  The corner stays inside the arc
+        /// (deviation ~0.25*r = 0.125 m for r=0.5 m, far inside the 0.5 m W1b box).
+        if (cfg_.guide_round_en && guide_path.size() >= 3) {
+            vec_Vec3f rounded;
+            rounded.reserve(guide_path.size() * 2);
+            rounded.emplace_back(guide_path.front());
+            bool rounded_any = false;
+            const double r = cfg_.guide_round_radius;
+            for (size_t i = 1; i + 1 < guide_path.size(); ++i) {
+                const Vec3f a = guide_path[i - 1], b = guide_path[i], c = guide_path[i + 1];
+                Vec3f d1 = b - a; d1.z() = 0.0;
+                Vec3f d2 = c - b; d2.z() = 0.0;
+                const double n1 = d1.norm(), n2 = d2.norm();
+                if (n1 < 1e-6 || n2 < 1e-6) { rounded.emplace_back(b); continue; }
+                const double cosang = d1.dot(d2) / (n1 * n2);
+                if (cosang < std::cos(45.0 * M_PI / 180.0) && n1 > 2.2 * r && n2 > 2.2 * r) {
+                    const Vec3f u1 = d1 / n1, u2 = d2 / n2;
+                    const Vec3f p0 = b - u1 * r;
+                    const Vec3f p2 = b + u2 * r;
+                    bool arc_ok = true;
+                    for (int k = 1; k <= 4; ++k) {
+                        const double t = 0.2 * static_cast<double>(k);
+                        const Vec3f q = p0 * ((1 - t) * (1 - t)) + b * (2 * (1 - t) * t) + p2 * (t * t);
+                        if (map_ptr_->getInfGridType(q) != rog_map::GridType::KNOWN_FREE) { arc_ok = false; break; }
+                    }
+                    if (arc_ok) {
+                        for (int k = 1; k <= 5; ++k) {
+                            const double t = 0.2 * static_cast<double>(k);
+                            const Vec3f q = p0 * ((1 - t) * (1 - t)) + b * (2 * (1 - t) * t) + p2 * (t * t);
+                            rounded.emplace_back(q);
+                        }
+                        rounded_any = true;
+                        continue;
+                    }
+                }
+                rounded.emplace_back(b);
+            }
+            rounded.emplace_back(guide_path.back());
+            if (rounded_any) {
+                guide_path = rounded;
+                guide_stamp.clear();
+                double tt = 0.0;
+                const double vref = std::max(cfg_.exp_traj_cfg.max_vel, 1e-3);
+                for (size_t i = 0; i < guide_path.size(); ++i) {
+                    if (i > 0) { tt += (guide_path[i] - guide_path[i - 1]).norm() / vref; }
+                    guide_stamp.emplace_back(tt);
+                }
+                if (cfg_.print_log) {
+                    cout << " -- [SUPER] GUIDE-ROUND: guide " << guide_path.size() << " points" << endl;
+                }
+            }
+        }
+
         /// WHTF-PVA-TAIL (patch 15, 2026-11-26).  A PVA goal carries a terminal velocity, but SUPER's
         /// trajectory endpoint is `guide_path.back()`, which is the goal itself -- so MINCO has to finish
         /// AT the corner and the reference collapses there (MEASURED phase9f: command 0.07-0.29 m/s at

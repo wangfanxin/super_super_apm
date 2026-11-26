@@ -72,6 +72,10 @@ namespace super_planner {
         /// WHTF-ADAPTIVE-TAIL (patch 20): choose the run-out direction/length from the map's free space
         /// instead of always following goal_v.  Only active when pva_tail_len > 0.
         bool pva_tail_adaptive;
+        /// WHTF-GUIDE-ROUND (patch 21): round the guide path at sharp vertices before corridor generation.
+        /// The corner stays inside the rounding arc (deviation <= 0.25*r), so W1b is untouched.
+        bool guide_round_en;
+        double guide_round_radius;
         double safe_corridor_line_max_length;
         // for fov cut
         double sensing_horizon;
@@ -129,6 +133,8 @@ namespace super_planner {
             loader.LoadParam("super_planner/receding_dis", receding_dis, 5.0);
             loader.LoadParam("super_planner/pva_tail_len", pva_tail_len, 0.0);
             loader.LoadParam("super_planner/pva_tail_adaptive", pva_tail_adaptive, false);
+            loader.LoadParam("super_planner/guide_round_en", guide_round_en, false);
+            loader.LoadParam("super_planner/guide_round_radius", guide_round_radius, 0.5);
             loader.LoadParam("super_planner/robot_r", robot_r, 0.3);
             loader.LoadParam("super_planner/iris_iter_num", iris_iter_num, 1);
             loader.LoadParam("super_planner/yaw_mode", yaw_mode, 1);
