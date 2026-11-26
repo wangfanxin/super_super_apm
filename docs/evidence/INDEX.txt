@@ -70,3 +70,10 @@ docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
                xyz-t / vnorm-t / speed-t：phase66a-01-01_-*.png；
                角点 zoom：phase66a-01-01_corner-1..6.png；净空：phase66a-clearance.png（含机身半径侵入）。
                实测：指令 min/p1 1.00 m/s；角点真值 0.56/0.70/0.10/0.68/0.75/0.64；Q3 0.448、Q1 2 段、W4 -0.088 接触。
+
+== A 路线多地图复测（2026-11-27 追加）
+  sheet-A-multimap.png   frozen + s22/s23/s24 四图 topdown+clearance 对照（44 配置原样复跑）
+  sheet-A-77s22.png      s22 全套图（14 图；W4 -0.003、Q2 -0.196、Q3 0.174、Q1 1、Q4 fail）
+  sheet-A-77s23.png      s23 全套图（15/15；W4 +0.003、Q2 -0.188、Q1 0 PASS、Q3 0.234、Q4 fail）
+  sheet-A-77s24.png      s24 全套图（W4 -0.076、Q2 -0.195、Q3 0.223、Q1 1、Q4 fail）
+  单图：docs/evidence/final/phase77s2{2,3,4}-01-01_*（topdown/laps/xyz-t/vnorm/speed/corner1-6）+ phase77s2{2,3,4}-clearance.png
