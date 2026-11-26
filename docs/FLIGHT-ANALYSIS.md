@@ -636,3 +636,17 @@ Q1 4 段、Q4 FAIL（角点 cmd 最低 0.20–0.41、真值最低 0.01–0.17 m/
 Round 9 计划：改走 **plan-box 滚动目标（carrot）**——pacer 仍按角点记账，但发给 SUPER 的目标沿环
 前推 2 m（corner 不是轨迹终点），让 SUPER 全程连续规划、角点成为内部点；风险是切角/净空，用 pass-by
 到达判据 + 1.35 速度先验证 Q4/Q1。
+
+## 48. 滚动目标（carrot）路线否决（2026-11-27 round 9）
+
+43a（agile + no-retract + `TARGET_MODE=rolling`，look 2.5 m / step 1.2 m / target-vref 1.2，corner 0.8 bisector）：
+- W1/W1b 13/13、W6 p90 0.484、W4 **−0.088 接触**（1.45% 采样在柱内）；
+- **Q1 中段低速爆到 35 段**、Q3 0.474、角点 cmd 最低 **0.00 m/s**（path/net 2–5，绕圈明显）；
+- 机理：滚动目标每 1.2 m 重发一次 goal → FSM 频繁 new_goal/重规划，参考反复重启；且目标沿航路前推后
+  A* 短弧切弯，净空与跟踪双崩。
+
+→ **否决滚动目标**（与早期轮次结论一致）。至此 plan-box 层的"目标前推/滚动/延迟/速度限幅"路线全部试完：
+**角点 ≥1 m/s 只能靠 SUPER 轨迹本身连续（角点为内部点 + 轨迹不在角点收速）**，即回到"pass-through
+goal / via-point 类"的规划器改造——这一条此前被 owner 以"via_point 不做"否决过，下一轮将改为
+**SUPER 内部**的最小改造（goal 后面接一段出弯延长、角点仍为 guide/走廊内部点）并重新征求 owner 意见，
+或由 owner 重新定义"全程 ≥1 m/s"在角点的容忍度。
