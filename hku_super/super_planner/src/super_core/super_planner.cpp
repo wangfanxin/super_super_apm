@@ -970,6 +970,21 @@ namespace super_planner {
             ros_ptr_->warn(" -- [SUPER] OptimizationExpTrajInPolytopes for new path failed");
             return FAILED;
         }
+        /// WHTF-PLANDBG (round 15, temporary): does MINCO itself plan a low-speed dip near the start of a
+        /// NEW-GOAL trajectory?  Print start velocity, minimum speed over the first 1.2 s, speed at 0.5 s
+        /// and the trajectory duration, so the corner dip can be attributed to the plan or to the box.
+        if (gi_.new_goal && !out_traj.empty()) {
+            const double _dur = out_traj.getTotalDuration();
+            const double _v0 = out_traj.getVel(0.0).norm();
+            double _vmin = _v0;
+            for (double _tt = 0.05; _tt <= std::min(1.2, _dur); _tt += 0.05) {
+                _vmin = std::min(_vmin, out_traj.getVel(_tt).norm());
+            }
+            cout << " -- [SUPER] PLANDBG new_goal: dur=" << _dur << " v_start=" << _v0
+                 << " v_min(1.2s)=" << _vmin
+                 << " v(0.5s)=" << out_traj.getVel(std::min(0.5, _dur)).norm()
+                 << " goal_dist=" << (gi_.goal_p - robot_state_.p).norm() << endl;
+        }
         /// WHTF-NO-BACKWARD-HEAD (patch 11): refuse a plan whose first move is BACKWARDS.
         /// MEASURED (docs/FLIGHT-ANALYSIS.md §82): 7-10 published folds per sortie, half of them mid-leg
         /// 4-5 m from any corner, 5.3-5.6 s after the handover, with PathSearch/Minco failures
