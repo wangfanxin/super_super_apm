@@ -102,7 +102,7 @@ export REF_Z_LATCH_M=${REF_Z_LATCH_M:-1.60}
 export CLIMB_GUARD_M=${CLIMB_GUARD_M:-4.0}
 export EXTRA_PARMS=${EXTRA_PARMS:-$ARDUPILOT_DIR/params/guided_limits_flight.parm}
 export EKF_PARMS=${EKF_PARMS-$ARDUPILOT_DIR/params/ekf_trust_lio_flight.parm}
-# GEOFENCE 10.5, not 9.0: docs/INTEGRATION.md row 11 of the milestone table -- the pillars sit ON the
+# GEOFENCE 10.5, not 9.0: docs/FLIGHT-ANALYSIS.md row 11 of the milestone table -- the pillars sit ON the
 # ±7.5 legs, the legal avoidance needs ~0.9 m of lateral room, and the planner will route up to ~1.6 m
 # outside the waypoint box to pass a pillar.  The arena walls are at ±11.  9.0 aborted pn-01/pn-02 at
 # truth x +9.00 while the COMMAND box itself was at x 9.07 -- i.e. it was following a legal plan.

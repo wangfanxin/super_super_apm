@@ -3,7 +3,7 @@
 
 The defect
 ----------
-`docs/INTEGRATION.md` §92: the PLAN itself grazes the pillars.  `scripts/plan_clearance.py` on five
+`docs/FLIGHT-ANALYSIS.md` §92: the PLAN itself grazes the pillars.  `scripts/plan_clearance.py` on five
 sorties (reference samples vs the 522-pillar world, the same body W4 uses):
 
     tag          p01      p10      p50      min

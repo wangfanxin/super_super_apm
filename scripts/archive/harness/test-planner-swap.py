@@ -420,7 +420,7 @@ def main() -> int:
     # N3 is a MEASUREMENT, not a wish.  The first version of this control asserted that silence after a
     # COMPLETED statement is harmless -- and it failed, because `stalled_reason` fires on AGE ALONE
     # (`src/bridge/bridge_node.py:228-244`) whatever the last flag was.  That is the contract, not a
-    # defect: a planner must KEEP PUBLISHING after it declares COMPLETED (docs/PLANNERS.md section 1,
+    # defect: a planner must KEEP PUBLISHING after it declares COMPLETED (docs/PIPELINE.md section 1,
     # rule 1 -- our plan box does), and a planner that dies after COMPLETED lands the aircraft either way.
     s = planner_b()
     cut = [x for x in s if x.trajectory_flag == TRAJECTORY_STATUS_COMPLETED]

@@ -13,6 +13,6 @@ msg 108），不再需要固件补丁发出的 truth tap。这里保留旧的 ta
 
 **默认二进制是 UNPATCHED SITL**（`.build/ardupilot/build/sitl/bin/arducopter`）；打补丁的版本在构建时被
 备份为同目录的 `arducopter.tap-patched`，`scripts/run-mission.sh` 只在 `TRUTH_SRC=tap` 或 `LEGACY_TAP=1`
-时选它。重新打补丁/重编会覆盖默认二进制——`setup/build.sh` 与 `docs/PHASE1-TRUTH.md` 记录了步骤。
+时选它。重新打补丁/重编会覆盖默认二进制——`setup/build.sh` 与 `docs/PIPELINE.md` 记录了步骤。
 
 删除条件：当 Phase 2 的 bag 基座被验收（真值在 bag 里、无需 tap）、且不再需要双真值对比时，本目录可以整目录删除。

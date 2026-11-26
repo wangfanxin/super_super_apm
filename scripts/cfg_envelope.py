@@ -7,7 +7,7 @@ WHY THIS FILE EXISTS (round 87)
 (`--ff-vel-max`, `--ff-acc-max`, `--ff-acc-slew`).  Their documented purpose is
 **not** to be a new limit: they are supposed to *be* the plan's own limits, so
 that a replan's acceleration step cannot become a command step at the FCU
-(see the long note in `fly_hex.sh` and `docs/INTEGRATION.md` §64).
+(see the long note in `fly_hex.sh` and `docs/FLIGHT-ANALYSIS.md` §64).
 
 Between rounds 86 and 87 those three numbers were typed in by hand while the
 config moved underneath them:

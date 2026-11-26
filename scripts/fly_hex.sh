@@ -6,11 +6,11 @@ if [ -z "${DSH_ROOT:-}" ]; then
   [ -f "$_dsh/setup/env.sh" ] && . "$_dsh/setup/env.sh"
 fi
 # -----------------------------------------------------------------------------
-# One round-81 sortie: the HEX mission of docs/SPEC.md, flown the way the spec says.
+# One round-81 sortie: the HEX mission of docs/PIPELINE.md, flown the way the spec says.
 #
 #   fly_hex.sh TAG [ATTEMPTS]
 #
-# Every default below is a SPEC rule, not a tuning choice -- if one of them has to change, docs/SPEC.md
+# Every default below is a SPEC rule, not a tuning choice -- if one of them has to change, docs/PIPELINE.md
 # changes first and the 修改记录 gets a row.
 #
 #   WORLD_NAME    forest_hex12.yaml  round 88 map: [-12,12]^2, 522 pillars, 1.0 m cells, no lane,
@@ -215,7 +215,7 @@ export REF_CATCHUP_MPS=${REF_CATCHUP_MPS:-0.5}
 export REF_FF_ACC_MAX=${REF_FF_ACC_MAX:-$FF_A}
 export REF_LEAD_S=${REF_LEAD_S:-0.0}
 # ★ 参考低通（第 20 轮）★  τ 秒；0 = 关（交付行为，逐字节不变）。
-#   依据 docs/INTEGRATION.md §99.3–§102：W6 零时移 p90 0.34 m = 0.08 m 时基 + 沿航迹钟摆 + 横向 0.19 m；
+#   依据 docs/FLIGHT-ANALYSIS.md §99.3–§102：W6 零时移 p90 0.34 m = 0.08 m 时基 + 沿航迹钟摆 + 横向 0.19 m；
 #   九趟飞控参数手臂（POS_P 1.5 / WP_ACC 6 / ARRIVE_M 1.0 等）都压不下去，而离线把命令流低通到
 #   τ=0.05–0.10 s 能把真值-命令 p90 降到 ~0.26 m。这个开关就是把那个低通放到发布路径上。
 #   单测：scripts/test_ref_lp.py（τ=0 严格直通、直流增益 1、无过冲、不超前、dt≤0 不动）。

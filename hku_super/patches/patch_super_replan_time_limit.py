@@ -15,7 +15,7 @@ being asked to mean two different things, so lowering the lookahead (this projec
 
 What that costs, measured
 -------------------------
-missionA-kwC-01-01 (`docs/INTEGRATION.md` §78, `scripts/leg_events.py`):
+missionA-kwC-01-01 (`docs/FLIGHT-ANALYSIS.md` §78, `scripts/leg_events.py`):
 
     PlanFromRest failed      149   (of which `Replan over time` 140)
     ReplanOnce overtime      123   at replan dt 0.108-0.135 s for a 0.09 s budget
@@ -76,7 +76,7 @@ HPP_NEW = """        double replan_forward_dt;
         /// Those are different quantities: with the lookahead at 0.1 s the planner was discarding
         /// plans it had already finished whenever the host was even slightly loaded (measured:
         /// 123 + 140 refusals in missionA-kwC-01-01, which froze the published reference for up to
-        /// 5.5 s at a time).  See docs/INTEGRATION.md section 78.
+        /// 5.5 s at a time).  See docs/FLIGHT-ANALYSIS.md section 78.
         double replan_time_limit;
         double sample_traj_dt;"""
 

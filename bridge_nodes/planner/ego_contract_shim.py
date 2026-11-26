@@ -9,7 +9,7 @@ once a second.  Two consumers need the other behaviour:
 
   * the SUPERVISOR ends the sortie on `trajectory_flag = COMPLETED` ("the plan box has declared the tour
     complete") and lands;
-  * the acceptance report counts `trajectory_id` per WAYPOINT (`docs/PLANNERS.md`), which is what makes "which
+  * the acceptance report counts `trajectory_id` per WAYPOINT (`docs/PIPELINE.md`), which is what makes "which
     leg is this" answerable in a recording.
 
 SO THIS SHELL DOES EXACTLY TWO THINGS, and nothing else:

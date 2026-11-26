@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""spec_flight.py -- 从一趟飞行记录里逐条量 docs/SPEC.md 的 S1/S3（独立于 accept.py 的十一行）。
+"""spec_flight.py -- 从一趟飞行记录里逐条量 docs/PIPELINE.md 的 S1/S3（独立于 accept.py 的十一行）。
 
 S1 要的三件事，各自有独立证据：
   S1a 到达    真值是否进过每个航点的 **0.5 m 球**（`tap.csv`，世界系 W）——不看 pacer 自己的声明；

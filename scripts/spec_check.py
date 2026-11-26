@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""spec_check.py -- 逐条对照 docs/SPEC.md 自检，打印 PASS/FAIL 与实测数字。
+"""spec_check.py -- 逐条对照 docs/PIPELINE.md 自检，打印 PASS/FAIL 与实测数字。
 
-规矩（docs/SPEC.md）要求"每一轮工作结束前必须对照本文件逐条自检，不许用大概/应该/接近"。
+规矩（docs/PIPELINE.md）要求"每一轮工作结束前必须对照本文件逐条自检，不许用大概/应该/接近"。
 这个脚本就是那个自检：S0/S1 的任务几何 + S2 的柱林由世界文件静态审计；S1 的过点与 S3 的速度需要
 飞行记录（没有就明确打印 NOT MEASURED）。
 
@@ -269,7 +269,7 @@ def main():
                       % (amax, _ceil, 1.5))
         vmax = cval("max_vel")
         # ROUND 20 (user "按A走"): the frozen cruise cap moved 1.5 -> 1.35 on measured evidence
-        # (docs/INTEGRATION.md §106/§107/§110/§112: W6 p90 0.25*v-0.03, W2 p90 1.20*v-0.19, and 1.35
+        # (docs/FLIGHT-ANALYSIS.md §106/§107/§110/§112: W6 p90 0.25*v-0.03, W2 p90 1.20*v-0.19, and 1.35
         # is the only operating point that both clears W2 (1.41-1.43) and lets W4 turn positive by
         # itself (2/3 CLEAR)).  The row stays a hard equality: the value is frozen at 1.35 now, and a
         # variant is still the only way to fly anything else.

@@ -4,10 +4,10 @@
 用户第 81 轮的原话："地图从现在开始，不准变化。航点位置也不准变化。"
 第 88 轮用户改了口径并给了新参数（"场地 [-12.0,+12.0]^2；六边形航点每点之间差 8m 以上（随后改为 10.000 m）；
 航点附近 9 个格子不产生柱子"），于是 **SPEC 地图换成 sim/worlds/forest_hex12.yaml**，
-旧图 forest_v2_hex.yaml 归档为历史（见 docs/SPEC.md 的修改记录）。
+旧图 forest_v2_hex.yaml 归档为历史（见 docs/PIPELINE.md 的修改记录）。
 
 冻结的是**内容**，不是"承诺"：世界文件的 SHA-256、柱子数、空格数、六个角点坐标、边长、场地墙
-都记在下面的 FROZEN 里；`scripts/fly_hex2.sh` 在起飞前调用它，`docs/SPEC.md` 的 S5/S6 写着这条规矩。
+都记在下面的 FROZEN 里；`scripts/fly_hex2.sh` 在起飞前调用它，`docs/PIPELINE.md` 的 S5/S6 写着这条规矩。
 换地图 = 先得到用户同意 + 在 SPEC 修改记录里留原句/新句 + 更新这里的指纹（用
 `python3 scripts/fingerprint.py <world>` 生成），顺序不能反。
 

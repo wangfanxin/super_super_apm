@@ -414,7 +414,7 @@ namespace fsm {
             /// POLY AT COMMAND RATE (patch_poly_at_cmd_rate.py).  Without this the full trajectory
             /// is only published on plan success (<= 10 Hz), so any consumer evaluating it holds a
             /// snapshot up to one replan old -- measured 0.22-0.63 m of position error at 4 m/s
-            /// (docs/INTEGRATION.md section 49).  With it the newest polynomial is <= 10 ms old,
+            /// (docs/FLIGHT-ANALYSIS.md section 49).  With it the newest polynomial is <= 10 ms old,
             /// which is what lets the thin layer time-scale the reference along the SAME path.
             publishPolyTraj();
             cmd_pub_->publish(pid_cmd_);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The planner config for the hex world of docs/SPEC.md.
+"""The planner config for the hex world of docs/PIPELINE.md.
 
 Round 81 changed what these two knobs mean, so read this before touching them:
 

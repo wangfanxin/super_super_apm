@@ -17,7 +17,7 @@ FINDING, MEASURED AT HEAD eba1033 -- AND THIS FILE NO LONGER REPEATS THE FALSE C
 `bridge/mavros_impl.py` **DOES NOT EXIST**.  `ls bridge/` is `base.py`, `mavlink_impl.py`, `__pycache__`.
 The v1 docstring said "ONE shape, two implementations (`BRIDGE=mavlink|mavros`)", and three other places
 still say so: `fsm/mission_fsm.py:152-153` imports `MavrosBridge` as the non-mavlink branch (so
-`--bridge mavros` raises ModuleNotFoundError at the first call), `docs/PLAN.md:34` (decision 4) and
+`--bridge mavros` raises ModuleNotFoundError at the first call), `docs/PIPELINE.md:34` (decision 4) and
 `docs/ARCHITECTURE.md:225` ("`mavros_impl` exists and is unflown").  The `mavros` paragraph above is
 written in the conditional for that reason: it is a contract a second implementation WOULD have to meet,
 not a description of a file.  Writing that file is deliberately NOT part of the boundary refactor

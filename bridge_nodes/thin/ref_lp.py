@@ -4,7 +4,7 @@ WHY THIS FILE IS SEPARATE FROM planner_source_super.py: that module imports rclp
 unit test cannot import it on a machine without a ROS runtime.  Everything here is pure numpy, which
 makes the filter testable (`scripts/test_ref_lp.py`) and keeps the state machine's file readable.
 
-WHAT IT IS FOR (docs/INTEGRATION.md §99.3-§102): the measured tracking residual of the delivered arm is
+WHAT IT IS FOR (docs/FLIGHT-ANALYSIS.md §99.3-§102): the measured tracking residual of the delivered arm is
 p90 0.34 m zero-lag, made of a ~0.08 m recording time base, a +-0.2 m along-track pendulum at the six
 per-lap leg handovers, and 0.19 m cross-track.  Nine flights of FCU-parameter arms could not move it
 (§100-§102), and an offline experiment (`_scratch/ref_smooth_ceiling.py`) showed that low-passing the

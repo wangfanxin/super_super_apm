@@ -3,7 +3,7 @@
 
 The defect
 ----------
-`docs/INTEGRATION.md` §109.3: `dip_context.py` on the round-20 arms shows **0 of 43 reference dips start
+`docs/FLIGHT-ANALYSIS.md` §109.3: `dip_context.py` on the round-20 arms shows **0 of 43 reference dips start
 near a trajectory install** (median gap 6.20 s, 12 installs) -- they are SUPER **re-timing the remaining
 path mid-leg**.  The thin layer follows the plan, so when the plan drops speed mid-leg the aircraft
 overshoots and has to be pulled back: that is the along-track pendulum of §99.3 (p5 -0.19..-0.40 m) and
@@ -49,7 +49,7 @@ REL = "src/super_core/super_planner.cpp"
 ANCHOR = "        double replan_total_t = (ros_ptr_->getSimTime() - replan_process_start_WT);"
 
 BLOCK = """        /// WHTF-NO-MIDLEG-SLOWDOWN (patch 13): a REPLAN may not collapse the committed speed mid-leg.
-        /// MEASURED (docs/INTEGRATION.md §109.3): `dip_context.py` on six arms -- 0 of 43 reference dips
+        /// MEASURED (docs/FLIGHT-ANALYSIS.md §109.3): `dip_context.py` on six arms -- 0 of 43 reference dips
         /// start near a trajectory install, median gap 6.20 s, 12 installs -- the dips are SUPER
         /// RE-TIMING the remaining path, and the thin layer follows the plan, so the aircraft overshoots
         /// the slow patch and is pulled back (the along-track pendulum of §99.3).  Damping the

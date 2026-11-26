@@ -26,7 +26,7 @@ THE CLAIMS, and where each number comes from:
                       arm can actually promise: the sustained p90 (delivered: 1.61-1.96) and the
                       cap being reached at all.  The old "max >= 4.0 for 1 s" is gone; the number
                       reported is unchanged in kind, and the amendment is recorded in docs/PIPELINE.md
-                      and docs/CHANGELOG.md（历史测量记录在 git） §99.
+                      and docs/FLIGHT-ANALYSIS.md（历史测量记录在 git） §99.
   W3 altitude         held at the mission altitude       tap.csv pd -> U
   W4 no collision     >= 0 clearance to every pillar     tap.csv + world pillars
   W5 avoidance flown  the path left the straight line    tap.csv + the corner polylines
@@ -334,7 +334,7 @@ def main():
                    % (rate, float(np.nanmax(dt)) if dt.size else float("nan"), gaps.size))
     R.row("H2", "tap integrity (a stalled tap invalidates every window)", _h2_ok, _h2_det)
 
-    # ---- H6 the LiDAR SIMULATOR's scan budget (round 89, docs/CHANGELOG.md（历史测量记录在 git） §87)
+    # ---- H6 the LiDAR SIMULATOR's scan budget (round 89, docs/FLIGHT-ANALYSIS.md（历史测量记录在 git） §87)
     #   `src/sim/lidar_imu.py` SKIPS a scan whose raycast overran (the tap's truth window cannot cover it).
     #   MEASURED over 36 sorties: every fence escape had cast_max 184-570 ms and skipped 70-288, while every
     #   clean flight had cast_max <= 60 ms and skipped <= 3.  A skipped scan is a CLOUD GAP, and Super-LIO
@@ -624,7 +624,7 @@ def main():
              else "all of them approached, in order"))
 
     # ---- W2 cruise speed, from the tap's own velocity
-    # ROUND 20 AMENDMENT (user decision, recorded in docs/PIPELINE.md S3 and docs/CHANGELOG.md（历史测量记录在 git） §99).
+    # ROUND 20 AMENDMENT (user decision, recorded in docs/PIPELINE.md S3 and docs/FLIGHT-ANALYSIS.md（历史测量记录在 git） §99).
     # The old row asked for `max >= 4.0 m/s held for 1 s`, which cannot happen while
     # `traj_opt.boundary.max_vel` is the user-frozen 1.5 m/s; the 2.5 m/s arm did pass it, at the
     # price of REV 19-20 m and W6 1.4-1.7 m.  The amended row asks two things that a real sortie at
@@ -995,7 +995,7 @@ def main():
                    % (rate, float(np.nanmax(dt)) if dt.size else float("nan"), gaps.size))
     R.row("H2", "tap integrity (a stalled tap invalidates every window)", _h2_ok, _h2_det)
 
-    # ---- H6 the LiDAR SIMULATOR's scan budget (round 89, docs/CHANGELOG.md（历史测量记录在 git） §87)
+    # ---- H6 the LiDAR SIMULATOR's scan budget (round 89, docs/FLIGHT-ANALYSIS.md（历史测量记录在 git） §87)
     #   `src/sim/lidar_imu.py` SKIPS a scan whose raycast overran (the tap's truth window cannot cover it).
     #   MEASURED over 36 sorties: every fence escape had cast_max 184-570 ms and skipped 70-288, while every
     #   clean flight had cast_max <= 60 ms and skipped <= 3.  A skipped scan is a CLOUD GAP, and Super-LIO
@@ -1285,7 +1285,7 @@ def main():
              else "all of them approached, in order"))
 
     # ---- W2 cruise speed, from the tap's own velocity
-    # ROUND 20 AMENDMENT (user decision, recorded in docs/PIPELINE.md S3 and docs/CHANGELOG.md（历史测量记录在 git） §99).
+    # ROUND 20 AMENDMENT (user decision, recorded in docs/PIPELINE.md S3 and docs/FLIGHT-ANALYSIS.md（历史测量记录在 git） §99).
     # The old row asked for `max >= 4.0 m/s held for 1 s`, which cannot happen while
     # `traj_opt.boundary.max_vel` is the user-frozen 1.5 m/s; the 2.5 m/s arm did pass it, at the
     # price of REV 19-20 m and W6 1.4-1.7 m.  The amended row asks two things that a real sortie at

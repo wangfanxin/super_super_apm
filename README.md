@@ -1,161 +1,78 @@
-# super_super_apm — SUPER + Super-LIO 的六边形林区任务（ArduPilot SITL）
+# super_super_apm — 密集森林自主巡线（SUPER + Super-LIO + ArduPilot SITL）
 
-> **Abstract.** Two laps of a 10 m-radius hexagon through a 522-pillar forest, planned by
-> [hku-mars/SUPER](https://github.com/hku-mars/SUPER), tracked by
-> [Super-LIO](https://github.com/Liansheng-Wang/Super-LIO) as the only state source, flown by ArduPilot
-> SITL and graded offline from the recordings by a fixed acceptance table. The value of this repo is the
-> **measurement chain**, not the demo: every number in `docs/` can be regenerated from a recording with
-> one command, and every configuration change was adopted only after a measured A/B — the rejected ideas
-> are recorded with their numbers too (`docs/CHANGELOG.md` 与 git 历史中的 INTEGRATION.md).
+> **Abstract.** A 10 m-radius hexagonal tour through a 522-pillar forest (1.0 m pillar pitch, 0.2 m
+> square pillars), planned by [hku-mars/SUPER], tracked by Super-LIO as the only state source, flown by
+> ArduPilot SITL and graded offline from the recordings by a fixed 15-row acceptance table. The value of
+> this repo is the **measurement chain**: every number in `docs/` can be regenerated from a recording,
+> and every configuration change was adopted only after a measured A/B — rejected ideas are recorded with
+> their numbers too.
 
-任务：**10 m 半径正六边形、2 圈、13 个目标**，在 ±12 m 场地里穿过 **522 根柱**（柱距 1.0 m、柱截面
-0.2 m）；规划器是 **SUPER**（原版编译，本仓库内置已打补丁的源码），状态源只有 **Super-LIO**（飞控
-`EK3_SRC1_* = ExternalNav`），执行是 **ArduPilot SITL**，评分由 `scripts/accept.py` 从记录离线完成。
+**入口文档：[`docs/README.md`](docs/README.md)**（当前状态、最佳配置、架构、快速开始、证据索引）。
 
----
+## 当前状态（2026-11-26）
 
-## 1. 现在跑到什么程度
-
-最好的一趟（`kx6-03-01-01`，巡航上限 1.35 m/s）：**14 行全过、0 失败**。
-
-| 行 | 含义 | 实测 |
-|---|---|---|
-| H1 | 主机保持实时 | 飞行窗 rtf 0.9998 |
-| H6 | 雷达仿真没饿死 | raycast MAX 17.0 ms（闸门 100）、0 次跳过 |
-| W1 / W1b | 13/13 到达、按序接近 | W1 13/13，W1b 13/13（最差 0.18 m） |
-| W2 | 巡航速度 | p90 **1.43 m/s**（判据 ≥ 1.40），摸到 1.35 上限 |
-| W3 | 高度 | 偏差 −0.054 m，无越带 |
-| W4 | **不碰柱** | **+0.001 m（无接触）** |
-| W6 | 计划-真值跟踪 | p50 0.187 / **p90 0.321 m** |
-| — | 估计器（LIO 对真值） | 水平 p50 0.039 / p90 0.089 m |
-
-同一巡航档共飞 6 趟：**W2 全部通过**（1.41–1.46）；W6 p90 均值 **0.31 m**；W4 有 3 趟干净（另外 3 趟
-接触 −0.007…−0.072 m，作为**显式已知缺陷 `W4`** 记账，见 `docs/ACCEPTANCE.md`（W4 缺陷记账））。
-
-图：`docs/evidence/`（分圈俯视图、vxyz-时间、估计器误差），一条命令重出：
-`bash scripts/render_evidence.sh kx6-03-01-01`。
-
-## 2. 目录
-
-```
-bridge_nodes/     【模块 1】"规划器 ↔ 飞控"之间的全部节点：thin/（薄层 planner_source_super.py、
-                  ref_lp.py）、mavlink/（MAVLink 桥）、supervisor/（守卫/降落）、
-                  planner/（规划器适配：cmd_stream、ego shim）、common/（帧换算等共享库）
-hku_super/        【模块 2】hku-mars SUPER 规划器：super_planner/、rog_map/、mission_planner/、
-                  mars_uav_sim/，交付配置 config/super_planner_hex.yaml，以及 patches/（我们的 10/11/12）
-slam/             【模块 3】Super-LIO + livox_ros_driver2 + LIO 配置 config/livox_360.yaml
-fcu_interface/    【模块 4】飞控接口的数据侧：params/（飞行参数）、msgs/（quadrotor_msgs 等消息定义）
-sim/              【模块 5】仿真环境：src/（lidar_imu.py、raycast.py、truth_rx.py）、pattern/
-                  （16 MB 供应商射线图案，不入库）、worlds/（冻结世界）、rviz/、frozen/（冻结清单）
-scripts/          跨模块编排：飞行臂 fly_*、评分器 accept.py、记录器、~150 个分析工具、run-mission.sh；
-                  scripts/archive/ 是历史工具（harness 旧工具 + 旧 offline 工具），不参与现行链路
-setup/            env.sh（唯一知道路径的地方）、build.sh、fetch_ardupilot.sh、run_hex.sh
-calib/            L→W 标定（calib.json，实测量）
-docs/             只有 5 篇文档（README/PIPELINE/ACCEPTANCE/FLIGHT-ANALYSIS/CHANGELOG）+ evidence/（图与数据）
-tests/            无飞行自检 run_all.sh（CI 同款）
-PINS.env          第三方源码的 commit 与补丁说明
-```
-
-## 3. 依赖
-
-* Ubuntu 22.04（或 WSL2）、ROS 2 Humble、C++17、Eigen、PCL、yaml-cpp（apt 一行见 `PINS.env`）。
-* 磁盘 ≥ 8 GB（ArduPilot 占大头）、≥ 4 核。**主机要安静**：验收 H1 量的是"仿真有没有跑满实时"，
-  机器一忙就会失败——这是设计，不是 bug。
-
-## 4. 编译
-
-```bash
-git clone https://github.com/wangfanxin/super_super_apm.git
-cd super_super_apm
-
-bash setup/fetch_ardupilot.sh --build   # ArduPilot SITL，固定 commit（~1.5 GB，最久的一步）
-bash setup/build.sh                     # colcon：super_planner（fsm_node）+ super_lio + livox
-```
-
-`setup/build.sh` 会建 `.build/ws_super`、`.build/lio_ws`，把内置包软链进去并 Release 编译；打印每件的
-落点，`fsm_node` 没产出就直接失败。所有路径都能用环境变量覆盖（`ARDUPILOT_ROOT`、`LIO_LOGS`、
-`WS_SUPER`、`LIO_WS`），见 `setup/env.sh`——仓库里没有任何硬编码的 clone 路径。
-
-## 5. 运行与评分
-
-```bash
-bash setup/run_hex.sh kx7 2 2      # TAG、趟数、每趟最多重试次数
-```
-
-依次做：静态闸门（冻结地图 + SPEC 自检 + 补丁在位）→ 飞 2 趟 → 对每趟跑 `accept.py`。
-记录落在 `.runs/missionA-<tag>/`（`tap.csv` 真值、`setpoints.csv` 发布的参考、`traj.log` 规划器日志）。
-单独重评分：
-
-```bash
-KNOWN=W4 bash scripts/run_accept.sh <tag> forest_hex12.yaml 2.0 10.0 box 0.5 2
-```
-
-`KNOWN=W4` 把那一行标成"已接受的已知缺陷"（数字照打、JSON 里仍 `ok:false`）；不写就是硬 FAIL。
-
-## 6. 刻意不放进仓库的东西
-
-| 东西 | 大小 | 原因 | 怎么得到 |
-|---|---|---|---|
-| ArduPilot SITL | ~1.5 GB | 太大，且是原版 checkout | `setup/fetch_ardupilot.sh`（固定 commit） |
-| `super_planner/log/` | 1.3 GB | 内置规划器的运行日志 | 每次运行自动生成 |
-| 飞行记录、`eeprom.bin`、`*.BIN` | — | 每趟的产物 | `.runs/`（已 gitignore） |
-| 作者机器的临时树（`_stage`、`_refs` 等） | GB | 不是源码 | — |
-
-**一句必须说清的话**：记录里那些数字来自带 truth-tap 补丁的 SITL —— `tap.csv`（1.2 kHz 真值）就是它
-写的。用原版 ArduPilot 能飞完任务，但不会有 `tap.csv`，`accept.py` 也就无法评分。
-`PINS.env` 里写了同一句话。
-
-## 7. 第三方代码与许可
-
-* `hku_super` —— hku-mars/SUPER（保留 LGPL-3.0 头）。**已修改**：两个补丁直接烘进内置源码，
-  随时可用 `scripts/patch_super_*.py --check/--apply/--revert` 复算；静态闸门会断言它们在位。
-* `slam/` —— Liansheng-Wang/Super-LIO @ `f89f48d`（+ livox_ros_driver2）。
-* `slam/livox_ros_driver2` —— Livox-SDK/livox_ros_driver2 @ `2144554`。
-* `ardupilot/`、`sim/`、`bridge_nodes/` —— 本项目自己的三块：驱动侧、仿真侧、薄层。
-
-完整 commit 见 `PINS.env`。
-
-## 8. 继续读
-
-* `docs/README.md` —— 入口、快速开始、当前状态、证据图索引。
-* `docs/PIPELINE.md` —— 架构/数据链/坐标系/时钟/五阶段证据（全部技术细节）。
-* `docs/ACCEPTANCE.md` —— 15 行判据、v2 提案、交付清单、真机清单、路径政策、已知缺陷。
-* `docs/FLIGHT-ANALYSIS.md` —— 绕圈机理、跟踪/滞后分解、角点 A/B、高速竞速方案。
-* `docs/CHANGELOG.md` —— 按轮次的改动与测量记录（历史集成记录摘要；原文在 git 历史）。
-* `docs/evidence/INDEX.txt` —— 每张图是什么、怎么重画。
-
-## 9. 打包时验证了什么（可复现）
-
-以下都在**从 GitHub 重新 clone 出来的副本**上跑过（路径 `/tmp/release_from_github`，不是作者的工作区）：
-
-| 检查 | 结果 |
+| 项 | 状态 |
 |---|---|
-| `git clone` 到任意目录 | 855 个文件 / 20 MB；`setup/env.sh` 把 `DSH_ROOT` 解析成克隆目录，无需任何环境变量 |
-| `bash scripts/check_static.sh` | **STATIC GATE: PASS**（含 `S1 max_vel = 1.35`、两个补丁 APPLIED、冻结地图 13 行） |
-| `python3 bridge_nodes/thin/planner_source_super.py --selftest` | **SELFTEST PASS** |
-| `bash scripts/run-mission.sh`（干跑） | 所有路径解析成功（"nothing started" 分支） |
-| `bash setup/build.sh --no-lio` | **编译出 `fsm_node`（21.7 MB）** —— 内置 SUPER 源码 + 打包进去的两个补丁 |
-| 全部 `.sh` / `.py` 语法 | 101 个 `.sh` + 250 个 `.py`，`bash -n` / `py_compile` **0 失败** |
+| 历史最佳实飞 | **phase9f-01-01**（1.35 m/s）：除已知 P0（H2）外验收全过；W1/W1b 13/13、**W4 +0.027 m CLEAR**、W6 p90 0.262、中段指令停顿 0 |
+| 新基准（9f+，待飞确认） | 9f 的几何/角点设置 + `REF_Z_OFFSET=0.118` / `REF_Z_HOLD`（指令 z 恒定 1 cm） + 垂直环软化 `PSC_D_VEL_P=3.0` |
+| 机体 | `sim/models/quad_1kg_250mm.json`（1.0 kg / 250 mm）；能力台架 8.34 m/s、PVA 8 m/s 跟踪 p90 0.24 m |
+| 地图 | 冻结 SPEC `sim/worlds/forest_hex12.yaml`（半径 10 m 六边形、10 m 边、3 圈、522 柱、柱距 1.0 m） |
+| 速度阶梯 | 1.35 m/s 可用；2.5/4 m/s 在大世界上有正项未达标；6/8/10 m/s 路径未达成（8 m/s 仅台架） |
 
-**尚未在本轮验证的**（都在 README 的下一步里，需要长时间下载/编译）：
+## 文档（`docs/` 4 篇）
 
-* `bash setup/build.sh`（完整版，含 Super-LIO + livox 编译）—— 内置源码未改，但本轮只跑过 `--no-lio`；
-* `bash setup/fetch_ardupilot.sh --build` —— 1.5 GB 下载 + SITL 编译，未在本轮执行；
-* **一次完整的飞行 + 评分**（需要上面两项）—— 因此仓库里的数字来自作者机器上同一套源码与配置的实测记录，
-  而不是本轮在克隆里重飞的。
+| 文档 | 内容 |
+|---|---|
+| [`docs/README.md`](docs/README.md) | 入口：当前状态、9f+ 配置、架构、快速开始、证据索引 |
+| [`docs/PIPELINE.md`](docs/PIPELINE.md) | 完整链路：进程/话题/坐标系/控制/估计/规划/数据管线/运行约定与坑 |
+| [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) | 15 行验收（H1–H6、W0–W6）判据、政策、已知 P0 |
+| [`docs/FLIGHT-ANALYSIS.md`](docs/FLIGHT-ANALYSIS.md) | 飞行分析：9f+、9f 实飞、9f vs 21a、定位/高度分解、角点问题、速度阶梯、实验历史与附录 |
 
-**2026-11-24 之后补记（本机迁移到"仓库 + 运行根"分离之后）**
+> 文档已合并：旧的 CHANGELOG / INTEGRATION / SPEC / PHASE* / PIPELINE-PLAN 等已并入上述 4 篇
+> （独立 CHANGELOG 已删除，历史进度日志在 `docs/FLIGHT-ANALYSIS.md` 附录，git 历史仍保留原文）。
 
-* 运行根 `/home/fanxin/super_super_apm/{.build,.runs}`（ArduPilot / lio_ws / ws_super / 记录）与仓库
-  `D:\distill_self\super_super_apm` 分离，`setup/runtime.env` 记录本机路径（不入库）。
-* 迁移后实测：`scripts/check_static.sh` PASS；`scripts/install_config_hex.sh` 三份配置 md5 一致；
-  `run-mission.sh` 干跑路径全解析；**真飞了一趟**（`smoke3-01-01`）：H1–H5 全过、W1 13/13、
-  W2 p90 1.46、W6 p90 0.374、W4 −0.090 —— 飞行动力学与评分链均正常（这一趟的 W4/W6 落在正常分布里，
-  不是迁移引入的）。
+## 快速开始（WSL + ROS2 humble）
 
-**一个必须知道的依赖（不是代码问题，是数据）**：LiDAR 仿真需要真实 MID-360 射线图案
-（`sim/pattern/mid360_pattern.csv`，≈16 MB，800 001 行，供应商数据，不入库）。没有它飞行脚本会**拒绝启动**。
-获取与校验见 `sim/pattern/README.md` 与 `bash scripts/check_pattern.sh`。
+```bash
+. setup/env.sh                     # 环境
+bash tests/run_all.sh              # 全量门禁（提交前必须 PASS）
+bash scripts/clean_harness.sh      # 清残留进程 + DDS 共享内存 + 孤儿 fsm_node
 
-如果你要"克隆 → 编译 → 飞一趟"全部在本机复现，按第 4、5 节依次执行即可；任何一步的输出都会打印它用了哪个
-路径（`setup/env.sh` 的 `dsh_env_summary`），便于核对。
+# 飞一趟（9f 几何 + 9f+ 配置，冻结地图，1.35 m/s）
+SITL_MODEL="x:sim/models/quad_1kg_250mm.json" \
+EXTRA_PARMS=$PWD/fcu_interface/params/guided_limits_bench5_vert.parm \
+GOAL_PVA=1 CORNER_MODE=bisector CORNER_SPEED=0.8 ARRIVE_M=0.3 \
+REF_V_SLEW=3.0 REF_Z_OFFSET_M=0.118 REF_Z_HOLD=2.0 REF_Z_TOL=0.005 REF_Z_LATCH_M=1.2 \
+NAV_GATE_MPS=15 NAV_SKIP_MAX=40 BAG=1 BAG_SPLIT=1 SORTIES=1 \
+bash scripts/fly_hex2.sh demo01 1
+
+# 验收 + 分析（每趟必做）
+python3 scripts/accept.py --run .runs/missionA-demo01-01-01 \
+    --world sim/worlds/forest_hex12.yaml --alt 2.0
+python3 scripts/flight_forensics.py --tag demo01-01-01
+python3 scripts/low_speed_census.py --tag demo01-01-01
+```
+
+## 目录
+
+| 目录 | 内容 |
+|---|---|
+| `bridge_nodes/` | plan box（`thin/planner_source_super.py`）、MAVLink bridge+supervisor、参考整形、公共框架 |
+| `hku_super/` | SUPER 规划器源码、配置（`config/`、运行时 `super_planner/config/`）、补丁（`patches/`） |
+| `slam/super_lio/` | Super-LIO（LiDAR-inertial 里程计） |
+| `sim/` | SITL 真值客户端、雷达/IMU 仿真与射线器、机体模型（`models/`）、世界（`worlds/`） |
+| `fcu_interface/` | 飞控参数（`params/`）、消息定义（`msgs/`） |
+| `scripts/` | 飞行臂/验收/出图/法医/census/清理工具 |
+| `tests/` | 全量门禁与单元测试 |
+| `docs/` | 4 篇文档 + `docs/evidence/` 证据（只保留最佳轮次/当前轮次/能力台架） |
+| `calib/` | L→W 标定 `calib.json` |
+| `setup/` | 环境脚本（`env.sh`、ROS2/SITL 工作区） |
+
+## 硬性约定
+
+1. **只飞 SITL，不飞真机**；所有结果在仓库内可复现。
+2. **不 push**（本地 commit 即可）。
+3. `docs/` 文档 ≤5 篇（当前 4 篇）。
+4. 每趟飞行后：完整图集 + `accept.py` + `flight_forensics.py` + `low_speed_census.py` + 更新文档。
+5. 质量不看"到点"：W4 净空必须为正、W6 跟踪、低速段普查（尤其**路径中间** stall/loop）都是门。
+6. 主机雷达仿真会间歇 starvation（H6）：先 `clean_harness.sh`，只采纳 H6-clean 的趟。

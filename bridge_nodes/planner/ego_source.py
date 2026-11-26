@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """`planner/ego_source.py` -- the PLAN BOX for ego-planner, behind the SAME `/plan/cmd` contract.
 
-WHAT THIS IS.  A planner in this stack is whatever publishes the contract in `docs/PLANNERS.md`:
+WHAT THIS IS.  A planner in this stack is whatever publishes the contract in `docs/PIPELINE.md`:
 
     /plan/cmd   quadrotor_msgs/PositionCommand   frame lio_world (L)
                 position = the point being flown to; velocity/acceleration are ignored on the wire
@@ -30,7 +30,7 @@ DIRECTIONS
     planning/bspline (L)                -> the trajectory to sample
     /plan/cmd (L, 100 Hz)               -> the contract above
 
-THE HONEST LIMITS (docs/PLANNERS.md section 5): this adapter has NOT been flown on this stack since F1/F2.
+THE HONEST LIMITS (docs/PIPELINE.md section 5): this adapter has NOT been flown on this stack since F1/F2.
 Its sampling arithmetic is verified (`planner/bspline.py --selftest`), its contract behaviour is asserted by
 `--selftest` here, and a full ego sortie would additionally need `ego_planner_node` AND `traj_server` built and
 launched, plus ego's own map fed from `/lio/cloud_world`.
@@ -405,7 +405,7 @@ def _selftest() -> int:
 
     A straight-line spline is synthesised the way ego produces one (cubic, control points, knots starting
     negative) and fed in, together with a point-vehicle that walks the same line.  The assertions are the
-    four in docs/PLANNERS.md section 1, in the order a consumer meets them.
+    four in docs/PIPELINE.md section 1, in the order a consumer meets them.
     """
     print("EGO SOURCE SELFTEST -- the /plan/cmd contract, no ROS, no flight\n")
     t0 = 1000.0

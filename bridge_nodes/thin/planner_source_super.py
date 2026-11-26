@@ -323,7 +323,7 @@ def main() -> int:
                          "免得把'抄近道'引回来（柱子就在拐角）。")
     ap.add_argument("--ref-lp-tau", type=float, default=0.0,
                     help="发布的参考 (p, v, a) 经二阶临界阻尼低通，时间常数 τ 秒（0 = 关，默认）。"
-                         "依据 docs/INTEGRATION.md §99.3–§102：九趟飞控手臂都压不下 W6 p90 0.34 m，"
+                         "依据 docs/FLIGHT-ANALYSIS.md §99.3–§102：九趟飞控手臂都压不下 W6 p90 0.34 m，"
                          "而离线把命令流低通到 τ=0.05–0.10 s 时真值-命令 p90 可到 ~0.26 m。"
                          "τ=0 严格直通（scripts/test_ref_lp.py 断言），实现见 ref_lp.py。")
     ap.add_argument("--ref-gov-maxlag", type=float, default=0.0,
@@ -423,14 +423,6 @@ def main() -> int:
                     help="目标点移动超过这个距离才重发 goal（避免每拍 new_goal 把 SUPER 的 FSM 打爆）。")
     ap.add_argument("--target-vref", type=float, default=0.0,
                     help="rolling 目标点的终点速度大小（m/s）；0 = 用 --corner-speed。方向沿航路切线。")
-    ap.add_argument("--corner-exit-look-m", type=float, default=0.0,
-                    help="★ WHTF-CORNER-EXIT (2026-11-26, owner 的设计) ★ 条件式前视：离当前角点还剩 "
-                         "--corner-exit-trigger-m 米以内时，把目标点从**角点**改到**角点沿出弯方向再前 "
-                         "look 米**；远离角点时目标仍是角点。于是轨迹终点落在角点之后（旧轨迹不在角点结束），"
-                         "而接近段仍然瞄着角点（不会在 10 m 外就切弯）。终点速度取出弯方向 × --corner-speed，"
-                         "所以经过角点时参考不停。0=关（历史行为）。")
-    ap.add_argument("--corner-exit-trigger-m", type=float, default=3.0,
-                    help="--corner-exit-look-m 的触发距离（离角点多少米内切换目标），m。")
     ap.add_argument("--corner-carry-m", type=float, default=0.0,
                     help="★ 目标持续推进（carrot）：当 --pre-goal-m 已经把本 leg 的目标推进后，把发给 SUPER 的"
                          "目标点从角点沿**出弯方向**再前移这么多米（不在角点上停车）。与 --goal-lookahead-m 不同："
@@ -459,7 +451,7 @@ def main() -> int:
                          "转角速度由几何决定：实测本世界两个紧角的净空圆角 R=0.95 m，"
                          "v=sqrt(a_lat*R)≈2.0 m/s，宽角 3.5-4.3 m/s。0=老行为（goal=当前角点，必停）。"
                          "⚠ 实测 missionA-cp-01：lead=1 会**抄近角**（真值到角点 8.3-9.2 m），"
-                         "W1b 只有 7/13 —— 角点必须仍然是 goal，见 docs/INTEGRATION.md §41。")
+                         "W1b 只有 7/13 —— 角点必须仍然是 goal，见 docs/FLIGHT-ANALYSIS.md §41。")
     ap.add_argument("--super-odom", default="/lio/robo/odom")
     ap.add_argument("--super-cloud", default="/lio/cloud_world")
     ap.add_argument("--tour", choices=["square", "world"], default="square",
@@ -487,11 +479,6 @@ def main() -> int:
                          " overshoots those steps and scripts/analyze_loops.py counts 2-9 truth loops whose"
                          " command never loops.  Slew-limiting v keeps the position/velocity/acceleration"
                          " triple close to the planner's while never showing the FCU a step it cannot follow.")
-    ap.add_argument("--ref-deadreckon-s", type=float, default=0.0,
-                    help="★ WHTF-DEADRECKON (2026-11-26) ★ 参考断流后的处理：>0 时用**最后参考的速度**外推"
-                         "（最多这么多秒）而不是原地 hold(v=0)。motivation: MEASURED phase8d/8a the commanded"
-                         " speed collapses to 0 for 0.3-0.8 s at every waypoint handover while SUPER rebuilds,"
-                         " and the aircraft overshoots into loops (scripts/flight_quality.py).  0 = 历史行为.")
     ap.add_argument("--log-period-s", type=float, default=5.0)
     ap.add_argument("--selftest", action="store_true")
     args, _unknown = ap.parse_known_args()
@@ -805,12 +792,6 @@ def main() -> int:
           也就是大半条航线上机头是歪的。换算只允许在 `common.frames.l_to_wire_yaw` 里做一次，
           在**发布那一拍**做（见 on_timer），这里保持 L 系原值。
         """
-        # WHTF-DEADRECKON: the LAST NON-ZERO reference velocity.  MEASURED phase8l: at a handover the last
-        # SUPER sample often carries |v|=0 (end-of-trajectory sample), so dead reckoning from `ref[1]` would
-        # extrapolate zero -- the aircraft brakes into a loop anyway.  Keep the last real cruise velocity.
-        _v_now = np.array([m.velocity.x, m.velocity.y, m.velocity.z])
-        if float(np.linalg.norm(_v_now[:2])) > 0.4:
-            state["last_nonzero_v"] = _v_now.copy()
         state["ref"] = (np.array([m.position.x, m.position.y, m.position.z]),
                         np.array([m.velocity.x, m.velocity.y, m.velocity.z]),
                         np.array([m.acceleration.x, m.acceleration.y, m.acceleration.z]),
@@ -999,25 +980,7 @@ def main() -> int:
                     if d_now < pre:
                         sent_i = pacer.i_leg + 1
                         state["pre_goal_leg"] = pacer.i_leg
-        # ★ WHTF-CORNER-EXIT：条件式"角点后前视"★ 目标是否已经切换过（每个 leg 只发一次）
-        exit_look = float(getattr(args, "corner_exit_look_m", 0.0) or 0.0)
-        exit_trig = float(getattr(args, "corner_exit_trigger_m", 3.0) or 3.0)
-        exit_active = False
-        exit_first_send = False
-        if exit_look > 0.0 and pre <= 0.0 and 1 <= pacer.i_leg < len(corners_l) - 1:
-            if state.get("exit_goal_leg") == pacer.i_leg:
-                exit_active = True
-            else:
-                p_w_now = here_w()
-                if p_w_now is not None:
-                    d_now = float(np.linalg.norm(np.asarray(p_w_now, float)[:2]
-                                                 - corners_w[pacer.i_leg][:2]))
-                    if d_now < exit_trig:
-                        state["exit_goal_leg"] = pacer.i_leg
-                        exit_active = True
-            if exit_active and state.get("exit_sent_leg") != pacer.i_leg:
-                exit_first_send = True
-        if sent_i == state["goal_i"] and not force and not exit_first_send:
+        if sent_i == state["goal_i"] and not force:
             return
         if sent_i == state["goal_i"] and force and (now_goal() - state["last_goal_t"]) < 1.0:
             return
@@ -1025,8 +988,6 @@ def main() -> int:
             state["stale_resends"] = 0
         state["goal_i"] = sent_i
         state["last_goal_t"] = now_goal()
-        if exit_active:
-            state["exit_sent_leg"] = pacer.i_leg
         g = PoseStamped()
         g.header.stamp = node.get_clock().now().to_msg()
         g.header.frame_id = cmd_stream.FRAME_L
@@ -1073,17 +1034,6 @@ def main() -> int:
             if n > 1e-6:
                 pl[0] += la * d[0] / n
                 pl[1] += la * d[1] / n
-        # ★ WHTF-CORNER-EXIT：把目标从角点移到"角点 + 出弯方向 × look" ★
-        exit_vout_dir = None
-        if exit_active:
-            uo = corners_l[pacer.i_leg + 1] - corners_l[pacer.i_leg]
-            no = float(np.linalg.norm(uo[:2]))
-            if no > 1e-6:
-                pl = corners_l[pacer.i_leg].copy()
-                pl[0] += exit_look * uo[0] / no
-                pl[1] += exit_look * uo[1] / no
-                gi_t = pacer.i_leg
-                exit_vout_dir = np.array([uo[0] / no, uo[1] / no, 0.0])
         # ★ PVA GOAL（--goal-pva 1）★
         #   目标仍然是这个角点（所以 W1b 不会被放宽），但把**离开角点的速度**一起告诉 SUPER：
         #   方向 = 出弯方向（本角点 → 下一个角点），大小 = --corner-speed。SUPER 的轨迹终点因此
@@ -1093,12 +1043,7 @@ def main() -> int:
         # ⚠ 停机坪那一腿（index 0，竖直起飞）**必须 v=0**：实测 missionA-pv-01，给它一个 2 m/s 的
         #   水平出弯速度后，MINCO 每拍都报 "Omg or thr or Pos violation"（4881 次），
         #   一条轨迹都优化不出来，飞机 265 s 原地悬停（路径 4.5 m）。最后的航点同理要给 0（要停）。
-        if exit_vout_dir is not None:
-            # extended-corner goal: keep moving along the outgoing leg at the corner speed
-            if int(getattr(args, "goal_pva", 0)):
-                vc = float(args.corner_speed)
-                vout = np.array([vc * exit_vout_dir[0], vc * exit_vout_dir[1], 0.0])
-        elif carry_active:
+        if carry_active:
             # carrot 目标的终点速度就是出弯方向（若把 bisector/incoming 也叠上去，终点速度方向与出弯不一致，
             # 飞机会在角点后再拐一次 —— 这正是要消除的"绕弯"）
             uo = corners_l[pacer.i_leg + 1] - corners_l[pacer.i_leg]
@@ -1290,29 +1235,9 @@ def main() -> int:
         on_vertical_leg = (pacer.i_leg == 0)
         state["is_hold"] = False
         _ref_age = (now - state["ref_wall"]) if state["ref_wall"] else 0.0
-        _dr_s = float(getattr(args, "ref_deadreckon_s", 0.0) or 0.0)
-        if (_dr_s > 0.0 and not on_vertical_leg and ref is not None and state["n_ref"] > 0
-                and _ref_age > args.stale_s and _ref_age <= (_dr_s + args.stale_s)):
-            # DEAD RECKONING: SUPER is rebuilding at a waypoint handover.  A frozen position with v=0 makes the
-            # aircraft brake (it is still moving at 1.3 m/s) and overshoot into a loop; instead keep the last
-            # commanded velocity and let the position run forward, capped at --ref-deadreckon-s of extrapolation.
-            _dt = min(_ref_age - args.stale_s, _dr_s)
-            _v_dr = np.asarray(ref[1], float)
-            if float(np.linalg.norm(_v_dr[:2])) < 0.2 and state.get("last_nonzero_v") is not None:
-                _v_dr = np.asarray(state["last_nonzero_v"], float)    # end-of-trajectory sample: keep cruising
-            _p = np.asarray(ref[0], float) + _v_dr * _dt
-            s = cmd_stream.CmdSample(_p, _v_dr, np.zeros(3), state["hold_yaw"], ref[4],
-                                     pacer.i_leg + 1, cmd_stream.TRAJECTORY_STATUS_READY)
-            state["dr_n"] = int(state.get("dr_n", 0)) + 1
-            if state["dr_n"] in (1, 5, 20, 100, 500):
-                print("REF DEAD-RECKON #%d: SUPER silent %.2f s, extrapolating |v| %.2f m/s for %.2f s"
-                      % (state["dr_n"], _ref_age, float(np.linalg.norm(_v_dr[:2])), _dt), flush=True)
-        elif on_vertical_leg or ref is None or _ref_age > args.stale_s:
-            # WHTF-GOV-HOLD-FIX (2026-11-26): while SUPER is silent the plan box must HOLD, not creep.  The
-            # arc-sync governor used to keep driving toward the SUPER target at up to --ref-catchup-mps, so
-            # s_ref ran ahead of s_plan (phase15a: s_err -16.7 m) and the catch-up cap then pinned the whole
-            # sortie at 1 m/s (W2 failed at p90 0.67).  Marking the tick as a hold lets the governor bypass
-            # entirely: (s_plan, s_ref) only advance on real SUPER samples.
+        if on_vertical_leg or ref is None or _ref_age > args.stale_s:
+            # WHTF-GOV-HOLD-FIX: while SUPER is silent the plan box HOLDS (and the governor is
+            # bypassed), so it never creeps toward a stale target.
             state["is_hold"] = True
             s = hold_sample(force_vertical=on_vertical_leg)
         else:
@@ -1778,7 +1703,7 @@ def main() -> int:
         state["last_pub"] = s.p.copy()
         state["last_pub_t"] = now
         # ★ 参考低通（第 20 轮，--ref-lp-tau；默认 0 = 关）★
-        #   依据 docs/INTEGRATION.md §99.3–§102：交付档的 W6 零时移 p90 是 0.34 m，由约 0.08 m 记录
+        #   依据 docs/FLIGHT-ANALYSIS.md §99.3–§102：交付档的 W6 零时移 p90 是 0.34 m，由约 0.08 m 记录
         #   时基 + 沿航迹钟摆（p5 −0.19…−0.36）+ 横向 0.19 m 组成；九趟飞控参数手臂（§100–§102）
         #   一个都没压下去。离线实验（_scratch/ref_smooth_ceiling.py）把**命令流**低通到
         #   τ = 0.05–0.10 s 时，真值到命令的 p90 会降到 ~0.26 m —— 这个开关就是把那个低通放到

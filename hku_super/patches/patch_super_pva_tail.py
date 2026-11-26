@@ -70,8 +70,8 @@ CPP_PATCHED = CPP_ANCHOR + """
                     guide_stamp.emplace_back(stamp0 + d / v_ref);
                 }
                 if (cfg_.print_log) {
-                    ros_ptr_->info(" -- [SUPER] PVA-TAIL: appended %.2f m run-out past the goal along "
-                                   "(%.2f, %.2f)", cfg_.pva_tail_len, u.x(), u.y());
+                    ros_ptr_->info(" -- [SUPER] PVA-TAIL: appended " + std::to_string(cfg_.pva_tail_len)
+                                   + " m run-out past the goal");
                 }
             }
         }"""

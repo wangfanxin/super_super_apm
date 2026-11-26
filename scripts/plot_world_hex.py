@@ -47,7 +47,7 @@ laps = int(mis.get("laps", 3))
 arr = float(mis.get("arrive_sphere_m", 0.5))
 vexit = float(mis.get("corner_exit_speed_mps", 4.0))
 
-# the yardsticks the round-81 pipeline actually has (see docs/INTEGRATION.md §56)
+# the yardsticks the round-81 pipeline actually has (see docs/FLIGHT-ANALYSIS.md §56)
 import re                                            # noqa: E402
 txt = open(a.cfg, encoding="utf-8").read() if os.path.isfile(a.cfg) else ""
 

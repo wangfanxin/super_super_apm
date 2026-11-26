@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """lidar_stall.py -- did the LiDAR SIMULATOR keep up, and how many scans did it throw away?
 
-WHY THIS IS A GATE AND NOT A DIAGNOSTIC: `docs/INTEGRATION.md` §87 measured that every fence escape of
+WHY THIS IS A GATE AND NOT A DIAGNOSTIC: `docs/FLIGHT-ANALYSIS.md` §87 measured that every fence escape of
 round 89 coincides with a mid-flight raycast stall inside `src/sim/lidar_imu.py`:
 
     tag            cast p50   cast MAX   skipped   outcome

@@ -760,7 +760,7 @@ def main() -> int:
     # ==========================================================================================
     # THE LOOP IS SPLIT IN TWO, AND THE ORDER IS THE WHOLE POINT
     #
-    # MEASURED (docs/INTEGRATION.md 17.11): raycast.cast is a BLAS-thread-parallel kernel that
+    # MEASURED (docs/FLIGHT-ANALYSIS.md 17.11): raycast.cast is a BLAS-thread-parallel kernel that
     # takes ~15 ms on a good run and ~130 ms when its thread pool cannot rendezvous, and
     # Sensor.scan additionally pays pose_at over every point (6.8 ms).  The old loop interleaved
     # that work with the IMU stream ONE TAP LINE AT A TIME, so one slow scan stalled the IMU for

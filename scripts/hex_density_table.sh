@@ -8,7 +8,7 @@ fi
 # -----------------------------------------------------------------------------
 # Per-leg bottleneck b for a few (seed, keep-prob) combinations of the hex generator.
 # b = the widest route's minimum surface clearance on that leg; it is the number that decides whether
-# SUPER can plan inside the corridor at all (docs/INTEGRATION.md 71.2 / the tracking diagnosis).
+# SUPER can plan inside the corridor at all (docs/FLIGHT-ANALYSIS.md 71.2 / the tracking diagnosis).
 set -u
 cd ${DSH_ROOT} || exit 1
 for p in 1.0 0.8 0.6 0.4; do

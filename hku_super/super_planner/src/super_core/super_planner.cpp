@@ -759,8 +759,8 @@ namespace super_planner {
                     guide_stamp.emplace_back(stamp0 + d / v_ref);
                 }
                 if (cfg_.print_log) {
-                    ros_ptr_->info(" -- [SUPER] PVA-TAIL: appended %.2f m run-out past the goal along "
-                                   "(%.2f, %.2f)", cfg_.pva_tail_len, u.x(), u.y());
+                    ros_ptr_->info(" -- [SUPER] PVA-TAIL: appended " + std::to_string(cfg_.pva_tail_len)
+                                   + " m run-out past the goal");
                 }
             }
         }
@@ -826,7 +826,7 @@ namespace super_planner {
             return FAILED;
         }
         /// WHTF-NO-BACKWARD-HEAD (patch 11): refuse a plan whose first move is BACKWARDS.
-        /// MEASURED (docs/INTEGRATION.md §82): 7-10 published folds per sortie, half of them mid-leg
+        /// MEASURED (docs/FLIGHT-ANALYSIS.md §82): 7-10 published folds per sortie, half of them mid-leg
         /// 4-5 m from any corner, 5.3-5.6 s after the handover, with PathSearch/Minco failures
         /// around them: the old plan keeps being published while the new one is unplannable, and the
         /// plan that finally succeeds starts by going back the way the vehicle came.  The optimiser

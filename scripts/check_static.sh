@@ -8,7 +8,7 @@ fi
 # -----------------------------------------------------------------------------
 # Static gate before any takeoff (round 87): SPEC self-check + frozen-map check.
 # Kept as a script because passing "|" inside a grep pattern through the Windows
-# shell to bash keeps getting mangled -- see docs/INTEGRATION.md §41 note 3.
+# shell to bash keeps getting mangled -- see docs/FLIGHT-ANALYSIS.md §41 note 3.
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
@@ -31,7 +31,7 @@ echo
 echo "===== patches 10/11 (they live in the BUILT source, so check them, not the docs)"
 rc_patch=0
 PATCHES=hku_super/patches
-for p in patch_super_replan_time_limit patch_super_no_backward_head patch_super_smooth_handover; do
+for p in patch_super_replan_time_limit patch_super_no_backward_head patch_super_smooth_handover patch_super_pva_tail; do
   out=$(python3 "$PATCHES/$p.py" --check 2>&1)
   case "$out" in
     *"is APPLIED"*) echo "  $(printf '%-34s' "$p") APPLIED" ;;

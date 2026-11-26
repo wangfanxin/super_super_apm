@@ -184,8 +184,6 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --pass-by-m ${PASS_BY_M:-0.0} \
 --pass-by-long-m ${PASS_BY_LONG_M:-0.0} \
 --corner-carry-m ${CORNER_CARRY_M:-0} \
---corner-exit-look-m ${CORNER_EXIT_LOOK_M:-0} \
---corner-exit-trigger-m ${CORNER_EXIT_TRIGGER_M:-3.0} \
 --target-mode ${TARGET_MODE:-corner} \
 --target-look-m ${TARGET_LOOK_M:-3.0} \
 --target-step-m ${TARGET_STEP_M:-0.8} \
@@ -204,7 +202,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-along-floor ${REF_ALONG_FLOOR:-0} \
 --ref-catchup-mps ${REF_CATCHUP_MPS:-0.5} \
 --ref-lead-s ${REF_LEAD_S:-0} \
---ref-v-slew ${REF_V_SLEW:-0} --ref-z-offset-m ${REF_Z_OFFSET_M:-0} --ref-deadreckon-s ${REF_DEADRECKON_S:-0} \
+--ref-v-slew ${REF_V_SLEW:-0} --ref-z-offset-m ${REF_Z_OFFSET_M:-0} \
 --stale-s ${REF_STALE_S:-1.0} \
 --stale-fail-s ${REF_STALE_FAIL_S:-3.0} \
 --ref-lp-tau ${REF_LP_TAU:-0} \
@@ -285,7 +283,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
     [ -n "${PLANNER:-}" ] && [ -f "$PLANNER" ] || {
       echo "  ABORT: PLANNER='${PLANNER:-<unset>}' is not a file -- refusing to start." >&2
       echo "         (the harness would fall back to PLANNER=ego, run ego_contract_shim.py, and the sortie" >&2
-      echo "          would die as 'THE PLAN BOX IS NOT TALKING'; see docs/INTEGRATION.md §89)" >&2
+      echo "          would die as 'THE PLAN BOX IS NOT TALKING'; see docs/FLIGHT-ANALYSIS.md §89)" >&2
       exit 2
     }
     echo "  launch         : PLANNER=$PLANNER LIDAR_POINTS=${LIDAR_POINTS:-10000} LIDAR_SCHEDULER=${LIDAR_SCHEDULER:-legacy} tag=$TAG"
@@ -319,7 +317,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
   #   (kwC-01-02, aborted at 37 s) reads 0.358 on this same measure -- so the gate still bites.
   RTFF=$(python3 "$ROOT/scripts/flight_rtf.py" "$D" 2>/dev/null)
   RTFF=${RTFF:-n/a}
-  # ★ the LiDAR SIMULATOR's own budget (round 89, docs/INTEGRATION.md §87) ★
+  # ★ the LiDAR SIMULATOR's own budget (round 89, docs/FLIGHT-ANALYSIS.md §87) ★
   #   A raycast that takes 200-570 ms (host contention) makes `src/sim/lidar_imu.py` SKIP that scan; the
   #   cloud gaps then make Super-LIO diverge (yaw steps up to 154 deg) and the FCU follows it out of the
   #   fence.  Every one of the 14 fence escapes measured tonight had cast_max >= 184 ms and skipped >= 70,
@@ -348,7 +346,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
   [ -z "$AB" ] || { echo "  NO: the supervisor aborted"; OK=0; }
   awk "BEGIN{exit !($RTFF>=0.98 && $RTFF<=1.02)}" || { echo "  NO: host gate flight_rtf=$RTFF (take-off..land) is outside 0.98-1.02, numbers not gradeable"; OK=0; }
   python3 "$ROOT/scripts/lidar_stall.py" "$D" >/dev/null 2>&1 \
-    || { echo "  NO: the LiDAR SIMULATOR starved the sortie [$LIDAR] -- check was >100 ms/scan or >20 scans skipped, numbers not gradeable (see docs/INTEGRATION.md §87)"; OK=0; }
+    || { echo "  NO: the LiDAR SIMULATOR starved the sortie [$LIDAR] -- check was >100 ms/scan or >20 scans skipped, numbers not gradeable (see docs/FLIGHT-ANALYSIS.md §87)"; OK=0; }
   if [ "$OK" = "1" ]; then
     echo "  ==> GRADEABLE: LIO alive, SUPER reference present, no abort, host kept real time. tag=$TAG"
     exit 0

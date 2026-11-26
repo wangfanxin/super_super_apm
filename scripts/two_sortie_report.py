@@ -2,7 +2,7 @@
 """two_sortie_report.py -- the two sorties side by side, from their own accept.json.
 
 Round 87's objective asks for TWO valid 3 m/s two-lap sorties, each producing the full eleven rows.
-This script prints that side-by-side table (markdown, ready to paste into docs/INTEGRATION.md) and
+This script prints that side-by-side table (markdown, ready to paste into docs/FLIGHT-ANALYSIS.md) and
 applies the objective's own validity test to each: H1..H5 PASS and W1b PASS and no abort.
 
     python3 scripts/two_sortie_report.py v3d-01-01 v3h17-01-01

@@ -3,7 +3,7 @@
 
 The defect
 ----------
-`docs/INTEGRATION.md` §82 measured 7-10 published reference FOLDS per sortie: the commanded
+`docs/FLIGHT-ANALYSIS.md` §82 measured 7-10 published reference FOLDS per sortie: the commanded
 direction reverses by >101 deg while |v| is about 0.2 m/s.  `scripts/wire_fold.py` proved they are
 not splice jumps (the largest single step in the whole sortie is 1.6x the median), so the plan
 really doubles back.  Two families:
@@ -72,7 +72,7 @@ ANCHOR = """        if (!temp_ret) {
 
 PATCHED = ANCHOR + """
         /// WHTF-NO-BACKWARD-HEAD (patch 11): refuse a plan whose first move is BACKWARDS.
-        /// MEASURED (docs/INTEGRATION.md §82): 7-10 published folds per sortie, half of them mid-leg
+        /// MEASURED (docs/FLIGHT-ANALYSIS.md §82): 7-10 published folds per sortie, half of them mid-leg
         /// 4-5 m from any corner, 5.3-5.6 s after the handover, with PathSearch/Minco failures
         /// around them: the old plan keeps being published while the new one is unplannable, and the
         /// plan that finally succeeds starts by going back the way the vehicle came.  The optimiser

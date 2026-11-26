@@ -72,5 +72,5 @@ echo
 echo "== how to regenerate the sortie itself =="
 echo "  cd $ROOT && PROFILE=mission bash scripts/run_until_healthy.sh sup super lio 3"
 echo "  (needs a QUIET host: the gate is rtf 0.98-1.02 on the truth tap, and the flight stack"
-echo "   and the LiDAR simulator compete for the same cores -- see docs/INTEGRATION.md 17.7)"
+echo "   and the LiDAR simulator compete for the same cores -- see docs/FLIGHT-ANALYSIS.md 17.7)"
 exit $RC

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """EVERY `file:line` IN THE DOCS MUST RESOLVE — because one of them did not.
 
-WHY THIS EXISTS.  `docs/PLANNERS.md` cited `docs/ego-planner-interface-read.md` as one of "the two full
+WHY THIS EXISTS.  `docs/PIPELINE.md` cited `docs/ego-planner-interface-read.md` as one of "the two full
 audits".  **No such file has ever existed in this repository**, and no reader could tell: a citation to a
 missing document looks exactly like a citation to a present one.  That is the same failure mode as a comment
 naming a function that has been renamed, and it is worth a gate because these five documents are the
@@ -32,7 +32,7 @@ and `_refs` -- the four public PX4+ego integrations surveyed in `docs/ARCHITECTU
 than cloned because the git port is blocked on this host.  **A root that does not exist is REPORTED, never
 silently skipped**: a gate that goes quiet when its input is missing is worse than no gate.
 
-usage: tools/check-doc-citations.py [--doc docs/PLANNERS.md ...] [--show N]
+usage: tools/check-doc-citations.py [--doc docs/PIPELINE.md ...] [--show N]
 """
 from __future__ import annotations
 import os as _os, sys as _sys

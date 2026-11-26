@@ -140,7 +140,7 @@ if [ -n "$EXTRA_PARM" ]; then
     EXTRA_NAME="$EXTRA_PARM ($(grep -c . "$EXTRA_PARM") line(s))"
 fi
 # THE DWELL, AND WHY THE HARNESS SETS IT (F1, 2026-10-16).  The owner's requirement is a hover at every
-# corner, and the number is 5.0 s (`docs/PLAN.md`).  It used to be passed only when the caller exported
+# corner, and the number is 5.0 s (`docs/PIPELINE.md`).  It used to be passed only when the caller exported
 # RECT_HOLD_S; with it unset the producer's `--hold-s -1` read `mission.hold_s` out of the FROZEN world
 # file, which is **3.0** -- and STATUS row 42 is the measured consequence of that value: the default
 # configuration flew one leg and landed.  The default is now the requirement, and which one was used is
