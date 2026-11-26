@@ -35,7 +35,9 @@ for pat in "$MYPORTS" "$MINE" "$MYLIO" "$MYFSM"; do
 done
 sleep 2
 # 二次强杀：还在的用 -9
-for pat in "$MYPORTS" "$MINE" "$MYLIO"; do
+# ★ 必须包含 MYFSM（2026-11-26，MEASURED）★  rclcpp 的 fsm_node 捕获 SIGTERM 后走 ROS 关闭，在 rclpy
+#   客户端已死的残留图里**不会退出**（实测 pid 5642 一直 Sl，下一次 sortie 的"残留进程"检查永不通过）。
+for pat in "$MYPORTS" "$MINE" "$MYLIO" "$MYFSM"; do
   for pid in $(pgrep -f "$pat" 2>/dev/null); do
     [ "$pid" = "$$" ] && continue
     [ "$pid" = "$PPID" ] && continue
