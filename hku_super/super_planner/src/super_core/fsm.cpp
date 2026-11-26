@@ -100,11 +100,25 @@ namespace fsm {
             /// attempt is kept as the fallback, so a regression is bounded to today's behaviour.
             RET_CODE smooth = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, false,
                                                        gi_.goal_v, gi_.goal_a);
+            /// WHTF-HANDOVER-DEBUG (round 13, temporary): WHY does the continuous handover fail at a
+            /// corner?  Log the RET_CODE of the smooth attempt and of the historical fallback, plus the
+            /// committed trajectory's remaining time at that moment.
+            {
+                double _dbg_swt = 0.0; bool _dbg_fin = false;
+                planner_ptr_->getOneHeartbeatTime(_dbg_swt, _dbg_fin);
+                planner_ptr_->lockCommittedTraj();
+                const double _dbg_total = planner_ptr_->getCommittedPositionTrajectory().getTotalDuration();
+                planner_ptr_->unlockCommittedTraj();
+                const double _dbg_rem = _dbg_total - (ros_ptr_->getSimTime() - _dbg_swt);
+                cout << " -- [Fsm] HANDOVER smooth_rc=" << static_cast<int>(smooth)
+                     << " remain=" << _dbg_rem << "s" << endl;
+            }
             if (smooth == SUCCESS || smooth == FINISH || smooth == NO_NEED) {
                 ret_code = smooth;
             } else {
                 ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, true,
                                                     gi_.goal_v, gi_.goal_a);
+                cout << " -- [Fsm] HANDOVER fallback_rc=" << static_cast<int>(ret_code) << endl;
             }
         } else {
             ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, gi_.new_goal,
