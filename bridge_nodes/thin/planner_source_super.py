@@ -273,6 +273,12 @@ def main() -> int:
                     help=">0 = 在发布路径的**最后一层**统一做速度连续性：所有覆盖（hold/no-retract/governor）"
                          "只产生期望速度，这里对 (p,v) 一起限幅（|dv| <= 该值*dt），绑定时用积分位置保持 p/v 自洽。"
                          "这样交接处不会出现 1->0 m/s 的阶跃（实测该阶跃导致角点速度塌陷）。0=关。")
+    ap.add_argument("--ref-handover-gate", type=int, default=0,
+                    help="1 = 参考交接门：新参考落后于已发布点时**不切换**，继续发布上一拍参考（位置保持、"
+                         "速度保留最后非零值，最多 --ref-handover-gate-s 秒），等新参考追平再切换。"
+                         "目标：消掉角点 0.0-0.1 m/s 的短零速步，同时不制造假运动。0=关。")
+    ap.add_argument("--ref-handover-gate-s", type=float, default=0.6,
+                    help="交接门最长保持时间（s），超时后退回旧的冻结+零速行为。")
     ap.add_argument("--ref-retract-dr-hold-s", type=float, default=0.4,
                     help="--ref-retract-dr 时，retract 初期保持上一拍速度**不衰减**的最长时间（s）；"
                          "超过后按 REF_V_SLEW 衰减。默认 0.4 s。")
@@ -1443,7 +1449,29 @@ def main() -> int:
                 if retract < -0.05:
                     state["n_retract"] = state.get("n_retract", 0) + 1
                     state["_rdr_hit"] = True
-                    if int(getattr(args, "ref_retract_dr", 0)) and state.get("last_dir") is not None:
+                    if int(getattr(args, "ref_handover_gate", 0)) and state.get("last_dir") is not None:
+                        # WHTF-HANDOVER-GATE (round 17): keep publishing the previous reference --
+                        # frozen pose, LAST NON-ZERO velocity -- for a short window instead of a zero step.
+                        _gt0 = state.get("gate_t0")
+                        if _gt0 is None:
+                            _gt0 = now
+                            state["gate_t0"] = now
+                        _gage = now - float(_gt0)
+                        _gs = float(getattr(args, "ref_handover_gate_s", 0.6) or 0.6)
+                        if _gage <= _gs:
+                            s.p = np.asarray(state["last_pub"], float).copy()
+                            s.v = np.asarray(state["last_dir"], float) * float(state.get("pub_speed_nz", 0.0))
+                            s.a = np.zeros(3)
+                            state["gate_n"] = int(state.get("gate_n", 0)) + 1
+                            if state["gate_n"] in (1, 30, 150):
+                                print("HANDOVER-GATE #%d: frozen pose + last |v| %.2f m/s, age %.2f s"
+                                      % (state["gate_n"], float(state.get("pub_speed_nz", 0.0)), _gage),
+                                      flush=True)
+                        else:
+                            s.p = state["last_pub"].copy()
+                            s.v = np.zeros(3)
+                            s.a = np.zeros(3)
+                    elif int(getattr(args, "ref_retract_dr", 0)) and state.get("last_dir") is not None:
                         # WHTF-RETRACT-DR (2026-11-27 round 7): 冻结+零速会让参考速度在交接处突然塌到 0，
                         # 实测这就是角点 0.0-0.3 m/s 的直接来源。改为沿上一拍前进方向继续滑行，
                         # 速度按 REF_V_SLEW（或 3 m/s²）衰减，位置与速度自洽，等新参考追上来。
@@ -1780,6 +1808,7 @@ def main() -> int:
             state["pub_speed_nz"] = _spn_pub
         if not state.pop("_rdr_hit", False):
             state["rdr_t0"] = None
+            state["gate_t0"] = None
         state["last_pub"] = s.p.copy()
         state["last_pub_t"] = now
         # ★ 参考低通（第 20 轮，--ref-lp-tau；默认 0 = 关）★
