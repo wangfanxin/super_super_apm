@@ -68,6 +68,13 @@ python3 "$ROOT/scripts/accept.py" --run "$RUN" --world "$SIM_ROOT/worlds/$WORLD"
     $EXTRA --json "$RUN/accept.json"
 RC=$?
 
+# ---- the quality rows the 15-row table lacks (owner, 2026-11-26): mid-path low-speed, body-radius
+#      clearance, mid-leg tracking, corner dynamics.  H2 is also amended in accept.py to the CONFIGURED
+#      200 Hz truth rate (the old 380 Hz floor was a tap-era number and carried no information).
+echo
+python3 "$ROOT/scripts/quality_rows.py" --run "$RUN" --world "$SIM_ROOT/worlds/$WORLD" \
+    --json "$RUN/quality.json" || true
+
 echo
 echo "== how to regenerate the sortie itself =="
 echo "  cd $ROOT && PROFILE=mission bash scripts/run_until_healthy.sh sup super lio 3"

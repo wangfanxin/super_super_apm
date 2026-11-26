@@ -127,7 +127,8 @@ python3 scripts/accept.py --run .runs/missionA-demo01-01-01 --world sim/worlds/f
 |---|---|
 | `scripts/run-mission.sh` / `scripts/fly_hex2.sh` | 启动一次 SITL 飞行（后者带冻结检查与 n 趟循环） |
 | `scripts/run_until_healthy.sh` | 带健康门的多 attempt 启动（bench/pvabench/super 分支） |
-| `scripts/accept.py` | 15 行验收 |
+| `scripts/accept.py` | 15 行验收（H2 已按配置 200 Hz 修订） |
+| `scripts/quality_rows.py` | 新质量行 Q1–Q4（中段低速/机身净空/中段跟踪/角点动力学） |
 | `scripts/flight_quality.py` | 绕圈/中段停顿/参考连续性/跟踪门禁 |
 | `scripts/flight_forensics.py` | 跟踪 = 执行 + 定位分解、LIO/FCU vs 真值、角点停/回摆、高度基准 |
 | `scripts/low_speed_census.py` | 先找所有 <0.5 m/s 段，再逐段分类（owner 的分析规则） |

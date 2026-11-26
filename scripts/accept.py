@@ -326,12 +326,34 @@ def main():
                        % (rate, _cfg, _max_gap, 2.0 / _cfg, len(_rows_h2) if _rows_h2 else 0))
         else:
             _h2_ok = (rate >= 380 and gaps.size == 0)
-            _h2_det = ("[v2 n/a: legacy tap without the explicit simulated clock] rate median %.1f Hz, "
+            _h2_det = ("[legacy tap without the explicit simulated clock] rate median %.1f Hz, "
                        "max gap %.4f s" % (rate, float(np.nanmax(dt)) if dt.size else float("nan")))
     else:
-        _h2_ok = (rate >= 380 and gaps.size == 0)
-        _h2_det = ("rate median %.1f Hz (floor 380), max gap %.4f s, %d gaps > 10 ms"
-                   % (rate, float(np.nanmax(dt)) if dt.size else float("nan"), gaps.size))
+        # ★ H2 AMENDED 2026-11-26 (owner: "H2 没意义") ★  The 380 Hz floor is a TAP-ERA number; the
+        # delivered truth chain is SIM_STATE published at a CONFIGURED 200 Hz.  H2 now grades "the tap
+        # arrived at its configured rate, without a real gap" -- the thing a stalled tap would actually
+        # violate -- and is only decidable for sorties that carry the explicit simulated clock.
+        _rows_h2c = None
+        try:
+            import csv as _csvh
+            with open(os.path.join(args.run, "tap.csv"), encoding="utf-8", errors="replace") as _fhc:
+                _rows_h2c = list(_csvh.DictReader(_fhc))
+        except Exception:                               # noqa: BLE001
+            _rows_h2c = None
+        _simstate = os.path.isfile(os.path.join(args.run, "truth_timebase.json")) or (
+            _rows_h2c and "t_sim_us" in (_rows_h2c[0] if _rows_h2c else {}))
+        if _simstate:
+            _cfg_hz = 200.0
+            _maxgap = float(np.nanmax(dt)) if dt.size else float("inf")
+            _h2_ok = (abs(rate - _cfg_hz) <= 0.05 * _cfg_hz and _maxgap <= 2.0 / _cfg_hz
+                      and _rows_h2c is not None and len(_rows_h2c) >= 1000)
+            _h2_det = ("[configured %.0f Hz, amended 2026-11-26] rate median %.1f Hz (+-5%%), max gap "
+                       "%.4f s (bound %.4f), %d samples (>=1000)"
+                       % (_cfg_hz, rate, _maxgap, 2.0 / _cfg_hz, len(_rows_h2c) if _rows_h2c else 0))
+        else:
+            _h2_ok = (rate >= 380 and gaps.size == 0)
+            _h2_det = ("[legacy tap without the explicit simulated clock] rate median %.1f Hz, max gap "
+                       "%.4f s" % (rate, float(np.nanmax(dt)) if dt.size else float("nan")))
     R.row("H2", "tap integrity (a stalled tap invalidates every window)", _h2_ok, _h2_det)
 
     # ---- H6 the LiDAR SIMULATOR's scan budget (round 89, docs/FLIGHT-ANALYSIS.md（历史测量记录在 git） §87)
@@ -987,12 +1009,34 @@ def main():
                        % (rate, _cfg, _max_gap, 2.0 / _cfg, len(_rows_h2) if _rows_h2 else 0))
         else:
             _h2_ok = (rate >= 380 and gaps.size == 0)
-            _h2_det = ("[v2 n/a: legacy tap without the explicit simulated clock] rate median %.1f Hz, "
+            _h2_det = ("[legacy tap without the explicit simulated clock] rate median %.1f Hz, "
                        "max gap %.4f s" % (rate, float(np.nanmax(dt)) if dt.size else float("nan")))
     else:
-        _h2_ok = (rate >= 380 and gaps.size == 0)
-        _h2_det = ("rate median %.1f Hz (floor 380), max gap %.4f s, %d gaps > 10 ms"
-                   % (rate, float(np.nanmax(dt)) if dt.size else float("nan"), gaps.size))
+        # ★ H2 AMENDED 2026-11-26 (owner: "H2 没意义") ★  The 380 Hz floor is a TAP-ERA number; the
+        # delivered truth chain is SIM_STATE published at a CONFIGURED 200 Hz.  H2 now grades "the tap
+        # arrived at its configured rate, without a real gap" -- the thing a stalled tap would actually
+        # violate -- and is only decidable for sorties that carry the explicit simulated clock.
+        _rows_h2c = None
+        try:
+            import csv as _csvh
+            with open(os.path.join(args.run, "tap.csv"), encoding="utf-8", errors="replace") as _fhc:
+                _rows_h2c = list(_csvh.DictReader(_fhc))
+        except Exception:                               # noqa: BLE001
+            _rows_h2c = None
+        _simstate = os.path.isfile(os.path.join(args.run, "truth_timebase.json")) or (
+            _rows_h2c and "t_sim_us" in (_rows_h2c[0] if _rows_h2c else {}))
+        if _simstate:
+            _cfg_hz = 200.0
+            _maxgap = float(np.nanmax(dt)) if dt.size else float("inf")
+            _h2_ok = (abs(rate - _cfg_hz) <= 0.05 * _cfg_hz and _maxgap <= 2.0 / _cfg_hz
+                      and _rows_h2c is not None and len(_rows_h2c) >= 1000)
+            _h2_det = ("[configured %.0f Hz, amended 2026-11-26] rate median %.1f Hz (+-5%%), max gap "
+                       "%.4f s (bound %.4f), %d samples (>=1000)"
+                       % (_cfg_hz, rate, _maxgap, 2.0 / _cfg_hz, len(_rows_h2c) if _rows_h2c else 0))
+        else:
+            _h2_ok = (rate >= 380 and gaps.size == 0)
+            _h2_det = ("[legacy tap without the explicit simulated clock] rate median %.1f Hz, max gap "
+                       "%.4f s" % (rate, float(np.nanmax(dt)) if dt.size else float("nan")))
     R.row("H2", "tap integrity (a stalled tap invalidates every window)", _h2_ok, _h2_det)
 
     # ---- H6 the LiDAR SIMULATOR's scan budget (round 89, docs/FLIGHT-ANALYSIS.md（历史测量记录在 git） §87)

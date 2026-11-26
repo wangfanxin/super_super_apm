@@ -399,8 +399,13 @@ namespace fsm {
             // /// KEEP PUBLISHING (round 88, patch 9) ///  WHTF-KEEP-PUBLISHING
             // GENERATE_TRAJ 期间也要发：一次 rest2rest 重新规划失败不能让**已经装订的轨迹**断流
             // （kwA 的四趟都是这样断的：35-38 s、trajectory_id 3，rtf 1.0017 也照样断）。
-            const bool have_committed =
-                    planner_ptr_->getCommittedPositionTrajectory().getTotalDuration() > 0.0;
+            /// WHTF-COMMITTED-TRAJ-RACE (patch 18, 2026-11-26).  The replanner WRITES the committed
+            /// trajectory under lockCommittedTraj(); this read was the one call site without the lock and
+            /// it crashed SITL twice (phase23b, phase28a) in getCommittedPositionTrajectory()'s memcpy.
+            bool have_committed = false;
+            planner_ptr_->lockCommittedTraj();
+            have_committed = planner_ptr_->getCommittedPositionTrajectory().getTotalDuration() > 0.0;
+            planner_ptr_->unlockCommittedTraj();
             if (machine_state_ != FOLLOW_TRAJ && machine_state_ != EMER_STOP &&
                 !(machine_state_ == GENERATE_TRAJ && have_committed)) {
                 return;

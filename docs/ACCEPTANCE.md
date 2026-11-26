@@ -30,7 +30,7 @@ python3 scripts/accept.py --run .runs/missionA-<tag>-01-01 \
 | 行 | 判据 | 数据 |
 |---|---|---|
 | **H1** 宿主实时性 | 起飞..落地窗口的 flight_rtf ∈ [0.98, 1.02] | `phase.csv` |
-| **H2** tap 完整性 | rate median ≥ 380 Hz（v1，历史 tap 语义）、max gap ≤ 10 ms、静止段 |a| 合理；**已知 P0：当前 200 Hz SIM_STATE 永远判 F**（见下文） | `tap.csv` |
+| **H2** tap 完整性 | **2026-11-26 修订**：按**配置的 200 Hz**（±5%）+ max gap ≤ 10 ms + ≥1000 样本判定（旧 380 Hz 是 tap 时代数字，对当前链路无信息量）；H2 不再永远 F | `tap.csv` |
 | **H3** LIO 存活 | LIO odometry 覆盖整个飞行窗口、频率正常 | `lio.csv` |
 | **H4** 参考存活 | SUPER 自己的参考（非 fallback hold）出现过 ≥1 次 | `setpoints.csv` + `traj.log` |
 | **H5** 真值/飞控一致性 | tap 与 FCU 估计的跨度差在容差内（水平 5 m、垂直 2 m 量级），否则"两套数据描述的不是同一趟飞行" | `tap.csv` + `setpoints.csv` |
@@ -53,8 +53,26 @@ python3 scripts/accept.py --run .runs/missionA-<tag>-01-01 \
 
 ## 已知 P0
 
-- **H2**：当前真值链走 SIM_STATE 108 的 200 Hz 流（时间基 D4 要求），而 H2 的 v1 语义仍要求 ≥380 Hz
-  （tap 时代产物）。**任何趟都不会过 H2**，这是记录项，不是回归。验收结论写作"除 H2 外全过"。
+- **H2 修订（owner 2026-11-26："H2 没意义"）**：旧 380 Hz 是 tap 时代数字（当时真值 1200 Hz 插值/400 Hz）；
+  当前真值链是 SIM_STATE 108 的**配置 200 Hz**流（D4 时间基）。H2 现在判"是否按配置速率、无真缺口到达"：
+  `200 Hz ±5%`、`max gap ≤ 10 ms`、`≥1000 样本`。23c/27b/28b/28c 全部 PASS（200.0 Hz、max gap 5 ms、35k 样本）。
+  无 `t_sim_us`/`truth_timebase.json` 的历史 tap 退回旧语义并标注 legacy。
+
+## 新增质量行（Q1–Q4，owner 2026-11-26："一些新判断放进去"）
+
+`scripts/quality_rows.py`（`run_accept.sh` 每趟自动跑，`--json` 写 `quality.json`）。这些行描述"飞得好不好"，
+不在原 15 行里：
+
+| 行 | 判据 | 为什么 |
+|---|---|---|
+| **Q1 中段低速/绕圈** | 离所有角点 >1.5 m 的**路径中间**，真值 \|v\|<0.5 m/s 持续 ≥0.15 s 的段 = **0 段** | owner 的普查规则；路径中间 stall/loop 是"不干净"的直接证据 |
+| **Q2 机身半径净空** | 真值 body-edge margin = `surface_dist(躯干 box) − robot_r(0.10)` 的最小值 ≥ **−0.02 m** | W4 是"点对 box"；planner 自己按 0.10 m 机身规划 |
+| **Q3 中段跟踪** | 离角点 >1.5 m 的 cmd−truth 水平误差 **p90 ≤ 0.25 m** | 速度阶梯的前置条件（agile PSC 实测 0.17–0.20） |
+| **Q4 角点动力学** | 每角点每次通过：1.5 m 内停留 ≤3.5 s **且** 真值最低速度 ≥0.40 m/s | 直接量化"角点停-转"这个交付缺陷 |
+
+**当前状态（4 趟 H6-clean：23c/27b/28b/28c）**：Q3 全部 PASS；Q1/Q2/Q4 仍 FAIL
+（Q1 3–7 段；Q2 −0.013…−0.091 m；Q4 角点真值最低速 0.01–0.32 m/s）。
+即：**15 行表全过 ≠ 飞干净**；Q1/Q2/Q4 是下一阶段验收重点。
 
 ## v2 语义（可选提案）
 
