@@ -269,6 +269,10 @@ def main() -> int:
     ap.add_argument("--ref-no-retract", type=int, default=0,
                     help="1 = 参考**永不后退**：若新参考落在当前指令点的后方（沿当前前进方向的分量为负），"
                          "就保持当前指令点不动，直到新规划追上来。0=关（老行为）。")
+    ap.add_argument("--ref-final-slew", type=float, default=0.0,
+                    help=">0 = 在发布路径的**最后一层**统一做速度连续性：所有覆盖（hold/no-retract/governor）"
+                         "只产生期望速度，这里对 (p,v) 一起限幅（|dv| <= 该值*dt），绑定时用积分位置保持 p/v 自洽。"
+                         "这样交接处不会出现 1->0 m/s 的阶跃（实测该阶跃导致角点速度塌陷）。0=关。")
     ap.add_argument("--ref-retract-dr", type=int, default=0,
                     help="1 = 当 --ref-no-retract 触发（新参考落到后方）时，不要冻结+零速，而是沿上一次"
                          "前进方向继续滑行（速度按 REF_V_SLEW 衰减），从而保持速度连续、不在角点掉速。"
@@ -1781,6 +1785,33 @@ def main() -> int:
             state["lp"] = st_lp
         else:
             p_pub, v_pub, a_pub = ref_lp.pass_through(s.p, s.v, s.a)
+        # ★★ FINAL VELOCITY CONTINUITY (2026-11-27 round 8) ★★
+        #   The stages above (slew, hold, no-retract, governor) each rewrite (p,v).  MEASURED: at every
+        #   handover the published velocity made a 1 -> 0 m/s step (d/dt up to 100 m/s^2), which is what
+        #   the aircraft actually followed -- the corner stop.  This last stage takes whatever the stages
+        #   produced as DESIRED and emits a stateful, accel-limited (p,v) pair; when the limit binds it
+        #   integrates p from the limited v so the PVA it sends is self-consistent.
+        _fs = float(getattr(args, "ref_final_slew", 0.0) or 0.0)
+        if _fs > 0.0:
+            _prev = state.get("pub_prev")
+            if _prev is not None:
+                _p0, _v0 = _prev
+                _dt = max(1e-3, now - float(state.get("last_pub_t", now - 1.0 / max(1.0, args.cmd_rate))))
+                _a = _fs * _dt
+                _vdes = np.asarray(v_pub, float).copy()
+                _dv = _vdes - np.asarray(_v0, float)
+                _n = float(np.linalg.norm(_dv))
+                if _n > _a and _n > 1e-9:
+                    _vdes = np.asarray(_v0, float) + _dv * (_a / _n)
+                    _pnew = np.asarray(p_pub, float).copy()
+                    _pnew[:2] = np.asarray(_p0, float)[:2] + _vdes[:2] * _dt
+                    p_pub, v_pub, a_pub = _pnew, _vdes, np.zeros(3)
+                    state["final_slew_n"] = int(state.get("final_slew_n", 0)) + 1
+                    if state["final_slew_n"] in (1, 50, 500, 2000):
+                        print("FINAL-SLEW #%d: |dv| %.2f -> %.2f m/s (bind, |v| now %.2f m/s)"
+                              % (state["final_slew_n"], _n, _a, float(np.linalg.norm(_vdes[:2]))),
+                              flush=True)
+        state["pub_prev"] = (np.asarray(p_pub, float).copy(), np.asarray(v_pub, float).copy())
         m = CmdMsg()
         m.header.stamp = node.get_clock().now().to_msg()
         m.header.frame_id = s.frame_id

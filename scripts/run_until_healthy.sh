@@ -194,6 +194,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-no-retract ${REF_NO_RETRACT:-0} \
 --ref-no-fold ${REF_NO_FOLD:-0} \
 --ref-retract-dr ${REF_RETRACT_DR:-0} \
+--ref-final-slew ${REF_FINAL_SLEW:-0} \
 --ref-ff ${REF_FF:-0} \
 --ref-gov-kp ${REF_GOV_KP:-0} \
 --ref-gov-acc ${REF_GOV_ACC:-0} \
