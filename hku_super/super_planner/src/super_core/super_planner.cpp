@@ -739,6 +739,32 @@ namespace super_planner {
         const bool connected_goal = (guide_path.back().head(2) - gi_.goal_p.head(2)).norm() < cfg_.resolution * 2;
         out_exp_traj_info.setGoalConnectedFlag(connected_goal);
 
+        /// WHTF-PVA-TAIL (patch 15, 2026-11-26).  A PVA goal carries a terminal velocity, but SUPER's
+        /// trajectory endpoint is `guide_path.back()`, which is the goal itself -- so MINCO has to finish
+        /// AT the corner and the reference collapses there (MEASURED phase9f: command 0.07-0.29 m/s at
+        /// every corner, ~3 s dwell, 0.2-0.76 m back-and-forth).  Append a short straight tail along the
+        /// terminal velocity and re-point the terminal position at the tail end: the corner remains a
+        /// guide/corridor interior point (so the waypoint is still passed), the endpoint moves past it.
+        if (connected_goal && cfg_.goal_pva_en && cfg_.pva_tail_len > 0.0 && !guide_path.empty()) {
+            Vec3f gv(gi_.goal_v[0], gi_.goal_v[1], 0.0);
+            const double gvn = gv.norm();
+            if (gvn > 0.10) {
+                const Vec3f u = gv / gvn;
+                const Vec3f tail_start = guide_path.back();
+                const double stamp0 = guide_stamp.empty() ? 0.0 : guide_stamp.back();
+                const double v_ref = std::max(cfg_.exp_traj_cfg.max_vel, 1e-3);
+                for (int k = 1; k <= 2; ++k) {
+                    const double d = cfg_.pva_tail_len * 0.5 * static_cast<double>(k);
+                    guide_path.emplace_back(tail_start + u * d);
+                    guide_stamp.emplace_back(stamp0 + d / v_ref);
+                }
+                if (cfg_.print_log) {
+                    ros_ptr_->info(" -- [SUPER] PVA-TAIL: appended %.2f m run-out past the goal along "
+                                   "(%.2f, %.2f)", cfg_.pva_tail_len, u.x(), u.y());
+                }
+            }
+        }
+
         sfc.clear();
         {
             TimeConsuming t_viz("tviz", false);

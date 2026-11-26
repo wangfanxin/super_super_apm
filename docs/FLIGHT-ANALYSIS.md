@@ -1120,3 +1120,27 @@ loop 是死锁、21a 的是撞柱** —— census + watchdog 能把这两类分�
 2. `CORNER_EXIT_LOOK` 再减到 0.4（切角 ~0.2 m），代价是角点停-转回来一些；
 3. 真 via-point patch（角点硬约束 + 终点延伸），从根上不切角。
 
+## 33. 不用 via 接口的替代方案：**PVA 尾部延长（patch 15）**（2026-11-26 16:55–17:10）
+
+owner 否决了 via-point 接口（"via_point不做"）与加大膨胀（"膨胀已经很多，再大容易误解"）。
+因此在 planner 内部做了一个**不需要新话题、不需要 plan box 改接口**的版本：
+
+> **patch 15 `WHTF-PVA-TAIL`**（`hku_super/patches/patch_super_pva_tail.py`）：
+> 当 `goal_pva_en` 且 goal 的终点速度 `|goal_v_xy|>0.1` 时，在 `generateExpTraj` 里给 guide_path
+> **追加一段沿 goal_v 方向的直线延长段**（`super_planner/pva_tail_len` 米，默认 0，本实验 1.2 m），
+> 并把轨迹终点（`pos_fina_state.col(0)=guide_path.back()`）自然移到延长段末端。
+> 角点**仍然是 guide/走廊的内部点**（A* 仍然先到角点，W1b 的"路过角点"不受影响），但轨迹不再在角点收速。
+> 1.2 m 落在 waypoint 3x3 keep-out（±1.5 m）内，延长段本身是自由空间；走廊生成仍然会检查它。
+
+配置：`super_planner_hex_tail.yaml`（= 交付 hex 配置 + `pva_tail_len: 1.2`，`print_log: true`），
+plan box 用 `CORNER_MODE=outgoing`（终点速度沿出弯方向，与延长段同向）。
+
+| 趟 | 结果 | 说明 |
+|---|---|---|
+| 22a | 无效 | H6 lidar starvation（skipped 40、max 1.1 s）→ nav_hz 29.8 低于 floor abort |
+| 22b | 无效 | H6 starvation（skipped 44、max 1.27 s）→ EKF 发散 3.9 m abort；**但日志确认 PVA-TAIL 触发了 1516 次** |
+
+结论：补丁的触发已经被日志证实（`[SUPER] PVA-TAIL`），但 22a/22b 都因为**主机 H6 抖动**在做完之前中止，
+不能评价它对 W1b/W4/W6 的效果。需要在 H6-clean 的趟上重飞才能判断；在那之前 **9f 仍是有效最好趟**
+（W4 +0.027 CLEAR、W6 0.262、除 H2 外全过）。
+
