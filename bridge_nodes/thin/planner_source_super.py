@@ -1262,6 +1262,7 @@ def main() -> int:
             # bypassed), so it never creeps toward a stale target.
             state["is_hold"] = True
             s = hold_sample(force_vertical=on_vertical_leg)
+            state["_src"] = "hold"
         else:
             # ★★ yaw 在这一拍换算成飞控的罗盘航向（第 88 轮审查 F2）★★
             #   换算只允许发生在 common.frames.l_to_wire_yaw 里（一处），且必须用**同一份 calib**
@@ -1277,6 +1278,7 @@ def main() -> int:
                                      cmd_stream.TRAJECTORY_STATUS_COMPLETED if pacer.done
                                      else cmd_stream.TRAJECTORY_STATUS_READY)
             state["hold_yaw"] = yaw_ned               # latch：断流时保持这个航向，不要发 0.0
+            state["_src"] = "super"
         # ★ WHTF-REF-VSLEW：指令速度的 slew 限制（0 = 关）★
         #   位置保持规划器给的点（位置本来就有速率钳位），只把速度限制成飞机跟得上的变化率。
         if float(getattr(args, "ref_v_slew", 0.0) or 0.0) > 0.0 and state.get("n_ref", 0) > 0:
@@ -1300,6 +1302,7 @@ def main() -> int:
                 state["v_slew"] = _v.copy()
             s = cmd_stream.CmdSample(s.p, _v, s.a, s.yaw, s.yaw_dot, s.trajectory_id, s.trajectory_flag)
             state["vslew_n"] = int(state.get("vslew_n", 0)) + 1
+            state["_v_after_slew"] = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
         # ★ P0：两个参考源之间的钳位 ★
         #   SUPER 掉一拍再回来时，指令会在"最后指令点"与"前方 0.5 m"之间跳十几米。
         #   ego 臂为此有 EGO_REF_CLAMP_M=1.2（`run_mission.sh:373`），这里照做：单拍位移上限。
@@ -1507,6 +1510,9 @@ def main() -> int:
             clamped = n > cap
             if clamped:
                 s.p = state["last_pub"] + d / n * cap
+                state["_clamp_hit"] = 1
+            else:
+                state["_clamp_hit"] = 0
             # ★ 竖直通道单独、更慢 ★
             #   垂直腿是一次 0.2 m → 2.0 m 的阶跃。水平追阶跃可以靠压坡度（有 g 的余量），
             #   竖直不能：油门顶上去就会冲过头。实测 mz-02/03 在 6 m/s 的三维限幅下仍然
@@ -1874,12 +1880,16 @@ def main() -> int:
                 _sv = float(np.linalg.norm(np.asarray(state.get("v_slew", np.zeros(3)), float)[:2]))
                 _pre_lp = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
                 print("LOWSPEED raw=%.2f slew=%.2f pre_lp=%.2f final=%.2f age=%.2f hold=%d "
-                      "retract=%d gate=%d clamped=%d leg=%d"
+                      "retract=%d gate=%d clamped=%d src=%s vslew=%.2f clamp=%d dlast=%.2f leg=%d"
                       % (_refv, _sv, _pre_lp, _vrp,
                          (now - state["ref_wall"]) if state["ref_wall"] else -1.0,
                          1 if state.get("is_hold") else 0,
                          int(state.get("n_retract", 0)), int(state.get("gate_n", 0)),
-                         int(state.get("_clamped", 0)), pacer.i_leg + 1), flush=True)
+                         int(state.get("_clamped", 0)), str(state.get("_src", "?")),
+                         float(state.get("_v_after_slew", -1.0)), int(state.get("_clamp_hit", 0)),
+                         float(np.linalg.norm(np.asarray(s.p, float)[:2] - np.asarray(state["last_pub"], float)[:2]))
+                         if state.get("last_pub") is not None else -1.0,
+                         pacer.i_leg + 1), flush=True)
         try:
             state["_clamped"] = 1 if clamped else 0
         except Exception:  # noqa: BLE001

@@ -798,3 +798,20 @@ LOWSPEED raw=0.96 slew=0.00 pre_lp=0.00 final=0.00 age=0.01 hold=0 retract=7 gat
 
 下一轮（round 19）：① 带 `REF_V_SLEW=3.0`（已修 dt）重飞一次，看 slew 是否能把 0.8→0 的跳变抹平；
 ② 在 ref 构建处标记分支来源（SUPER 样本 / hold / no_retract / gate），把 0.27 的来源钉死。
+
+## 58. 低速溯源第二轮：SUPER 0.80 → slew 0.80 → 发布 0.27，且位置被冻结（2026-11-27 round 19）
+
+55a（agile + no-retract + **REF_V_SLEW=3.0 启用** + 溯源）关键行：
+
+```
+LOWSPEED raw=0.80 slew=0.80 pre_lp=0.27 final=0.27 age=0.01 hold=0 retract=0 gate=0 clamped=1 src=super vslew=0.80 clamp=1 dlast=0.00 leg=3
+LOWSPEED raw=0.80 slew=0.80 pre_lp=0.29 final=0.29 age=0.01 hold=0 retract=0 gate=0 clamped=1 src=super vslew=0.80 clamp=1 dlast=0.00 leg=4
+```
+- SUPER 参考与 slew 后速度都是 0.80；
+- **发布速度只剩 0.27–0.30**，`clamped=1`、`dlast=0.00`（位置被夹到与上一拍相同）；
+- `hold=0/retract=0/gate=0`，说明不是 hold/retract/交接门；
+- 嫌疑锁定在**位置限幅分支与速度前馈的耦合**（限幅时 `s.p` 被夹住，但 `s.v` 在某处被改写成钳后的滑移速度或受 cap 影响）。
+55a 的验收：W4 −0.028 接触、W6 0.275、其它全过（W1b 13/13）。
+
+下一轮（round 20）：① 用 `REF_MAX_MPS` 调大 + `REF_CLAMP_M=0` **直接关闭位置限幅**跑一趟——若角点 0.0–0.3 的掉速消失，就证实是限幅层；
+② 若是，修限幅：限幅只改位置、不改速度前馈（或把速度前馈也改成钳后的一致值），再回测 Q4/W4。
