@@ -105,6 +105,22 @@ lidar_imu（10 Hz 点云 + 200 Hz IMU）
   `forest_hex14_low.yaml` / `forest_hex18_low.yaml`（柱高 1.2 m、飞行高度上方净空）。
 - 这些世界**不是** SPEC 冻结图；用于速度/能力诊断，验收仍以冻结图为准。
 
+## 6b. 泛化测试：同一规则、不同 seed 的地图套件（owner 2026-11-26）
+
+冻结 SPEC 地图仍是 `sim/worlds/forest_hex12.yaml`（`check_frozen.py` 永远校验它，不参与 seed 变化）。
+为了验证**泛化性**，用同一个生成器、同一几何规则、只换 seed 生成诊断地图：
+
+```bash
+python3 scripts/make_world_v2_hex.py --seed 20240522 --template sim/worlds/square15_forest.yaml \
+    --arena-m 12.5 --out sim/worlds/forest_hex12_s22.yaml     # s23/s24 同理
+WORLD_NAME=forest_hex12_s22.yaml <其余飞行环境> bash scripts/fly_hex2.sh gen22a 1
+```
+
+- 每张图仍为 522 柱、54 个 waypoint 空单元、六边形半径 10 m、柱距 1.0 m、飞行高度 2.0 m；
+- `fly_hex2.sh` 会打印 "DIAGNOSTIC WORLD" 警告；`check_frozen.py` 仍只检查冻结图；
+- 验收（`run_accept.sh`/`quality_rows.py`）使用 `WORLD_NAME` 指向的那张图；
+- 评估协议：**同一套配置至少 3 个 seed 通过 15 行；调参只看最差 seed**，避免对一张图过拟合。
+
 ## 7. 数据与日志（每趟 run 目录）
 
 ```
