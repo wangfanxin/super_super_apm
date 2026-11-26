@@ -55,3 +55,18 @@ docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
 == 机体能力台架
   bench-1kg-8ms.png             1 kg/250 mm 机体 8 m/s 台架（max 8.34 m/s、8 m/s²、51.6°）
   bench-pva-8ms.png             1 kg 机体 PVA 跟踪台架（连续调幅正弦，8 m/s 跟踪 p90 0.24 m）
+
+== 最终交付对照（2026-11-27 round 27，docs/evidence/final/）
+  两条路线的代表趟都出了全套图（topdown 整趟/分圈、xyz-t、速度 2-范数、速度标量、角点 zoom、clearance）：
+
+  phase44b-*   A 路线代表（15 行全过、质量最好）：agile + no-retract + PRE_GOAL 0.8，1.35 m/s 档。
+               topdown/laps 见 phase44b_topdown.png / phase44b_laps-lap*.png；
+               xyz-t / vnorm-t / speed-t：phase44b-01-01_-*.png；
+               角点 zoom：phase44b-01-01_corner-1..6.png；净空：phase44b-clearance.png。
+               实测：W4 +0.037、W6 p90 0.259、Q1 1 段、Q3 0.193；角点真值仍会掉到 0.02-0.12 m/s。
+
+  phase66a-*   B 路线代表（全程指令 >=1 m/s、角点真值 5/6 >=0.5 不停车）：corner 1.0 + REF_GOV_MIN 1.0。
+               topdown/laps：phase66a_topdown.png / phase66a_laps-lap*.png；
+               xyz-t / vnorm-t / speed-t：phase66a-01-01_-*.png；
+               角点 zoom：phase66a-01-01_corner-1..6.png；净空：phase66a-clearance.png（含机身半径侵入）。
+               实测：指令 min/p1 1.00 m/s；角点真值 0.56/0.70/0.10/0.68/0.75/0.64；Q3 0.448、Q1 2 段、W4 -0.088 接触。
