@@ -105,7 +105,7 @@ super_planner:
   # ★ WHTF-PVA-TAIL (patch 15) ★ 给 PVA goal 追加 pva_tail_len 米的**直线延长段**（沿终点速度方向）：
   #   角点仍然是 guide/走廊的内部点（W1b 不变），但轨迹终点被移到角点之后，参考不在角点收速。
   #   1.2 m 落在 waypoint 3x3 keepout（1.5 m）内，延长段本身是自由空间。
-  pva_tail_len: 1.2
+  pva_tail_len: 0.6
   receding_dis: 1.0
   robot_r: 0.10     # 机体半径（第 81 轮用户指定 0.2 m；第 82 轮实测见 docs/FLIGHT-ANALYSIS.md §57.7）
                     #   实测依据：`scripts/corridor_feasibility.py` 用 c10 趟 3814 条真实失败种子线
