@@ -1574,3 +1574,27 @@ pre-goal 换目标那一下也会贡献短环。下一步必须从规划侧解�
 ### 88.3 主机问题（阻塞本轮两个试验）
 123a/123b（`receding_dis 2.0` 试验）连续无效：H3/H4 无 LIO、H6 无数据、W0 无 plan，`uptime` load 4.2/7.8
 （snapd/journalctl/subiquity 又起来）——**试验未得到结论**，需在主机干净时重跑。
+
+## 89. Phase 1 round 12：规划侧三个开关都没能消掉边中点绕圈（2026-11-27）
+
+| 趟 | 变更（相对 120a 基线） | 生效证据 | 15 行 | Q1 | Q3 | P1 | S1 | S2（环） | 结论 |
+|---|---|---|---|---|---|---|---|---|---|
+| 124a | `receding_dis 1.0→2.0` | CONFIG 日志 receding_dis=2 | 14/15(W4) | 1 | 0.278 | PASS | 0.95 s | **3 / 10.2 s** | 无改善，否决 |
+| 125a | `replan_rate 10→1 Hz` | 日志确认 | 13/15（W1,W4） | 6 | 0.380 | 尖峰 1.83 | **9.61 s** | **9 / 56.1 s** | 大幅变差，否决 |
+| 126a | `keep_old_goal_guide: true`（**配置写错 section，未生效**） | CONFIG keep=0 | 13/15 | — | — | — | — | — | 无效试验，重做 |
+| **127a** | `keep_old_goal_guide: true`（section 修正后生效） | CONFIG keep=1 | 14/15(W4) | 4 | 0.268 | 尖峰 1.62 | 2.04 s | **3 / 12.5 s** | 无改善，否决 |
+| **128a** | `guide_round_en: true, radius 0.6` | CONFIG guide_round=1 | 14/15(W4) | 1 | 0.305 | 尖峰 1.42 | 1.86 s | **3 / 17.2 s** | 无改善（且 (2.2,−6.3) 出现 10.1 s / vmin 0.02 环），否决 |
+
+**结论**：
+1. **绕圈不是"重规划太频繁"**（降频更差），也不是"guide 折线太尖"（round 无改善），
+   也不是"旧角点没被保留"（keep 无改善）。环出现在**边中点、goal 固定、状态正常**时，
+   最可能是 SUPER 在窄缝/障碍簇处**A* guide 的绕行方向在每个重规划周期反复翻边**（或 SFC 进出交替），
+   而 receding 执行只吃前 1 m，所以飞机原地打转。
+2. 要定论必须**看到 SUPER 内部的 guide/A* 路径**：下一步记录 SUPER 的调试输出（guide path / corridor / replan 决策），
+   把环时刻的 guide 画出来；若确认翻边，则在规划器加**绕行方向滞回（hysteresis）**：
+   新 guide 与旧 guide 的绕行侧不一致且旧 guide 仍可行时，保留旧 guide（类似 keep goal，但针对绕行侧）。
+3. 另一个可选修复：在 Route Manager 里给**问题边中点加 via 点**（不改外部接口），缩短单段、消除翻边歧义。
+
+### 89.1 附带发现（重要）
+- 配置 section 错误会让开关"静默不生效"：`keep_old_goal_guide` 必须放在 `super_planner:` 下，
+  第一版误放到 `fsm:` 下 → CONFIG 日志 keep=0。**以后每次改配置必须先看启动 CONFIG 日志确认。**
