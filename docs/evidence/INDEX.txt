@@ -95,3 +95,8 @@ docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
   BEST-fourmap.txt      四图数字表
   每组另有 15 张单图：docs/evidence/final/phase{94a,98s22,98s23,98s24}-01-01_* + planexec-best-*.png
 
+== 换段/腿起点离线审计（2026-11-27，scripts/handover_audit.py；不飞）
+  handover-audit.png     44b/94a/s22/s23/s24 的 published |v| + 换段(红) + 冻结(橙) + 跳变(紫)
+                         结论：换段 |dv| p50 0.01 / max 0.12 m/s、角度 max 2.5°，**换段几乎不连续**；
+                         掉速发生在每条腿起点后 0.4-0.6 s，伴随短冻结（见 FLIGHT-ANALYSIS §77）
+

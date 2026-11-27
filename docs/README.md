@@ -14,7 +14,7 @@ MAVLink 桥 + supervisor、真值采集、验收与出图工具，全部在本�
 | 机体 | `sim/models/quad_1kg_250mm.json`（1.0 kg / 250 mm）；台架 8.34 m/s、PVA 8 m/s 跟踪 p90 0.24 m |
 | 地图 | 冻结 SPEC 地图 `sim/worlds/forest_hex12.yaml`（半径 10 m、522 柱、柱距 1.0 m）+ 同规则 seed `s22/s23/s24`；大世界 `forest_hex16/hex18_low`（1546 柱，LiDAR 负载会掉果，需先降负载） |
 | 速度阶梯 | 1.35 m/s 已可用（94a/98s22/98s23/98s24）；2.5 档在 3 m 走廊不稳定；4 m/s 大世界首测出现 SITL/FCU 发散（H5）；8 m/s 仅机体台架 |
-| **下一步方向** | 按 Nav2 式分层重做薄层：多目标"穿过"语义 + 前视/曲率限速跟随器 + goal/progress checker + 恢复层；见 `docs/NAV2-THIN-LAYER.md` |
+| **下一步方向** | 先规划连续化（SUPER 跨腿不重启 + 薄层忠实发 PVA），不引入引导层；离线审计已排除"换段不连续"（§77）；见 `docs/FLIGHT-ANALYSIS.md` §77 综合方案 + `docs/NAV2-THIN-LAYER.md` |
 
 ### 9f+（新最佳配置）
 
