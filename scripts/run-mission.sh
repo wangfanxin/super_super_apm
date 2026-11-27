@@ -1231,7 +1231,7 @@ merged)
         --mav-supervisor "tcp:127.0.0.1:${PORT1:-5781}" $CALIB_ARG \
         --nav-hz "${NAV_HZ:-48}" --wire-hz "${WIRE_HZ:-50}" \
         --nav-gate-mps "${NAV_GATE_MPS:-5.0}" --nav-gate-dps "${NAV_GATE_DPS:-900}" \
-        --nav-z-trim-m "${NAV_Z_TRIM_M:-0}" \
+        --nav-z-trim-m "${NAV_Z_TRIM_M:-0}" --nav-lead-s "${NAV_LEAD_S:-0}" \
         $YAW_ARG ${BRIDGE_ARGS:-} \
         --setpoint-log "$OUT/setpoints.csv" --wire-log "$OUT/wire.csv" --nav-log "$OUT/nav.csv" \
         --alt "$TAKEOFF_ALT" --takeoff-command-m "$TAKEOFF_COMMAND_M" \

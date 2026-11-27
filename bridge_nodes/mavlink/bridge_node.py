@@ -655,7 +655,15 @@ class BridgeProcess:
                     t_feed = int(time.monotonic() * 1e6) - int(age_wall * 1e6)
                     t_feed = max(t_feed, self._last_feed_us + 1000)
                     self._last_feed_us = t_feed
-                    self.bridge.send_external_nav_l(t_feed, self.lio["p"], self.lio["q"],
+                    _lead = float(getattr(self.args, "nav_lead_s", 0.0) or 0.0)
+                    _p_feed = self.lio["p"]
+                    if _lead != 0.0 and self.lio["v"] is not None:
+                        _p_feed = np.asarray(self.lio["p"], float).copy()
+                        _p_feed[:2] = _p_feed[:2] - np.asarray(self.lio["v"], float)[:2] * _lead
+                        if self.lio["n"] == 1 or self.lio["n"] % 2000 == 0:
+                            self.log("bridge/nav-lead: feeding p - v*%.3f s (|v| %.2f)" %
+                                     (_lead, float(np.linalg.norm(np.asarray(self.lio["v"], float)[:2]))))
+                    self.bridge.send_external_nav_l(t_feed, _p_feed, self.lio["q"],
                                                     self.lio["v"], self.calib,
                                                     z_trim=getattr(self.args, "nav_z_trim_m", 0.0),
                                                     quality=self._nav_quality,
@@ -1025,6 +1033,10 @@ def add_bridge_arguments(ap):
                          "the speed ladder (5.0 at 1.35 m/s, 15 at 8 m/s)")
     ap.add_argument("--nav-gate-dps", type=float, default=900.0,
                     help="physical gate: refuse a pose implying a step yaw rate above this (deg/s)")
+    ap.add_argument("--nav-lead-s", type=float, default=0.0,
+                    help="外导航前馈补偿（秒）：喂给 EKF 的位置 = LIO 位置 - v_h * nav-lead-s（水平，z 不动）。"
+                         "独立审查（2026-11-27）测得 FCU 估计相对真值有一个沿航迹 +0.075 m 的静态偏置"
+                         "（等价 55-75 ms），本参数用于把它扣掉；0=关。")
     ap.add_argument("--nav-z-trim-m", type=float, default=0.0,
                     help="vertical DATUM correction added to the W/ENU z of the ESTIMATOR feed only, m. "
                          "MEASURED (scripts/altitude_split.py, six sorties): the FCU tracks its own "
