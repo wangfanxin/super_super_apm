@@ -1245,3 +1245,67 @@ P1 PASS（p90 0.226、无 >1.0 m 尖峰）；角点 cmd 最低 0.25–0.72、**�
 ### 77.5 交付与追踪（不变）
 每趟出全套图 + **P1 图** + **handover/leg-start audit**；docs 只维护现有 5 篇；每轮 commit + push；
 每 ~15 分钟汇报关键数字/图；不飞真机。
+
+## 78. 与 Nav2 的重复/冗余审计（2026-11-27）：哪些是"自己发明的补丁"，哪些该删
+
+**审计方法**：列出 SUPER 内部已打 patch（按源码 marker）与薄层 85 个命令行开关，逐项对照 Nav2（快照
+`c3dea921`，v1.5.0）的标准模块：planner_server / controller_server(+goal/progress checker) /
+BT navigator / NavigateThroughPoses+RemovePassedGoals / velocity_smoother / smoother / behavior server。
+判定：**重复**（Nav2 已有等价物，且更标准）、**劣于**（自研补丁不如标准件）、**保留**（无等价物或修 bug）、
+**要演进**（方向对但实现太弱）。
+
+### 78.1 SUPER 内部 patch 的判定
+
+| 补丁 | 作用 | Nav2 等价物 | 判定 |
+|---|---|---|---|
+| **rest-to-rest FSM（`PlanFromRest`/`GENERATE_TRAJ`/到点即换目标）** | 每角点/每腿重起一条轨迹 | `NavigateThroughPoses`：一次规划穿过剩余 poses，0.333 Hz 重规划剩余路径，终点才判到达 | **必须改（根因）** |
+| patch 14 smooth_handover | 新目标先试连续重规划 | 连续 controller 下不存在"新目标重启" | **劣于/重复**：rest2rest 修好后删除 |
+| patch 16 continuous_new_goal | 新目标交给连续重规划 | 同上 | **劣于/重复**（当前未启用） |
+| patch 19 defer_handover | 新目标等旧轨迹飞完再规划 | 同上 | **劣于/重复**：rest2rest 修好后删除 |
+| patch 22 keep_old_goal_guide | 新目标保留旧角点为 guide 点 | `NavigateThroughPoses` 的 viapoints / `RemovePassedGoals` | **要演进**：升级为真正的多 goal/through-poses |
+| patch 15 / 20 pva_tail / adaptive_tail | 终点后加尾巴让角点不停 | Nav2 无（path following 不需要） | **劣于**：rest2rest 修好后删除 |
+| patch 17 general_bc | 用实测 v/a 作边界条件起规划 | Nav2 controller 每拍都用实测状态闭环 | **保留**（连续重规划的正确边界条件） |
+| patch 18 committed_traj_race | 未加锁读 committed traj 的 race 修复 | Nav2 的回调组/锁 | **保留**（纯 bug 修复） |
+| patch 21 guide_round | guide 折线角点用固定半径圆角 | `nav2_smoother`（SimpleSmoother / Savitzky-Golay / ConstrainedSmoother） | **劣于**：删除，改"真 smoother"（保留走廊约束） |
+| hot_start + hot_start_vel_ratio | PlanFromRest 用实测速度（上限 0.6–0.9×vmax） | 无（因为不需要 rest 起步） | **降级为兜底**：只对首个目标/rest 分支保留 |
+| patch 9 keep_publishing | GENERATE_TRAJ 期间继续发旧轨迹 | FollowPath 与 ComputePath 并行，controller 从不暂停 | **保留（过渡期）**：连续规划上线后可删 |
+| patch 10 replan_time_limit | 重规划墙钟预算 | Nav2 planner timeout | **保留**（鲁棒性，与架构无关） |
+| patch 11 no_backward_head | 拒绝"第一步向后"的规划 | 无等价；是 rest2rest 抖动症状 | **劣于**：rest2rest 修好后删除 |
+| patch 13 no_midleg_slowdown | 重规划不得让腿中速度塌陷 | 无等价；同样是 rest2rest 症状 | **劣于**（当前未启用）：删除 |
+| patch 12 sfc_margin | 走廊余量配置 | costmap inflation / clearance 参数 | **保留**（配置项，非补丁） |
+| PLANDBG / STARTTYPE-TRACE / HANDOVER-DEBUG | 调试打印 | — | **临时**：验证完删除 |
+
+### 78.2 薄层（plan-box）功能组的判定（85 个开关按组归类）
+
+| 组 | 代表开关 | 作用 | Nav2 等价物 | 判定 |
+|---|---|---|---|---|
+| 目标/到点语义 | `--arrive-m --pass-by-m --pass-by-long-m --corner-speed-list --goal-lead --pre-goal-m --goal-lookahead-m --target-mode rolling --target-look-m --target-step-m --target-vref --corner-carry-m` | 用"到点半径/pass-by/前推目标"驱动换目标与重规划 | `NavigateThroughPoses` + `RemovePassedGoals(0.7 m)` + GoalChecker(终点) | **重复且劣**：收敛为"pass-by 记账 + 终点 goal checker"，其余删除；rolling/goal-lead/corner-carry 实测均失败 |
+| 参考调速/整形 | `--ref-gov-kp/acc/dec/along/ks/min-mps/plan-feed* --ref-along-floor --ref-catchup-mps --ref-lead-s --ref-lead-turn-rad-s --ref-lp-tau --ref-ff --ref-ff-gain --ref-ff-acc-max --ref-v-slew --ref-clamp-m --ref-max-speed*` | 用沿航迹误差重算速度、滤波、超前、限幅 | controller（RPP 的曲率限速/终点减速）+ `nav2_velocity_smoother` | **重复且劣**：实测它把 MINCO 的 0.8 m/s 算成 0.27；连续规划后**整组删除**，只留**一个** velocity smoother（max_v/max_a/max_jerk） |
+| 交接/冻结补丁 | `--ref-no-retract --ref-no-fold --ref-retract-dr* --ref-handover-gate* --ref-final-slew` | 记录/冻结/滑行/交接门/最终限幅 | 无（连续控制下不需要） | **劣于**：连续规划上线后**删除**；stale 时才允许 hold |
+| 时间缩放/多项式校验 | `--time-scale* --poly-check --poly-dt --poly-topic` | 用倍速求值/多项式校验加速 | 无（Nav2 不做时间缩放） | **重复且冒险**：删除或隔离到实验脚本 |
+| 净空调速 | `--clr-gov-margin --clr-gov-look-m` | 按净空降速 | costmap 代价 + collision monitor / RPP cost-regulated speed | **劣于**：Phase 3 若需要"窄缝限速"再按 Nav2 思路重写（只在窄缝生效） |
+| 坐标系/高度基准 | `--calib-file --ref-z-offset-m --ref-z-hold --ref-z-tol --ref-z-latch-m` | L→W 标定、EKF 高度基准补偿、z 锁 | TF + map frame；高度基准是本机标定问题 | **保留**（真实标定差异，不是重复） |
+| 失效/兜底 | `--stale-s --stale-fail-s --hold-s --settle-* --leg-timeout-s --first-hold-s` | 断流保持/失败退出/首段竖直 | behavior server + progress checker + recovery | **保留（最小版）**：可后加 progress checker，不做完整恢复树 |
+| 指令输出 | `--goal-pva --cmd-rate --cmd-topic --super-cmd-topic` + Command shaper | PVA 100 Hz、L→W、trajectory_id | controller 输出 Twist；我们是 PVA→PSC | **保留**（ArduPilot 接口差异，不是重复） |
+| 规划器接口 | `--super-config* --super-odom --super-cloud --no-super` | 计划器配置/数据源 | planner_server 参数化 | **保留** |
+
+### 78.3 我们**自己内部**的重复（不涉及 Nav2，也是 bug 源）
+
+1. **速度限幅有 6 处**：`REF_V_SLEW`、`REF_GOV_ACC/DEC`、`REF_FINAL_SLEW`、`REF_FF_ACC_MAX`、bridge 的 FF 钳位、no_retract 清零。
+   实测已经互相覆盖（slew 被 no_retract 覆盖、floor 被 governor 覆盖）。→ **收敛为 1 个 velocity smoother**。
+2. **交接连续补丁有 8 个**：patch14/19/22、hot_start、general_bc、no_retract、handover_gate、retract-dr/final-slew。
+   → rest2rest 修好后只保留 general_bc + keep_publishing（过渡）。
+3. **"到达"有 4 套语义**：pacer 半径/pass-by/dwell、goal_v、rolling/lead、corner_carry。→ 统一为 **pass-by 记账 + 终点 goal checker**。
+4. **参考滤波有 5 个**：LP、lead、lead-turn、ff_gain、clamp。→ 删除，改由 planner 时间参数化 + 单层限幅负责。
+
+### 78.4 审计结论
+
+- **不是"我们的薄层 + SUPER 全都是重复"**：SUPER 的 A*+MINCO 轨迹规划（Nav2 没有）、PVA→PSC 接口、
+  高度基准补偿、断流兜底、录制/验收/评测链，都是 Nav2 没有或不适合直接替换的——**保留**。
+- 真正的问题是 **rest-to-rest 语义**（用户判断正确）：它迫使我们在薄层/SUPER 里发明 8 个交接补丁、6 个限速器、4 套到达语义；
+  这些在 Nav2 的"穿过式多目标 + 连续 controller + 单层 velocity smoother"架构里**都不需要**。
+- 所以 Phase 1 的删除清单 = 78.1 中"劣于/重复"的 patch（14/15/16/19/20/21/11/13）+ 78.2 的"目标/调速/交接/时间缩放/净空"整组；
+  保留清单 = general_bc、keep_publishing（过渡）、replan_time_limit、sfc_margin、坐标/高度、stale 兜底、录制评测；
+  演进清单 = patch22 → 真正的 through-poses/goal queue；velocity smoother 合并为一层；smoother 用标准算法并在走廊内约束。
+- **风险**：删除必须在 Phase 1 连续规划通过后逐项进行，每删一组用离线 audit（换段/腿起点 dip）+ 一趟 SITL 回归；
+  任何一组删除若使 P1 出现 >1 m 尖峰或 W6 p90 >0.35，即回滚该组。
