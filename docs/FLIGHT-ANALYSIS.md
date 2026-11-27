@@ -1598,3 +1598,64 @@ pre-goal 换目标那一下也会贡献短环。下一步必须从规划侧解�
 ### 89.1 附带发现（重要）
 - 配置 section 错误会让开关"静默不生效"：`keep_old_goal_guide` 必须放在 `super_planner:` 下，
   第一版误放到 `fsm:` 下 → CONFIG 日志 keep=0。**以后每次改配置必须先看启动 CONFIG 日志确认。**
+
+## 90. 独立审查（子代理 nav2-auditor）：§78 的"重复/劣"项多数没有真正改掉（2026-11-27）
+
+审查方式：只读仓库 + 独立重算 `.runs`（120a/121a/122a/129a 的 traj.log / GUIDEDBG / quality.json），对照 Nav2 v1.5.0 快照。以下是**与本项目此前结论冲突、但证据更强**的部分（已逐项接受）：
+
+### 90.1 真正改正的只有 4 项
+1. **REF-WASHOUT**（替代 no-retract 冻结；100a 首次 15/15 + W4 CLEAR）——机制级修复；
+2. **WAIT_GOAL stale-resend**（修 103b 静默 abort；120a/121a/122a/129a 各触发 2 次）；
+3. **S1/S2 评测行 + PLANDBG/CUSP 观测**（把"慢/绕圈"变成可对表事件）；
+4. **SUPER CONFIG 启动日志**（修配置 section 静默失效）。
+   其余（corner 0.9、floor 0.9 等）是**参数折中，不是机制替换**。
+
+### 90.2 rest-to-rest 根因仍然在（§78 判定未兑现）
+- 独立重算："最佳"四趟的 `PlanFromRest`/`Traj finish` 次数：120a **16/16**、121a **17/17**、122a **39/21**、129a **15/15**；
+- patch19 DEFER-HANDOVER 把新目标压到旧轨迹只剩 **0.010–0.045 s** 才放行（129a 12 次 `HANDOVER smooth_rc=2 remain=0.0xx s`），
+  patch14 的"连续交接"因此**永远没有时间起作用**，随后必然 `Traj finish → GENERATE_TRAJ → PlanFromRest`；
+- §78 的删除清单**没有执行**：plan-box 开关 85→**93 个**，参考改写串联层数增至约 9 层（无 jerk、无 deadband、无数据龄归零）；
+  到达语义仍是"半径 0.3 m 到点即重规划触发器"（`SETTLE_SPEED=6.0` 使停稳判据失效、`PASS_BY_M=0`、CARROT 只打印、leg timeout advance-anyway）。
+
+### 90.3 我此前的"guide 翻边确认"被推翻（重要更正）
+- 子代理用**代码里同一判据**复现 129a GUIDEDBG：得到翻边时刻 79.1/79.4/130.3，而不是我报告的 43.8/72.0/95.8/123.1/125.2；
+  阈值 0→109 次、0.1→24、0.15→9、0.2→3 次 —— **判据阈值敏感，不能作为定论**；
+- 可复现的真实现象是：**receding 分支占约一半重规划周期**（GUIDEDBG 段长 p50 1.55 m，<1.5 m 占 49%），
+  相邻同目标 guide 的采样点数 **99.9% 会变**（18% 变化>15 点=大重建），**环窗口内重建率 2.53/s vs 窗口外 1.26/s**；
+  即"整段旧轨迹当 guide"与"退 1 m + 全新 A*"每拍跳变 → A* 在 10 Hz 上重选等代价绕行侧。
+- 结论：GUIDE-HYST（侧向滞回）**只处理符号、没处理基准跳变 + A* 每拍重算**；本轮两趟实测也不一致：
+  130a S2 2 环/S1 0.85 s/Q3 0.240 vs 131a S2 4 环/S1 2.69 s/Q3 0.286 → **不采纳为默认**；
+  已改为 `guide_hyst_en` 配置开关（默认关）+ CONFIG 日志输出，留待 A/B。
+
+### 90.4 对比 Nav2 仍未考虑/仍弱的机制（按影响排序）
+1. **路径复用 / 规划-跟随解耦**：Nav2 `CheckIfNewPathNeeded`（IsGoalNearby 4 m + TruncatePathLocal + ValidatePath）+ 0.333–1 Hz 重规划 + FollowPath 连续闭环；
+   我们 10 Hz A*+SFC+MINCO 全链重算 → S2/Q1/P1 的直接成因。**这是第一优先**。
+2. **through-poses / RemovePassedGoals / 仅终点 goal checker**：中间点只记账、轨迹终点不在中间点；patch22 只留一个 guide 内点，轨迹终点仍是角点 → 127a 无效是必然。
+3. **goal/progress checker 语义**：终点 xy 容差 + 剩余路径长度门槛 + stateful；progress 0.5 m/10 s；我们完全缺失，且 0.3 m 固定半径与速度无关（4/6/8 m/s 切角必然漏点）。
+4. **单一运动学壳**：velocity_smoother 的 max_accel/decel + deadband + velocity_timeout 归零 + OPEN/CLOSED_LOOP；我们 9 层串联、无 jerk；
+   但 §82 已证不能删 governor 的位置反馈项 → 应保留一个"位置误差→速度"项在壳内。
+5. **运行时碰撞监控/轨迹合法性**：collision_monitor 的 STOP/SLOWDOWN/LIMIT + RPP collision_checker + MPPI validator；129a W4 实测 **−0.077 m 接触**而仍 record-only。
+6. **速度/限速区**：costmap speed_filter / keepout_filter / route edge speed；窄缝（0.48 m）目前无局部限速。
+7. **恢复层**：RecoveryNode 重试预算 + Wait/重规划 + 错误码分类；我们 3 s 断流即 abort、22 次规划失败靠旧轨迹硬撑。
+8. **在线跟踪反馈**：TrackingFeedback（误差/剩余路径/距目标）用于在线门控；我们全离线。
+9. **路线图/边属性**（via 点、per-edge 速度）：§89.2 想加的 via 点没有正规载体。
+10. **速度阶梯几何约束（必须先进口径）**：hex12 腿长 10 m、角点自由半径 ~1.0–1.5 m；90° 角需 `R=v²/a_lat`：
+    v=6 → 2.6 m、v=8 → 4.6 m —— **当前世界 6/8 m/s 的角点必然进柱区**。W2 应按"直道 p90/max"、Q4 角点阈值按档给，
+    换 hex12w/hex16 后重标，否则"8 m/s 必须达成"与 W1b/Q4 自相矛盾。
+
+### 90.5 评测链自身缺口
+- `accept.json.arm` 为空（120a/121a/122a 实测）：参考整定值/环境变量不落盘 → "同配置三趟"无法机器复核；
+- GUIDEDBG 依赖未记录的环境变量，仓库无翻边分析脚本/图/JSON；WASHOUT 日志被节流（4 趟都只有 #1）；
+- W6 的 ±0.15 s 时移搜索会吸收时延（同趟 Q3 0.221 vs geometric p90 0.109，一半残差是时延）；
+- 缺规划健康度行（PlanFromRest 次数、生成失败率、guide 重建率、A* 重算率、换段 |Δv|、PVA jerk）。
+
+### 90.6 修订后的下一步（Phase 1 优先级重排）
+1. **D1.0（0 飞行）**：写 `scripts/guide_flip.py` 解析 GUIDEDBG 出事件表/图/JSON，定义"guide 重建/基准跳变"判据并做阈值敏感性；
+   SUPER 加 `wholeTrajKnownFree/split_dis/astar_called` 调试日志（env 控制，只读不改行为）；
+2. **D1.1**：实现 **guide 缓存复用**（Nav2 CheckIfNewPathNeeded 等价）：A* 仅在 goal 变化 >0.3 m / 缓存失效连续 N≥3 拍 /
+   ≥1 s 时重算，MINCO 仍 10 Hz receding 优化同一 guide；缓存失效→立即全量重算+清 SFC 兜底；
+3. **D1.2**：HYST 仅在该缓存机制之上做 A/B（有开关、有 CONFIG 日志、有事件表）；
+4. **D2**：pacer → 路线投影记账 + 终点 goal checker（xy 0.25–0.5 + 剩余路径长度门槛）+ progress checker；
+   单一 PVA 壳（max_v/max_a/**jerk**/deadband/timeout，保留 governor 反馈项）；
+5. **D3**：through-poses（SUPER 内部 goal queue/via）+ 窄缝限速区 + 运行时碰撞门（W4 硬门）；
+6. **D4**：速度阶梯先改口径（直道 W2、按档角点阈值），再 2.5→4→6→8（hex12w→hex16）。

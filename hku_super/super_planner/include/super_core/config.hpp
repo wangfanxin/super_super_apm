@@ -77,6 +77,7 @@ namespace super_planner {
         /// WHTF-KEEP-OLD-GOAL (patch 22, plan A): at a new-goal handover keep the committed trajectory up
         /// to its END (the previous corner) as the guide prefix, so the corner stays a guide point.
         bool keep_old_goal_guide;
+        bool guide_hyst_en;
         /// WHTF-ADAPTIVE-TAIL (patch 20): choose the run-out direction/length from the map's free space
         /// instead of always following goal_v.  Only active when pva_tail_len > 0.
         bool pva_tail_adaptive;
@@ -142,6 +143,7 @@ namespace super_planner {
             loader.LoadParam("super_planner/receding_dis", receding_dis, 5.0);
             loader.LoadParam("super_planner/pva_tail_len", pva_tail_len, 0.0);
             loader.LoadParam("super_planner/keep_old_goal_guide", keep_old_goal_guide, false);
+            loader.LoadParam("super_planner/guide_hyst_en", guide_hyst_en, false);
             loader.LoadParam("super_planner/pva_tail_adaptive", pva_tail_adaptive, false);
             loader.LoadParam("super_planner/guide_round_en", guide_round_en, false);
             loader.LoadParam("super_planner/guide_round_radius", guide_round_radius, 0.5);

@@ -23,6 +23,8 @@
 
 #include <super_core/super_planner.h>
 #include <memory>
+#include <cstdlib>
+#include <sstream>
 #include <super_utils/scope_timer.hpp>
 #include <fmt/color.h>
 
@@ -58,6 +60,7 @@ namespace super_planner {
         /// proves the config file was really loaded (a silent "flag did nothing" is the worst failure mode).
         std::cout << " -- [SUPER] CONFIG: general_bc=" << (cfg_.general_bc_en ? 1 : 0)
                   << " keep_old_goal_guide=" << (cfg_.keep_old_goal_guide ? 1 : 0)
+                  << " guide_hyst=" << (cfg_.guide_hyst_en ? 1 : 0)
                   << " hot_start=" << (cfg_.hot_start_en ? 1 : 0)
                   << " hot_ratio=" << cfg_.hot_start_vel_ratio
                   << " pva_tail_len=" << cfg_.pva_tail_len
@@ -830,6 +833,67 @@ namespace super_planner {
             }
         }
 
+        /// WHTF-GUIDE-HYST (Phase 1 round 13, 2026-11-27).  MEASURED (phase129a + GUIDE-DEBUG): the S2
+        /// "loops at the edge midpoints" coincide with the A* guide FLIPPING its detour side around a
+        /// pillar cluster (side-flip events at sim 43.8/72.0/95.8/123.1/125.2, and the 124-129 s loop
+        /// sits exactly between the last two flips).  Equal-cost alternatives around a cluster are
+        /// re-chosen every replan; the receding execution then curls.  Hysteresis: if the new guide picks
+        /// the OPPOSITE side of the start->goal line and the PREVIOUS guide is still collision-free from
+        /// our current position, keep the previous guide instead.
+        if (cfg_.guide_hyst_en) {
+            static vec_Vec3f hyst_guide;
+            static Vec3f hyst_goal(9999, 9999, 9999);
+            const auto side_of = [](const vec_Vec3f &gp, const Vec3f &st, const Vec3f &gl) -> double {
+                Vec3f d = gl - st; d.z() = 0.0;
+                Vec3f n(-d.y(), d.x(), 0.0);
+                const double nn = n.norm();
+                if (nn < 1e-6 || gp.size() < 3) { return 0.0; }
+                Vec3f mid = gp[gp.size() / 2];
+                return (mid - st).dot(n) / nn;
+            };
+            if (hyst_guide.size() >= 3 && guide_path.size() >= 3 &&
+                (gi_.goal_p.head(2) - hyst_goal.head(2)).norm() < 0.8) {
+                const double snew = side_of(guide_path, guide_path.front(), gi_.goal_p);
+                const double sold = side_of(hyst_guide, guide_path.front(), gi_.goal_p);
+                if (snew * sold < 0.0 && std::fabs(snew) > 0.20 && std::fabs(sold) > 0.20) {
+                    double dnear = 1e9;
+                    size_t jbest = 0;
+                    for (size_t j = 0; j < hyst_guide.size(); ++j) {
+                        const double dd = (hyst_guide[j] - guide_path.front()).norm();
+                        if (dd < dnear) { dnear = dd; jbest = j; }
+                    }
+                    bool free_ok = (dnear <= 0.6);
+                    for (size_t j = jbest; j < hyst_guide.size() && free_ok; ++j) {
+                        if (map_ptr_->getInfGridType(hyst_guide[j]) == rog_map::GridType::OCCUPIED) { free_ok = false; }
+                        if (j + 1 < hyst_guide.size()) {
+                            const Vec3f m = (hyst_guide[j] + hyst_guide[j + 1]) * 0.5f;
+                            if (map_ptr_->getInfGridType(m) == rog_map::GridType::OCCUPIED) { free_ok = false; }
+                        }
+                    }
+                    if (free_ok && (hyst_guide.back() - gi_.goal_p).norm() < 1.0) {
+                        vec_Vec3f g2;
+                        g2.reserve(hyst_guide.size() - jbest + 1);
+                        g2.push_back(guide_path.front());
+                        for (size_t j = jbest; j < hyst_guide.size(); ++j) { g2.push_back(hyst_guide[j]); }
+                        guide_path = g2;
+                        guide_path_length = geometry_utils::computePathLength(guide_path);
+                        guide_stamp.clear();
+                        double tt = 0.0;
+                        const double vr = std::max(cfg_.exp_traj_cfg.max_vel, 1e-3);
+                        for (size_t i = 0; i < guide_path.size(); ++i) {
+                            if (i > 0) { tt += (guide_path[i] - guide_path[i - 1]).norm() / vr; }
+                            guide_stamp.emplace_back(tt);
+                        }
+                        std::cout << " -- [SUPER] GUIDE-HYST: kept previous detour side (new "
+                                  << snew << " m, kept " << sold << " m, " << guide_path.size() << " pts)"
+                                  << std::endl;
+                    }
+                }
+            }
+            hyst_guide = guide_path;
+            hyst_goal = gi_.goal_p;
+        }
+
         /// WHTF-PVA-TAIL (patch 15, 2026-11-26).  A PVA goal carries a terminal velocity, but SUPER's
         /// trajectory endpoint is `guide_path.back()`, which is the goal itself -- so MINCO has to finish
         /// AT the corner and the reference collapses there (MEASURED phase9f: command 0.07-0.29 m/s at
@@ -908,6 +972,43 @@ namespace super_planner {
                                        + " m run-out past the goal");
                     }
                 }
+            }
+        }
+
+        /// WHTF-GUIDE-DEBUG (Phase 1 round 13, 2026-11-27): print the finished guide polyline when it
+        /// changes enough, so the offline loop analysis can see whether the A* guide flips sides around
+        /// a pillar cluster at the edge midpoints (the remaining S2 loops in 120a/121a/122a).
+        if (std::getenv("WHTF_GUIDE_DEBUG") != nullptr && !guide_path.empty()) {
+            static Vec3f last_front(9999, 9999, 9999);
+            static double last_wall = -1e9;
+            static size_t last_n = 0;
+            double dev = 999.0;
+            if (last_n == guide_path.size() && last_n > 0) {
+                dev = 0.0;
+                for (size_t i = 0; i < guide_path.size(); ++i) {
+                    // store last guide in a function-static vector
+                    static vec_Vec3f last_guide;
+                    (void)last_guide;
+                    break;
+                }
+                dev = (guide_path.front() - last_front).norm();
+            }
+            const double wall = ros_ptr_->getSimTime();
+            if (wall - last_wall > 0.5 || dev > 0.5) {
+                last_wall = wall;
+                last_front = guide_path.front();
+                last_n = guide_path.size();
+                std::ostringstream os;
+                os.setf(std::ios::fixed); os.precision(2);
+                os << "GUIDEDBG wall=" << wall << " n=" << guide_path.size()
+                   << " goal=(" << gi_.goal_p.x() << "," << gi_.goal_p.y() << ")"
+                   << " len=" << guide_path_length << " pts=";
+                const size_t stride = std::max<size_t>(1, guide_path.size() / 40);
+                for (size_t i = 0; i < guide_path.size(); i += stride) {
+                    os << "(" << guide_path[i].x() << "," << guide_path[i].y() << ")";
+                }
+                os << " END=(" << guide_path.back().x() << "," << guide_path.back().y() << ")";
+                std::cout << os.str() << std::endl;
             }
         }
 
