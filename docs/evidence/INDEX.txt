@@ -106,3 +106,10 @@ docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
   15行 14/15（W4 record-only，owner已批准）；Q1=1、Q3 0.223 PASS、P1 PASS、W6 0.270；角点首访真值 0.53–0.75
   ⚠ 重复性：同配置复飞 Q3 0.309/0.309、W6 0.313/0.346 —— 该配置是"边缘好趟"，尚未稳定达标（FLIGHT-ANALYSIS §84/§85）
 
+== Phase 1 复测三趟（同配置 44+REF-WASHOUT+floor0.9+corner0.9，干净主机）
+  sheet-BEST-120a.png / sheet-BEST-121a.png / sheet-BEST-122a.png   全套图 contact sheet（各16图）
+  phase120a/121a/122a-01-01_* + planexec-120a/121a/122a.png + handover-audit-*.png + low-speed-*.png
+  120a: Q1=0 PASS, Q3 0.231, P1 PASS, W6 PASS, S1 1.02s, S2 1环4.3s
+  121a: Q1=3, Q3 0.206 PASS, P1 PASS, W6 PASS, S1 0.62s（最好）, S2 2环7.0s
+  122a: Q1=2, Q3 0.277, P1 1.08尖峰, W6 PASS, S1 1.96s, S2 3环13.3s
+
