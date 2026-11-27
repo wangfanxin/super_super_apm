@@ -500,6 +500,12 @@ def main() -> int:
                          "(the hexagon arm uses this, so the waypoints and the map have one source)")
     ap.add_argument("--no-super", action="store_true", help="不自己起 fsm_node（调试用）")
     ap.add_argument("--stale-s", type=float, default=1.0, help="SUPER 断流多久后改发 hold")
+    ap.add_argument("--stale-resend-s", type=float, default=0.8,
+                    help="参考断流多久后尝试重发当前 goal（秒），用于唤醒 FSM 的 WAIT_GOAL（轨迹提前结束的兜底）。")
+    ap.add_argument("--stale-resend-gap-s", type=float, default=0.8,
+                    help="两次 stale-resend 的最小间隔（秒）。")
+    ap.add_argument("--stale-resend-max", type=int, default=5,
+                    help="一次断流 episode 内最多重发几次（有新参考到达即重置计数）。")
     ap.add_argument("--stale-fail-s", type=float, default=3.0,
                     help="★ 参考断流多久后**退出**（让 supervisor 按名字中止）. MEASURED phase10a: SUPER had a "
                          "PlannerFromRest stall (repeated PathSearch start dbg, aircraft holding 3.1 m from the "
@@ -838,6 +844,10 @@ def main() -> int:
                         np.array([m.acceleration.x, m.acceleration.y, m.acceleration.z]),
                         float(getattr(m, "yaw", 0.0)), float(getattr(m, "yaw_dot", 0.0)))
         state["ref_wall"], state["n_ref"] = time.monotonic(), state["n_ref"] + 1
+        # WHTF-WAITGOAL-FIX: a reference just arrived -> the FSM is alive again; reset the stale-resend
+        # budget so a LATER deadlock (e.g. Traj finish before the arrival gate) gets its own attempts.
+        state["stale_resends"] = 0
+        state["last_stale_resend_t"] = -1e9
         # ★ 多项式校验（--poly-check）★ 把 SUPER 自己的多项式在当前时刻求值，与这条 100 Hz
         #   参考对比。两者对得上，就说明"按倍速求值"是可行的（时间缩放的唯一前提）。
         if state.get("poly") is not None and int(getattr(args, "poly_check", 0)):
@@ -1222,9 +1232,28 @@ def main() -> int:
         # after 2.0 s of silence, and at most 3 attempts per goal -- enough to wake a finished FSM, not
         # enough to thrash a planner that is already retrying.
         _stale_age = (time.monotonic() - state["ref_wall"]) if state["ref_wall"] else 0.0
-        _stale_force = bool(state["n_ref"] > 0 and _stale_age > 2.0
-                            and (time.monotonic() - state.get("last_stale_resend_t", -1e9)) > 2.5
-                            and state.get("stale_resends", 0) < 3)
+        # WHTF-WAITGOAL-FIX (Phase 1, 2026-11-27): the old rule needed 2.0 s of silence and only 3 attempts
+        # per FLIGHT (counter never reset), so a second deadlock could not be woken: MEASURED phase103b
+        # (corner 1.0): FSM logged `Traj finish.` -> WAIT_GOAL, the pacer's arrival gate was still 10 m
+        # away (next leg), no goal was sent, the reference stayed silent and the sortie aborted at 3.0 s.
+        # Now: if the stream is quiet AND we are near the sent goal (the WAIT_GOAL signature) or the gap
+        # is very long, re-send the SAME goal with a short throttle; counters reset as soon as a reference
+        # arrives, so each deadlock gets its own budget.
+        _near_sent = False
+        try:
+            _p = state.get("p_l")
+            _g = state.get("last_goal_pt_l3")
+            if _p is not None and _g is not None:
+                _near_sent = float(np.linalg.norm(np.asarray(_p, float)[:2] - np.asarray(_g, float)[:2])) < 1.5
+        except Exception:                            # noqa: BLE001
+            pass
+        _sr_s = float(getattr(args, "stale_resend_s", 0.8) or 0.8)
+        _sr_gap = float(getattr(args, "stale_resend_gap_s", 0.8) or 0.8)
+        _sr_max = int(getattr(args, "stale_resend_max", 5) or 5)
+        _stale_force = bool(state["n_ref"] > 0 and pacer.i_leg < len(corners_l) - 1 and not pacer.done
+                            and ((_stale_age > _sr_s and _near_sent) or _stale_age > 2.0 * _sr_s)
+                            and (time.monotonic() - state.get("last_stale_resend_t", -1e9)) > _sr_gap
+                            and state.get("stale_resends", 0) < _sr_max)
         if _stale_force:
             state["last_stale_resend_t"] = time.monotonic()
             state["stale_resends"] = int(state.get("stale_resends", 0)) + 1

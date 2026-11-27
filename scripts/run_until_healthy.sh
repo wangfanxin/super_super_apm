@@ -210,7 +210,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-lead-s ${REF_LEAD_S:-0} \
 --ref-v-slew ${REF_V_SLEW:-0} --ref-z-offset-m ${REF_Z_OFFSET_M:-0} \
 --stale-s ${REF_STALE_S:-1.0} \
---stale-fail-s ${REF_STALE_FAIL_S:-3.0} \
+--stale-resend-s ${STALE_RESEND_S:-0.8} --stale-resend-gap-s ${STALE_RESEND_GAP_S:-0.8} --stale-resend-max ${STALE_RESEND_MAX:-5} --stale-fail-s ${REF_STALE_FAIL_S:-3.0} \
 --ref-lp-tau ${REF_LP_TAU:-0} \
 --ref-ff-acc-max ${REF_FF_ACC_MAX:-0} \
 --ref-lead-turn-rad-s ${REF_LEAD_TURN_RAD_S:-1.5} \
