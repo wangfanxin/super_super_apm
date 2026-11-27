@@ -165,3 +165,81 @@ WORLD_NAME=forest_hex12_s22.yaml <其余飞行环境> bash scripts/fly_hex2.sh g
 6. 主机雷达仿真是尽力而为：H6 starvation 时整趟不可评分；同一配置时好时坏，必须先清理再飞。
 7. `fsm_node` 的配置在 `hku_super/super_planner/config/`（`scripts/install_config_hex.sh` 负责同步）；
    修改 `hku_super/config/*.yaml` 后要拷贝到那里。
+
+---
+
+## 最终目标数据管线（一轮完整链路 + 每趟自动评测）
+
+图（可直接放进报告）：`docs/evidence/final/pipeline-target.png`（源：`scripts/plot_pipeline.py`，重画：
+`python3 scripts/plot_pipeline.py --out docs/evidence/final/pipeline-target.png`）。
+颜色：**黑=现有保留，蓝=Nav2 式薄层重做后的新增/替换，绿=记录/评测，红=安全/监督**。
+
+```mermaid
+flowchart LR
+  subgraph SIM[① 仿真/传感器（仅 SITL）]
+    SITL[ArduPilot SITL<br/>ArduCopter 4.7.1 · 1 kg/250 mm]
+    LDS[LiDAR+IMU 仿真<br/>scan ~7 Hz · IMU 200 Hz]
+    TAP[(真值 tap<br/>1 kHz)]
+  end
+  subgraph LOC[② 定位/地图]
+    LIO[Super-LIO<br/>L 系 pose/vel ~50 Hz]
+    MAP[ROG-Map 栅格+膨胀<br/>3×3 m 角点 keepout]
+  end
+  subgraph PLAN[③ 目标·规划·跟随（新增/替换）]
+    RM[Route Manager<br/>路线 poses · pass-by 0.5–0.7 m 记账<br/>GOAL CHECKER 仅终点 · PROGRESS CHECKER]
+    SUP[SUPER planner<br/>多航点/through-poses<br/>重规划剩余路径 1–3 Hz]
+    SM[Path smoother<br/>角点圆滑 · 走廊约束]
+    FL[Follower RPP<br/>前视 + 曲率限速 + 终点减速 + v_floor]
+    VS[Velocity smoother<br/>唯一 max_v/max_a/max_jerk]
+  end
+  subgraph FCU[④ 桥+飞控]
+    SH[Command shaper<br/>PVA 100 Hz · L→W · z 基准 · stale/hold]
+    BR[bridge MAVLink<br/>#331 ODOMETRY 48 Hz · #84 PVA 50 Hz · class-76]
+    NG[NAV gate<br/>odom age/quality/reset]
+    EKF[FCU EKF<br/>IMU + ext-nav]
+    PSC[FCU PSC 位置/速度环]
+  end
+  SUPV[supervisor<br/>arm/takeoff/mode/LAND<br/>高度门·geofence·断流/质量·truth-FCU 不一致→ABORT]
+  subgraph REC[⑤ 记录→评测→质量门（每趟自动）]
+    RECD[recorder<br/>setpoints/wire/nav/lio/scans/tap + rosbag2]
+    ACC[accept.py<br/>15 行 H0–H6 · W0–W6]
+    QR[quality_rows<br/>Q1–Q4 + P1]
+    FIG[出图<br/>topdown/分圈·xyz-t·速度2-范数·角点·clearance·P1]
+    GATE[质量门<br/>H6 clean · W1b 13/13 · P1 无>1m 尖峰 · Q 行 · ≥4 seed · 速度阶梯 4/6/8]
+    REP[离线 replay 原型<br/>录制 CSV 跑 Route+Follower]
+  end
+  SITL --> LDS
+  LDS --> LIO
+  SITL --> TAP
+  LIO --> MAP
+  LIO -->|当前位姿/速度| RM
+  MAP -->|占据地图| SUP
+  RM -->|goals 穿过多角点| SUP
+  SUP --> SM --> FL -->|v_cmd| VS -->|限幅后 PVA| SH -->|#84 50 Hz| BR
+  BR -->|#331 ODOMETRY| NG --> EKF -->|状态估计| PSC -->|电机| SITL
+  SUPV -->|class-76 / ABORT| BR
+  SUPV -->|抢占| RM
+  TAP --> RECD
+  LIO --> RECD
+  LDS --> RECD
+  BR -->|setpoints/wire/nav| RECD
+  RECD --> ACC --> GATE
+  RECD --> QR --> GATE
+  ACC --> FIG
+  QR --> FIG
+  RECD --> REP --> FL
+```
+
+| 层 | 组件 | 频率/坐标 | 状态 |
+|---|---|---|---|
+| ① 仿真/传感器 | SITL（ArduCopter 4.7.1，1 kg/250 mm）；LiDAR+IMU 仿真；真值 tap | scan ~7 Hz / IMU 200 Hz；tap 1 kHz | 保留 |
+| ② 定位/地图 | Super-LIO（L 系 pose/vel）；ROG-Map（栅格+膨胀，3×3 m 角点 keepout） | ~50 Hz；L | 保留 |
+| ③ 目标·规划·跟随 | **Route Manager**（路线 + pass-by 记账 + 终点 goal checker + progress checker）；**SUPER 多航点/through-poses**；**Path smoother**；**RPP 式 Follower**；**Velocity smoother** | 规划 1–3 Hz；PVA 100 Hz；L/W | **重做区** |
+| ④ 桥+飞控 | Command shaper（PVA、L→W、z 基准）；bridge（#331 48 Hz、#84 50 Hz、class-76）；NAV gate；FCU EKF（ext-nav）；PSC | 50 Hz 线速率；W/NED | 保留 + 整形 |
+| ⑤ 监督/安全 | supervisor（arm/takeoff/mode/LAND、高度门、geofence、估计器断流/质量、plan 静默、truth-FCU 不一致） | 事件 | 保留 |
+| ⑥ 记录→评测→质量门 | recorder（CSV+bag）；accept.py（15 行）；quality_rows（Q1–Q4+P1）；出图；质量门 | 每趟 | 保留 + 新增 P1 |
+| 离线 | replay 原型（录制 CSV 跑 Route+Follower，不飞） | — | **新增（先验证再飞）** |
+
+判据口径（与 `docs/ACCEPTANCE.md`、`FLIGHT-ANALYSIS` §74/§76 一致）：
+H0–H6 飞行有效性 → 15 行（W1/W1b 到点、W2 速度、W6 跟踪；W4/Q2 本阶段记录）→ Q1/Q3/Q4 + **P1 规划-执行偏差与尖峰** →
+≥4 张同规则不同 seed 图 → 速度阶梯（4/6/8 m/s，大世界同柱距）。
