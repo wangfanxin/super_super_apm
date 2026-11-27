@@ -77,3 +77,12 @@ docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
   sheet-A-77s23.png      s23 全套图（15/15；W4 +0.003、Q2 -0.188、Q1 0 PASS、Q3 0.234、Q4 fail）
   sheet-A-77s24.png      s24 全套图（W4 -0.076、Q2 -0.195、Q3 0.223、Q1 1、Q4 fail）
   单图：docs/evidence/final/phase77s2{2,3,4}-01-01_*（topdown/laps/xyz-t/vnorm/speed/corner1-6）+ phase77s2{2,3,4}-clearance.png
+
+== 新增判据 P1：规划路径 vs 实际执行（2026-11-27，owner 建议）
+  planexec-phase44b.png   P1 PASS 示例（p90 0.235、无 >1.0m 尖峰、几何 p90 0.117）
+  planexec-phase66a.png   P1 FAIL（p90 0.389、4 个 >1.0m 尖峰）
+  planexec-phase81a.png   P1 FAIL（p90 0.367、3 个 >1.0m 尖峰）
+  planexec-phase83a.png   S2 的 NO-RESULT 证据（p90 1.284、40 个 >1.0m 尖峰、峰值 2.86 m）
+  planexec-phase90a.png   plan A 首测（LIO stale 中止前窗口 P1 0.291）
+  复算：python3 scripts/plan_exec.py --tag <run> [--fig out.png]；quality_rows.py 已含 P1 行
+

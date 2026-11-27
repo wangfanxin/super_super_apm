@@ -140,6 +140,52 @@ def main() -> int:
         q4_ok_all = q4_ok_all and ok
         q4_rows.append((k, ok, "; ".join(dets)))
 
+    # ---- P1 planned-vs-executed path deviation (owner request 2026-11-27)
+    #   "规划路径和实际执行轨迹的差，如果这个值大（不仅是 rmse，如果有尖峰），也说明飞行有问题"
+    #   Time-aligned horizontal |truth - reference| plus SPIKES; geometric_h = nearest distance from the
+    #   truth to the reference path (horizontal, level band only).  Gate: p90 <= 0.35 m AND no spike > 1.0 m.
+    _sp_ts = np.array([float(x["t_sim_us"]) * 1e-6 for x in sp])
+    _sp_cmd = np.column_stack([[float(x[k]) for x in sp] for k in ("cmd_x", "cmd_y")])
+    _o2 = np.argsort(_sp_ts, kind="stable")
+    _sp_ts, _sp_cmd = _sp_ts[_o2], _sp_cmd[_o2]
+    _k2 = np.concatenate([[True], np.diff(_sp_ts) > 1e-9])
+    _sp_ts, _sp_cmd = _sp_ts[_k2], _sp_cmd[_k2]
+    _lvl = (U >= 1.0) & (U <= 4.0) & (_sp_ts[0] <= t) & (_sp_ts[-1] >= t)
+    _tt = t[_lvl]
+    _refE = np.interp(_tt, _sp_ts, _sp_cmd[:, 0])
+    _refN = np.interp(_tt, _sp_ts, _sp_cmd[:, 1])
+    _dh = np.hypot(E[_lvl] - _refE, N[_lvl] - _refN)
+    p1_p90 = float(np.percentile(_dh, 90)) if _dh.size else float("nan")
+    p1_max = float(_dh.max()) if _dh.size else float("nan")
+    def _spk(val, thr):
+        m = val > thr
+        if not m.any():
+            return 0, 0.0, 0.0
+        ii = np.flatnonzero(m)
+        segl = []
+        i0 = 0
+        while i0 < len(ii):
+            j0 = i0
+            while j0 + 1 < len(ii) and ii[j0 + 1] - ii[j0] == 1:
+                j0 += 1
+            segl.append((_tt[ii[i0]], _tt[ii[j0]], float(val[ii[i0]:ii[j0] + 1].max())))
+            i0 = j0 + 1
+        longest = max(segl, key=lambda s: s[1] - s[0])
+        return len(segl), float(longest[1] - longest[0]), float(max(s[2] for s in segl))
+    n05, dur05, peak05 = _spk(_dh, 0.5) if _dh.size else (0, 0.0, 0.0)
+    n10, dur10, peak10 = _spk(_dh, 1.0) if _dh.size else (0, 0.0, 0.0)
+    # geometric distance to the planned path (horizontal, level band)
+    try:
+        from scipy.spatial import cKDTree
+        _ref2 = _sp_cmd[np.abs(np.interp(_sp_ts, t, U) - 2.0) < 0.9] if t.size > 2 else _sp_cmd
+        _dh_geo = cKDTree(_ref2[::max(1, len(_ref2) // 4000)]).query(np.column_stack([E[_lvl], N[_lvl]]))[0]
+        p1_geo_p90 = float(np.percentile(_dh_geo, 90))
+        p1_geo_max = float(_dh_geo.max())
+    except Exception:  # noqa: BLE001
+        p1_geo_p90 = float("nan")
+        p1_geo_max = float("nan")
+    p1_ok = bool(np.isfinite(p1_p90) and p1_p90 <= 0.35 and n10 == 0)
+
     rows = [("Q1", "mid-path low-speed stall/loop", q1_ok,
              "%d segment(s); %s" % (len(segs), ", ".join("t=%.1f dur %.2f at (%.1f,%.1f)" % s for s in segs[:4]))),
             ("Q2", "body-radius clearance (robot_r %.2f)" % robot_r, q2_ok,
@@ -147,12 +193,18 @@ def main() -> int:
             ("Q3", "mid-leg tracking p90", q3_ok,
              "p90 %.3f m (gate 0.25) over %d samples" % (q3_p90, int(wsel.sum()))),
             ("Q4", "corner dynamics (dwell<=3.5 s, vmin>=0.40 m/s)", q4_ok_all,
-             "; ".join("c%d %s %s" % (k, "ok" if ok else "FAIL", det) for k, ok, det in q4_rows))]
+             "; ".join("c%d %s %s" % (k, "ok" if ok else "FAIL", det) for k, ok, det in q4_rows)),
+            ("P1", "planned-vs-executed path deviation (p90<=0.35, no >1.0m spike)", p1_ok,
+             "time-aligned h: p90 %.3f m, max %.3f m, spikes>0.5m: %d (longest %.2f s, peak %.2f), "
+             "spikes>1.0m: %d%s | geometric_h p90 %.3f max %.3f"
+             % (p1_p90, p1_max, n05, dur05, peak05, n10,
+                "" if n10 == 0 else " (longest %.2f s, peak %.2f)" % (dur10, peak10),
+                p1_geo_p90, p1_geo_max))]
     print("== %s quality rows (owner's judgements, 2026-11-26)" % tag)
     for key, title, ok, det in rows:
         print("  [%s] %-2s %-52s %s" % ("PASS" if ok else "FAIL", key, title, det))
     n_bad = sum(1 for _, _, ok, _ in rows if not ok)
-    print("QUALITY: %s (%d/4 fail)" % ("PASS" if n_bad == 0 else "FAIL", n_bad))
+    print("QUALITY: %s (%d/%d fail)" % ("PASS" if n_bad == 0 else "FAIL", n_bad, len(rows)))
     if a.json:
         json.dump({"tag": tag, "rows": [{"id": k, "title": t_, "ok": ok, "detail": det}
                                         for k, t_, ok, det in rows]}, open(a.json, "w"), indent=1)
