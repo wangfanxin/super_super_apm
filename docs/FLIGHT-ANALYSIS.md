@@ -1236,11 +1236,11 @@ P1 PASS（p90 0.226、无 >1.0 m 尖峰）；角点 cmd 最低 0.25–0.72、**�
 **Phase 5（可选）**：MPPI/MPC 作为 PVA 生成器 A/B；只有当 Phase 1 的连续化在本轮预算内做不成时，
 才启用"Follower（备选）"作为兜底（触发条件与判据写在 `docs/NAV2-THIN-LAYER.md`）。
 
-### 77.4 需要 owner 确认的决策点
-1. 批准 **SUPER 内部**加 goal queue / 旧角点 guide（不改外部接口、不加 via 话题）；
-2. 批准 **hex16 / hex18_low 大世界**用于 4/6/8 档；
-3. W4/Q2 在 Phase 1–3 继续 **record-only**（只记录不设门槛）；
-4. 若 8 m/s 受当前主机/LiDAR 仿真限制，是否允许放宽仿真侧负载（点云数/世界规模）或换更强 host。
+### 77.4 需要 owner 确认的决策点（**2026-11-27 owner 已全部批准**）
+1. 批准 **SUPER 内部**加 goal queue / 旧角点 guide（不改外部接口、不加 via 话题）——**已批准**；
+2. 批准 **hex16 / hex18_low 大世界**用于 4/6/8 档——**已批准**；
+3. W4/Q2 在 Phase 1–3 继续 **record-only**（只记录不设门槛）——**已批准**；
+4. 若 8 m/s 受当前主机/LiDAR 仿真限制，是否允许放宽仿真侧负载（点云数/世界规模）或换更强 host——**已批准**。
 
 ### 77.5 交付与追踪（不变）
 每趟出全套图 + **P1 图** + **handover/leg-start audit**；docs 只维护现有 5 篇；每轮 commit + push；
