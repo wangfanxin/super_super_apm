@@ -182,7 +182,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --poly-check ${POLY_CHECK:-0} \
 --clr-gov-margin ${CLR_GOV_M:-0} \
 --time-scale ${TIME_SCALE:-1.0} \
---pass-by-m ${PASS_BY_M:-0.0} \
+--goal-switch-yaw-gate-deg ${GOAL_SWITCH_YAW_GATE_DEG:-0} --goal-switch-yaw-gate-hold-s ${GOAL_SWITCH_YAW_GATE_HOLD_S:-1.0} --pass-by-m ${PASS_BY_M:-0.0} \
 --pass-by-long-m ${PASS_BY_LONG_M:-0.0} \
 --corner-carry-m ${CORNER_CARRY_M:-0} \
 --target-mode ${TARGET_MODE:-corner} \

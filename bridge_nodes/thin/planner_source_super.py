@@ -414,6 +414,12 @@ def main() -> int:
                          "所以『把角点当目标』必然要求停在角点上。实测 ph-01：离角点 2 m 内占 40%%"
                          "的路程、速度只有 1.77 m/s；max_acc 4.5→9.0 只把峰值 4.43→6.44、均值仍 2.45。"
                          "必须配合 --pass-by-m，否则切角会让 pacer 永远判不到到达。0=关（老行为）。")
+    ap.add_argument("--goal-switch-yaw-gate-deg", type=float, default=0.0,
+                    help=">0 = goal 切换前要求'当前速度方向 vs 新目标方向'的夹角小于该值，否则暂缓切换"
+                         "（最多 --goal-switch-yaw-gate-hold-s 秒）。依据 phase150s22b 的 1.49 m P1 尖峰："
+                         "尖峰发生在 pass-by 后立即换目标、飞机还在转弯的瞬间。0=关。")
+    ap.add_argument("--goal-switch-yaw-gate-hold-s", type=float, default=1.0,
+                    help="goal 切换 yaw-gate 的最长暂缓时间（秒）。")
     ap.add_argument("--pass-by-m", type=float, default=0.0,
                     help="『越过航点』判据的横向容差，m。>0 时到达 = **已越过航点所在平面**且横向偏差"
                          "≤该值（不是『进入半径』）。半径判据在高速切角时永远触发不了：90° 角、"
@@ -1037,6 +1043,32 @@ def main() -> int:
                     if d_now < pre:
                         sent_i = pacer.i_leg + 1
                         state["pre_goal_leg"] = pacer.i_leg
+        # ★ WHTF-GOAL-YAW-GATE (round 29, 2026-11-28) ★  goal 切换在转弯中发生时的瞬态保护
+        #   MEASURED phase150s22b: P1 1.49 m 尖峰（55.3-55.9 s）正好落在 pass-by 后 goal_i 2->3 的切换上，
+        #   飞机仍在转弯、速度方向与新目标方向差很大 → 新参考把位置环拉反向。默认关；
+        #   打开后：夹角 > 门槛时暂缓切换（最多 hold 秒，防止死锁）。
+        _gate_deg = float(getattr(args, "goal_switch_yaw_gate_deg", 0.0) or 0.0)
+        if _gate_deg > 0.0 and not force and sent_i != state.get("goal_i", -1) \
+                and int(state.get("goal_i", -1)) >= 0 and state.get("p_l") is not None:
+            _nowg = now_goal()
+            if state.get("yaw_gate_leg") != sent_i:
+                state["yaw_gate_leg"] = sent_i
+                state["yaw_gate_t0"] = _nowg
+            _held = _nowg - float(state.get("yaw_gate_t0", _nowg))
+            _new_goal_l = corners_l[min(max(sent_i, 0), len(corners_l) - 1)]
+            _dp = np.asarray(_new_goal_l, float)[:2] - np.asarray(state["p_l"], float)[:2]
+            _dpn = float(np.linalg.norm(_dp))
+            _vv = state.get("v_l")
+            _vvn = float(np.linalg.norm(np.asarray(_vv, float)[:2])) if _vv is not None else 0.0
+            if _dpn > 0.5 and _vvn > 0.2 and _held < float(getattr(args, "goal_switch_yaw_gate_hold_s", 1.0) or 1.0):
+                _c = float(_dp @ np.asarray(_vv, float)[:2] / (_dpn * _vvn))
+                _ang = math.degrees(math.acos(max(-1.0, min(1.0, _c))))
+                if _ang > _gate_deg:
+                    state["yaw_gate_n"] = int(state.get("yaw_gate_n", 0)) + 1
+                    if state["yaw_gate_n"] in (1, 20, 100):
+                        print("GOAL-YAW-GATE: hold goal switch (heading gap %.0f deg > %.0f, held %.2f s)"
+                              % (_ang, _gate_deg, _held), flush=True)
+                    return
         if sent_i == state["goal_i"] and not force:
             return
         if sent_i == state["goal_i"] and force and (now_goal() - state["last_goal_t"]) < 1.0:
