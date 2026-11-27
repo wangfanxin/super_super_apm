@@ -1987,3 +1987,24 @@ Q1 8 段、W4 −0.084（record）**。
 2. H6 干净后：hex12w 2.5 档（可能还需 `max_acc 6→7`、`CORNER_SPEED 1.2` 微调），四图重复；
 3. 速度阶梯判据按档重订（W2 目标速度、W6/Q3 随 v 放大、角点 vmin 按档），W4 从 record-only 转硬门；
 4. 若 hex12w+2.5 稳定，再上 4 m/s（hex12w/hex16），最后 6/8（hex16/hex18_low）。
+
+## 103. round 25：大世界 hex12w 的接入问题定位（地图尺寸 + geofence + LiDAR 负载）（2026-11-28 03:40）
+
+### 103.1 hex12w 第一次飞行失败的三个原因（163a/164a）
+1. **地图尺寸不够**：planner 配置 `astar.map_voxel_num [480,480,60]`（±12 m）、`rog_map.map_size [24,24,6]`，
+   而 hex12w 角点半径 12 m、arena ±18 m，目标在网格边界上 → A* 只能返回残段，飞机飞出去（163a 到 18.8 m）；
+2. **geofence 默认 13 m**：164a 在 33 s `ABORT: geofence: truth at [+13.00 +1.97]`；
+3. **LiDAR 负载**：10000 点/帧 × 970 柱 → raycast max 1765 ms、skipped 338（H6 fail），主机扛不住。
+
+### 103.2 修复与验证
+- 新增 `super_planner_hex_w.yaml`：`map_voxel_num [720,720,60]`（±18 m）+ `map_size [36,36,6]`，其余 = 四图最佳配置；
+- 164b：`GEOFENCE_M=16`、`LIDAR_POINTS=4000`、1.35 档 → **W1/W1b/W2 全过（13/13 完成）**，
+  但 **H6 FAIL（raycast max 700 ms、skipped 81）**、W4 接触、W6 0.338、Q3 0.326、P1 1.43 尖峰、S2 3 环。
+- 关键权衡：**4000 点/帧把 raycast 从 ~15 ms 降到 ~6 ms，但 LIO 输入变稀 → 跟踪退化**（hex12 同 1.35 档 Q3 0.163/W6 0.220 → hex12w 0.326/0.338），
+  且主机偶尔仍会卡 700 ms（H6 fail）。
+
+### 103.3 下一步（round 26）
+1. **LiDAR 点数扫描 5000/6000**：只判 H6 + LIO 质量 + Q3/W6（1.35 档，hex12w）；
+2. 点数定下后：hex12w 四图（1.35）确认；然后 **2.5 档**（`hex_hs25` + 地图尺寸同 w），
+   判据按档重订（W2 目标速度、W6/Q3 随 v 放大、角点 vmin 按档）；
+3. 若主机持续抖动（H6 fail），记录为**环境限制**，在报告中区分"配置失败"与"主机无效"。
