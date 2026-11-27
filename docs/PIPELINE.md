@@ -189,7 +189,7 @@ flowchart LR
     RM[Route Manager<br/>路线 poses · pass-by 0.5–0.7 m 记账<br/>GOAL CHECKER 仅终点 · PROGRESS CHECKER]
     SUP[SUPER planner<br/>多航点/through-poses<br/>重规划剩余路径 1–3 Hz]
     SM[Path smoother（可选）<br/>角点圆滑 · 走廊约束]
-    FL[Follower（核心，可换 MPPI/MPC）<br/>前视 + 曲率限速 + 终点减速 + v_floor<br/>不替代飞控 PID]
+    FL[Follower（备选：规划连续时不启用）<br/>前视 + 曲率限速 + 终点减速 + v_floor<br/>不替代飞控 PID]
     VS[Velocity smoother（可选/合并层）<br/>唯一 max_v/max_a/max_jerk]
   end
   subgraph FCU[④ 桥+飞控]
@@ -249,3 +249,20 @@ H0–H6 飞行有效性 → 15 行（W1/W1b 到点、W2 速度、W6 跟踪；W4/
 > raycast 6–8 ms/帧。旧图里写的 "~7 Hz" 是更早、主机被抢占时的测量值（历史记录保留，但**不是本配置的规格**）；
 > 换到 1546 柱的大世界（hex16/hex18）时 raycast 负载会显著上升（phase88a 曾出现 p50 22 ms、max 2.95 s、H6 FAIL），
 > 所以大世界首先要解决的是 LiDAR/主机负载，而不是改 10 Hz 这个标称值。
+
+### 补充（2026-11-27，owner 讨论后）：默认**不要**引导层，优先让规划器连续
+
+MINCO 本身输出的就是 **位置/速度/加速度（PVA）随时间的参考**，在**同一条轨迹内**它是整形好的；实测（§54 PLANDBG）
+新目标轨迹 `v_start=v_min=0.81 m/s`，角点掉速 **不是** MINCO 造成的，而是 plan-box 调速器把速度算成 0.27。
+所以正确优先级是：
+
+1. **路线 1（默认，最简）**：让 SUPER **一次规划穿过多角点**（through-poses / 保留旧角点为必经点），
+   plan-box 只做**进度记账**（pass-by 半径）+ **忠实发布 committed 轨迹的 PVA** + 一个 velocity smoother/command shaper。
+   **不需要 follower / 引导层**。前提是把三类不连续修掉：换轨迹时的速度方向/幅值阶跃、PlanFromRest 的停-起、
+   轨迹时基与发布时间对齐（START_WT / replan_forward_dt）。
+2. **路线 2（备选）**：如果 SUPER/FSM 的 rest-to-rest 结构在本轮改不动（每角点仍会重启规划），
+   才用 follower（RPP 式参考重定时）去兜住手递手不连续——这是补丁，不是首选。
+
+MPPI/MPC 的层级问题：现在的 `xva`（PVA setpoint）是**最高层**，飞控 PSC 位置/速度环 + 姿态内环都在它下面。
+MPPI/MPC 若直接输出 `ω`/attitude，就**下沉到姿态/角速率层**（绕过 PSC），是控制层级变化，需要重调参与重新验收；
+若只是想换"参考生成算法"，可以让 MPC/MPPI 仍然输出 PVA（积分其控制量/由模型算 a），保持现有 xva 接口不变。

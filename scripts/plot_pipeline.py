@@ -95,8 +95,9 @@ def main() -> int:
         "SUPER planner\n多航点 / through-poses\nA* + MINCO 走廊优化\n"
         "固定速率重规划『剩余路径』(1–3 Hz)\n路径有效则不重规划", fc=NEW, ec=NEW_E, fs=7.6)
     box(ax, 55.9, 50.0, 16.1, 6.6, "Path smoother（可选）\n角点圆滑（S-G / Simple）\n保持走廊与障碍约束\n（也可并入 SUPER）", fc=NEW, ec=NEW_E, fs=7.8)
-    box(ax, 55.9, 42.0, 16.1, 6.6, "Follower（核心；可换 MPPI/MPC）\n前视 L=clamp(k·v,Lmin,Lmax)\n曲率限速 v≤√(a_lat·R)\n"
-                                     "终点减速 · 下限 v_floor（不替代飞控 PID）", fc=NEW, ec=NEW_E, fs=7.6)
+    box(ax, 55.9, 42.0, 16.1, 6.6, "Follower（备选：仅当规划不能连续时）\n前视 L=clamp(k·v,Lmin,Lmax)\n曲率限速 v≤√(a_lat·R)\n"
+                                     "终点减速 · 下限 v_floor（不替代飞控 PID）
+（规划连续时：直接发 MINCO 的 PVA，不需要它）", fc=NEW, ec=NEW_E, fs=7.6)
 
     # ================= 第二行：指令 → 桥/飞控（右→左） =================
     frame(ax, 1, 15.5, 62, 18.5, "④ 指令整形（右→左）   +   ⑤ 桥 + 飞控（闭环回左）")
