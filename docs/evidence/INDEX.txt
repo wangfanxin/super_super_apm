@@ -86,3 +86,12 @@ docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
   planexec-phase90a.png   plan A 首测（LIO stale 中止前窗口 P1 0.291）
   复算：python3 scripts/plan_exec.py --tag <run> [--fig out.png]；quality_rows.py 已含 P1 行
 
+== 当前最佳配置四图复测（2026-11-27，44 + REF_ALONG_FLOOR=0.9）
+  sheet-BEST-94a.png     frozen hex12（14/15，角点真值 0.09-0.54，P1 PASS）
+  sheet-BEST-98s22.png   s22（14/15，角点真值 0.42-0.70，P1 PASS）
+  sheet-BEST-98s23.png   s23（15/15，角点真值 0.10-0.70，P1 PASS）
+  sheet-BEST-98s24.png   s24（15/15，角点真值 0.04-0.71，P1 FAIL 1 个 1.29m 尖峰）
+  sheet-BEST-multimap.png 四图 topdown/clearance/P1 对照
+  BEST-fourmap.txt      四图数字表
+  每组另有 15 张单图：docs/evidence/final/phase{94a,98s22,98s23,98s24}-01-01_* + planexec-best-*.png
+

@@ -1,0 +1,18 @@
+BEST config = 44 baseline (agile + no-retract + PRE_GOAL 0.8, corner 0.8) + REF_ALONG_FLOOR=0.9
+
+frozen hex12 94a     accept=W4           corner truth=[0.09, 0.54, 0.30, 0.40, 0.45, 0.27] cmdmin=0.25 W6=0.170/0.257 Q3=PASS P1=PASS Q1=2 seg
+   Q4 visits ok=2;  Q4 corner dynamics (dwell<=3.5 s, vmin>=0.40 m/s)       c1 FAIL dwell 2.96 vmin 0.06!; dwell 2.99 vmin 0.52; c2 ok dwell 2.99 vmin 0.54; dwell 3.06 vmin 0.65; c3 FAIL dw
+   P1: time-aligned h: p90 0.226 m, max 0.917 m, spikes>0.5m: 8 (longest 0.60 s, peak 0.92), spikes>1.0m: 0 | geometric_h p90 0.107 max 0.584
+seed s22     98s22   accept=W4           corner truth=[0.56, 0.47, 0.70, 0.58, 0.42, 0.48] cmdmin=0.21 W6=0.175/0.260 Q3=PASS P1=PASS Q1=2 seg
+   Q4 visits ok=2;  Q4 corner dynamics (dwell<=3.5 s, vmin>=0.40 m/s)       c1 FAIL dwell 3.14 vmin 0.55; dwell 3.67 vmin 0.04!; c2 ok dwell 2.89 vmin 0.45; dwell 3.18 vmin 0.58; c3 FAIL dw
+   P1: time-aligned h: p90 0.232 m, max 0.925 m, spikes>0.5m: 7 (longest 0.66 s, peak 0.92), spikes>1.0m: 0 | geometric_h p90 0.116 max 0.518
+seed s23     98s23   accept=15/15        corner truth=[0.10, 0.70, 0.37, 0.54, 0.50, 0.25] cmdmin=0.14 W6=0.167/0.240 Q3=PASS P1=PASS Q1=1 seg
+   Q4 visits ok=2;  Q4 corner dynamics (dwell<=3.5 s, vmin>=0.40 m/s)       c1 FAIL dwell 3.88 vmin 0.04!; dwell 3.01 vmin 0.27!; c2 ok dwell 3.08 vmin 0.70; dwell 2.91 vmin 0.70; c3 FAIL d
+   P1: time-aligned h: p90 0.208 m, max 0.767 m, spikes>0.5m: 4 (longest 0.55 s, peak 0.77), spikes>1.0m: 0 | geometric_h p90 0.100 max 0.250
+seed s24     98s24   accept=15/15        corner truth=[0.38, 0.71, 0.04, 0.40, 0.39, 0.32] cmdmin=0.19 W6=0.173/0.276 Q3=PASS P1=FAIL Q1=1 seg
+   Q4 visits ok=1;  Q4 corner dynamics (dwell<=3.5 s, vmin>=0.40 m/s)       c1 FAIL dwell 3.12 vmin 0.37!; dwell 3.15 vmin 0.04!; c2 ok dwell 3.07 vmin 0.70; dwell 3.12 vmin 0.63; c3 FAIL d
+   P1: time-aligned h: p90 0.246 m, max 1.292 m, spikes>0.5m: 5 (longest 0.89 s, peak 1.29), spikes>1.0m: 1 (longest 0.49 s, peak 1.29) | geometric_h p90 0.128 max 1.0
+
+note: W4 (point clearance) is the only failing acceptance row on frozen/s22; s23/s24 are 15/15.
+note: Q2 body-radius is recorded-only in this speed phase (safety not gated).
+note: H0-H6 all PASS on the four runs (host clean, WARMUP 150 s for the seed retries).
