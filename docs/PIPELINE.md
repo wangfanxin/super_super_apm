@@ -178,7 +178,7 @@ WORLD_NAME=forest_hex12_s22.yaml <其余飞行环境> bash scripts/fly_hex2.sh g
 flowchart LR
   subgraph SIM[① 仿真/传感器（仅 SITL）]
     SITL[ArduPilot SITL<br/>ArduCopter 4.7.1 · 1 kg/250 mm]
-    LDS[LiDAR+IMU 仿真<br/>scan ~7 Hz · IMU 200 Hz]
+    LDS[LiDAR+IMU 仿真<br/>scan 标称 10 Hz（实测 9.4–9.5 Hz）<br/>IMU 200 Hz（实测 ~181 Hz）]
     TAP[(真值 tap<br/>1 kHz)]
   end
   subgraph LOC[② 定位/地图]
@@ -188,9 +188,9 @@ flowchart LR
   subgraph PLAN[③ 目标·规划·跟随（新增/替换）]
     RM[Route Manager<br/>路线 poses · pass-by 0.5–0.7 m 记账<br/>GOAL CHECKER 仅终点 · PROGRESS CHECKER]
     SUP[SUPER planner<br/>多航点/through-poses<br/>重规划剩余路径 1–3 Hz]
-    SM[Path smoother<br/>角点圆滑 · 走廊约束]
-    FL[Follower RPP<br/>前视 + 曲率限速 + 终点减速 + v_floor]
-    VS[Velocity smoother<br/>唯一 max_v/max_a/max_jerk]
+    SM[Path smoother（可选）<br/>角点圆滑 · 走廊约束]
+    FL[Follower（核心，可换 MPPI/MPC）<br/>前视 + 曲率限速 + 终点减速 + v_floor<br/>不替代飞控 PID]
+    VS[Velocity smoother（可选/合并层）<br/>唯一 max_v/max_a/max_jerk]
   end
   subgraph FCU[④ 桥+飞控]
     SH[Command shaper<br/>PVA 100 Hz · L→W · z 基准 · stale/hold]
@@ -243,3 +243,9 @@ flowchart LR
 判据口径（与 `docs/ACCEPTANCE.md`、`FLIGHT-ANALYSIS` §74/§76 一致）：
 H0–H6 飞行有效性 → 15 行（W1/W1b 到点、W2 速度、W6 跟踪；W4/Q2 本阶段记录）→ Q1/Q3/Q4 + **P1 规划-执行偏差与尖峰** →
 ≥4 张同规则不同 seed 图 → 速度阶梯（4/6/8 m/s，大世界同柱距）。
+
+> **注（2026-11-27，owner 提问后修正）**：LiDAR 仿真的**标称扫描率是 10 Hz**（`sim/src/lidar_imu.py --scan-hz 10.0`，
+> 10000 点/帧）；近期四次飞行（94a/98s22/98s23/98s24）实测 cloud **9.40–9.48 Hz**、IMU 实测 ~181 Hz，
+> raycast 6–8 ms/帧。旧图里写的 "~7 Hz" 是更早、主机被抢占时的测量值（历史记录保留，但**不是本配置的规格**）；
+> 换到 1546 柱的大世界（hex16/hex18）时 raycast 负载会显著上升（phase88a 曾出现 p50 22 ms、max 2.95 s、H6 FAIL），
+> 所以大世界首先要解决的是 LiDAR/主机负载，而不是改 10 Hz 这个标称值。

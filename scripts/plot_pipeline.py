@@ -81,7 +81,7 @@ def main() -> int:
     box(ax, 1.8, 50.0, 13.2, 6.6,
         "ArduPilot SITL\nArduCopter 4.7.1\n1 kg / 250 mm 机体模型", fs=8.2)
     box(ax, 1.8, 42.0, 13.2, 6.6,
-        "LiDAR + IMU 仿真\nscan ~7 Hz · IMU 200 Hz\nraycast 由 SITL 位姿驱动", fs=8.2)
+        "LiDAR + IMU 仿真\nscan 标称 10 Hz（近期实测 9.4–9.5 Hz）\nIMU 标称 200 Hz（实测 ~181 Hz）\nraycast 由 SITL 位姿驱动", fs=8.2)
     box(ax, 17.2, 50.0, 13.6, 6.6, "Super-LIO\nLiDAR-惯性里程计\nL 系 pose/vel（~50 Hz）", fs=8.4)
     box(ax, 17.2, 42.0, 13.6, 6.6,
         "ROG-Map 栅格 + 膨胀\nOCCUPIED / KNOWN_FREE\n3×3 m 角点 keepout", fs=8.4)
@@ -94,9 +94,9 @@ def main() -> int:
     box(ax, 36.4, 42.0, 17.6, 6.6,
         "SUPER planner\n多航点 / through-poses\nA* + MINCO 走廊优化\n"
         "固定速率重规划『剩余路径』(1–3 Hz)\n路径有效则不重规划", fc=NEW, ec=NEW_E, fs=7.6)
-    box(ax, 55.9, 50.0, 16.1, 6.6, "Path smoother（新）\n角点圆滑（S-G / Simple）\n保持走廊与障碍约束\n（独立层 + 单测）", fc=NEW, ec=NEW_E, fs=7.8)
-    box(ax, 55.9, 42.0, 16.1, 6.6, "Follower（新，RPP 式）\n前视 L=clamp(k·v,Lmin,Lmax)\n曲率限速 v≤√(a_lat·R)\n"
-                                     "终点减速 · 速度下限 v_floor", fc=NEW, ec=NEW_E, fs=7.6)
+    box(ax, 55.9, 50.0, 16.1, 6.6, "Path smoother（可选）\n角点圆滑（S-G / Simple）\n保持走廊与障碍约束\n（也可并入 SUPER）", fc=NEW, ec=NEW_E, fs=7.8)
+    box(ax, 55.9, 42.0, 16.1, 6.6, "Follower（核心；可换 MPPI/MPC）\n前视 L=clamp(k·v,Lmin,Lmax)\n曲率限速 v≤√(a_lat·R)\n"
+                                     "终点减速 · 下限 v_floor（不替代飞控 PID）", fc=NEW, ec=NEW_E, fs=7.6)
 
     # ================= 第二行：指令 → 桥/飞控（右→左） =================
     frame(ax, 1, 15.5, 62, 18.5, "④ 指令整形（右→左）   +   ⑤ 桥 + 飞控（闭环回左）")
@@ -106,7 +106,7 @@ def main() -> int:
     box(ax, 50.2, 20.5, 12.4, 7.2, "bridge（MAVLink）\n#331 ODOMETRY 48 Hz\n#84 PVA setpoint 50 Hz\n"
                                      "class-76：arm/takeoff/mode/LAND", fs=7.6)
     box(ax, 50.2, 29.0, 12.4, 3.9, "Command shaper\nPVA 100 Hz · L→W\nz 基准 + stale/hold 后备", fc=NEW, ec=NEW_E, fs=7.8)
-    box(ax, 34.2, 29.0, 12.8, 3.9, "Velocity smoother（新）\n唯一一层 max_v / max_a / max_jerk", fc=NEW, ec=NEW_E, fs=7.8)
+    box(ax, 34.2, 29.0, 12.8, 3.9, "Velocity smoother（可选/合并层）\n唯一 max_v / max_a / max_jerk\n（替换散落的 slew/ACC 钳位）", fc=NEW, ec=NEW_E, fs=7.8)
 
     # supervisor
     box(ax, 66.5, 25.0, 15.2, 8.6,
@@ -151,7 +151,7 @@ def main() -> int:
     ax.add_patch(FancyArrowPatch((0.55, 24.1), (0.55, 53.3), arrowstyle="-", linewidth=2.0,
                                  color=NEW_E, zorder=1))
     arrow(ax, (0.55, 53.3), (1.8, 53.3), "", color=NEW_E, lw=2.0)
-    ax.text(8.6, 58.8, "闭环：PSC 电机 → SITL 物理 → 新 scan（~7 Hz）", fontsize=8.0,
+    ax.text(8.6, 58.8, "闭环：PSC 电机 → SITL 物理 → 新 scan（10 Hz）", fontsize=8.0,
             color=NEW_E, family=FONT, ha="center", va="center",
             bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.9))
     # --- supervisor ---
