@@ -327,6 +327,9 @@ def main() -> int:
     ap.add_argument("--ref-catchup-mps", type=float, default=0.5,
                     help="参考最多可以比规划自己快多少（m/s）。这是 ke2-01-01 那个'追缺口追到 6 m/s、"
                          "飞出场地'的直接修复：参考只许追赶，不许超过它追的那条轨迹太多。")
+    ap.add_argument("--ref-faithful", type=int, default=0,
+                    help="1 = 忠实发布模式：跳过调速器（along 律），发布速度直接取 SUPER 规划速度，只过一层"
+                         "加速度限幅（|dv| <= ref-gov-acc*dt）+ 位置洗涤器；用于验证『MINCO 的 PVA 本来就够好』。")
     ap.add_argument("--ref-washout-tau", type=float, default=0.0,
                     help=">0 = 参考交接『洗涤器』：当新参考落后于已发布点时，不冻结/不零速，而是保持位置连续"
                          "（offset = last_pub - plan）并以时间常数 tau 秒把它洗掉；offset 的变化率 "
@@ -1634,7 +1637,7 @@ def main() -> int:
         #   位置和速度由同一个 v 产生，所以处处自洽、处处连续，速度天然有界。
         #   注意它**每拍都要跑**：第一版把它写进了 `if nadv > 1e-3`（只在有位移的那拍更新），
         #   那样静止的拍就不会收敛。
-        if args.ref_gov_kp > 0.0 and not state.get("is_hold"):
+        if args.ref_gov_kp > 0.0 and not state.get("is_hold") and not int(getattr(args, "ref_faithful", 0)):
             if state.get("p_ref") is None:
                 state["p_ref"] = s.p.copy()
             dtg = (now - state["last_pub_t"]) if state.get("last_pub_t") is not None \
@@ -1933,6 +1936,19 @@ def main() -> int:
                 state["wash_off"] = None
         elif state.get("wash_off") is not None and float(getattr(args, "ref_washout_tau", 0.0) or 0.0) <= 0.0:
             state["wash_off"] = None
+        if int(getattr(args, "ref_faithful", 0)) and not state.get("is_hold"):
+            # WHTF-REF-FAITHFUL (Phase 1): publish SUPER's own velocity, only an acceleration limiter.
+            _dtf = max(1e-3, now - float(state.get("last_pub_t", now - 1.0 / max(1.0, args.cmd_rate))))
+            _vprev = state.get("faith_v")
+            _vcur = np.asarray(s.v, float).copy()
+            if _vprev is not None:
+                _dv = _vcur - np.asarray(_vprev, float)
+                _amax = float(getattr(args, "ref_gov_acc", 8.0) or 8.0) * _dtf
+                _n = float(np.linalg.norm(_dv[:2]))
+                if _n > _amax and _n > 1e-9:
+                    _vcur[:2] = np.asarray(_vprev, float)[:2] + _dv[:2] * (_amax / _n)
+            state["faith_v"] = _vcur
+            s.v = _vcur
         state["_v_before_lp"] = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
         _tau = float(getattr(args, "ref_lp_tau", 0.0) or 0.0)
         if _tau > 0.0:
