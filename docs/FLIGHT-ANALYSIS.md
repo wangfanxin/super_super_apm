@@ -1047,3 +1047,25 @@ round 26 试 `REF_FF=1`（让速度前馈与钳后位置步长完全自洽）看
   说明"参考下限 + 角点速度"在这档已超出可跟踪范围；安全行（W4/W6）本就放开，但**速度本身不可重复**，不能算达成。
 - 意外收获：**真值速度 max 8.15 m/s**（飞行中，不是台架）说明机体在带柱环境里具备 8 m/s 瞬时能力，后续 8 m/s 档有物理基础。
 - 下一步：**跳过 hex12 的 2.5 档堆参**，直接去 **hex16（同柱距、更大场地）+ race4b_big（4 m/s）**；若 4 m/s 的 W1b 也保不住，则问题在"角点转弯半径/走廊几何"，需要规划器级改动（把角点当内部点）而不是继续调参考。
+
+## 72. S3（4 m/s，hex16）：三次尝试暴露三件事，仍未拿到有效 4 m/s 趟（2026-11-27 提速阶段）
+
+大世界使用要点（本轮踩到的）：
+1. **世界文件自带 mission corners 和 arena**：`forest_hex16.yaml` 的 corners 在半径 **16 m**（18 个），arena 墙 ±22 m；
+   `SQUARE_M/SQUARE_HALF` 只是任务/验收参数，改世界后必须同步 `SQUARE_HALF=16`、`GEOFENCE_M`（默认 13 会 abort）。
+2. **进场球要随速度放大**：4 m/s 档 `ARRIVE_M=0.3` 会 2 m 过冲、pacer 不换点（W1 1/13）。
+3. 4 m/s 首飞出现 **SITL 模型与 FCU 估计器发散**（truth 飞到 E=32.8 m、truth-FCU 差 11.1 m、level truth max 14.66 m/s）：
+   H5 FAIL、geofence abort，数据不可用。
+
+各趟摘要：
+| 趟 | 世界/围栏 | 配置 | 结果 |
+|---|---|---|---|
+| 84a | hex16，GEOFENCE 13（默认） | race4b_hs，corner 2.5，GOV_MIN 2.0，ARRIVE 0.3 | 13.0 m 处 fence abort；W1 1/13 |
+| 85a | hex16，GEOFENCE 18，SQUARE 30 | 同上 | 13.0 m 处 abort（围栏仍是旧值影响） |
+| 86a | hex16，GEOFENCE 18 | 同上 | 18.01 m 过冲触发 fence abort；W1b 3/13 |
+| 87a | hex16，GEOFENCE 21，ARRIVE 0.8 | 同上 | 64 s 处发散（H5 FAIL、truth 14.66 m/s、E 32.8 m），无效 |
+
+下一步（S3b）：降一档先做 **3 m/s**（max_vel 3 配置：acc 6 / omg 4 / horizon 16 / map_size 40），
+`CORNER_SPEED=2.0`、`GOV_MIN=1.6`、`ARRIVE_M=0.8`、`GEOFENCE_M=21`、`SQUARE_HALF=16`，
+判据：W1b 13/13、W2 p90 ≥2.6、平飞 p50 ≥2.2、角点真值 ≥1.5、H5 必须 PASS；
+若 3 m/s 稳定，再以同样方式抬到 4 m/s（用 race4b 配置），并检查 H6/lidar 帧率。
