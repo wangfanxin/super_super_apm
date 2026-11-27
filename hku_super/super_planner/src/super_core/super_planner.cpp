@@ -54,6 +54,18 @@ namespace super_planner {
 
         time_consuming_.resize(8);
 
+        /// WHTF-CONFIG-LOAD (Phase 1, 2026-11-27): print the flags that Phase 1 relies on, so a flight log
+        /// proves the config file was really loaded (a silent "flag did nothing" is the worst failure mode).
+        std::cout << " -- [SUPER] CONFIG: general_bc=" << (cfg_.general_bc_en ? 1 : 0)
+                  << " keep_old_goal_guide=" << (cfg_.keep_old_goal_guide ? 1 : 0)
+                  << " hot_start=" << (cfg_.hot_start_en ? 1 : 0)
+                  << " hot_ratio=" << cfg_.hot_start_vel_ratio
+                  << " pva_tail_len=" << cfg_.pva_tail_len
+                  << " pva_tail_adaptive=" << (cfg_.pva_tail_adaptive ? 1 : 0)
+                  << " guide_round=" << (cfg_.guide_round_en ? 1 : 0)
+                  << " receding_dis=" << cfg_.receding_dis
+                  << " max_vel=" << cfg_.exp_traj_cfg.max_vel << std::endl;
+
         robot_state_.rcv = false;
         planner_process_start_WT_ = ros_ptr_->getSimTime();
         fov_checker_ = std::make_shared<FOVChecker>(FOVType::OMNI,

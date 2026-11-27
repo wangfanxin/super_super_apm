@@ -1457,3 +1457,26 @@ plan-box 的 stale-resend 规则重写：参考断流 > `--stale-resend-s`(0.8 s
 下一步：① 用 102a/110a/corner0.85 三个候选各重复 2 趟做分布（不急着一趟定论）；
 ② 给 SUPER 加启动日志确认 `general_bc_en/keep_old_goal_guide/hot_start_ratio` 实际生效；分别单测 gbc-only 与 keepgoal-only；
 ③ 若三者都压不住 Q3/W6 波动，回到"跟踪链路"本身（PSC/FF/参考平滑的相互覆盖）做归因，而不是继续在角点速度上加码。
+
+## 85. Phase 1 round 7：主机负载是最大噪声源；SUPER 配置加载日志上线（2026-11-27）
+
+### 85.1 主机负载证据（本轮连续无效趟的根因）
+`uptime`/`ps`：load 1min 2.25、5min 5.58；Top CPU：**snapfuse 78%、journalctl 58%、snapd 23%、
+subiquity-serve 15%、systemd 18%** —— 全是与本工程无关的系统服务。
+这解释了 111a/111b/112a/115a 的 H6 skipped 暴增、LIO stale、truth-FCU 发散（raycast max 1.5 s 级）。
+**结论：H6/无效趟主要不是配置问题，是主机 CPU 被系统服务抢走。**
+
+### 85.2 缓解：LIDAR_POINTS=8000（sim-only，owner 已批准放宽仿真负载）
+116a（LIDAR_POINTS=8000，其余同 102a）：**H6 干净（raycast p50 10.4 ms、max 53 ms、skipped 5）**，
+W1/W1b/W2 全过；但 W6/Q3 仍踩线（W6 p90 0.291 但 per-quarter spread 超；Q3 0.274；P1 尖峰 1.10）。
+→ 降点云能换来有效趟，但**不解决 W6/Q3 本身**（它们仍是 102a 级边缘性能）。
+
+### 85.3 SUPER 配置加载日志（新增）
+`super_planner.cpp` 启动时打印：
+`-- [SUPER] CONFIG: general_bc=1 keep_old_goal_guide=0 hot_start=1 hot_ratio=0.6 pva_tail_len=0 ... max_vel=1.35`
+115a 日志已验证该行输出（确认 gbc 配置真实加载）；但 115a 因 H6 被主机饿死而无效，**gbc-only 的效果仍未测到**。
+
+### 85.4 下一步
+1. 飞之前先看 `uptime` 1min load；>4 或 Top CPU 里出现 snapfuse/journalctl 时改用 `LIDAR_POINTS=8000`（或等负载下降）；
+2. 在"有效趟"前提下补测 **gbc-only / keepgoal-only**（116a 显示 8000 点可拿到有效趟）；
+3. W6/Q3 边缘问题按 §84 计划回到跟踪链路归因（先看 W6 的 per-quarter spread 是哪一段超）。
