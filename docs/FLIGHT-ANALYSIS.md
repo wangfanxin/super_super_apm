@@ -1342,3 +1342,29 @@ BT navigator / NavigateThroughPoses+RemovePassedGoals / velocity_smoother / smoo
   Phase 1 的离线判据改为：**腿起点 0.8 s 内最低 published |v| ≥ 0.9×该腿起点速度**、恢复 ≤0.2 s、短冻结=0。
 - 下一步（仍在 44/washout 基线上）：① washout 参数（vmax 0.20–0.25、τ1.2–1.5）减小残差；
   ② floor 0.9→0.95、corner 0.8→0.85 小步抬升，逐趟看 Q4/P1/W6；③ Q4 的第二圈回环单独查；④ 达标后进四图。
+
+## 80. Phase 1 继续：washout 基线上角点 0.9 让 Q4 接近通过；corner 1.0 暴露 FSM 死锁（2026-11-27）
+
+### 80.1 结果（frozen hex12，44+washout τ2.0/vmax0.15+floor0.9）
+
+| 趟 | corner | 15 行 | W4 | W6 p90 | Q1 | Q3 | P1 | 角点真值（6 个） | Q4 |
+|---|---|---|---|---|---|---|---|---|---|
+| 100a | 0.8 | **15/15** | **+0.041 CLEAR** | 0.257 | 2 | 0.222 | PASS（无>1m） | 0.35/0.31/0.28/0.39/0.54/0.42 | 仍差（多 <0.4） |
+| **102a** | **0.9** | 14/15（W4） | −0.050（record-only） | 0.270 | **1** | **0.223 PASS** | **PASS** | **0.73/0.69/0.67/0.55/0.75/0.53** | **c1/c4/c5 ok；c2 仅 dwell 3.57>3.5、c3 第二访 0.32、c6 第二访 0.01（回环）** |
+| 103a/103b | 1.0 | 无效 | — | — | — | — | — | — | 103a LIO 断流（10.2 s）；103b **plan-box 在 WAIT_GOAL 静默 3 s → ABORT** |
+
+**102a 的意义**：角点真值首次**全部 ≥0.53**（第一圈全部 ≥0.4 且 Q4 3/6 角点整趟通过），
+Q3/P1/W6 全 PASS，Q1 降到 1 段；15 行只剩 W4（安全行，已批准 record-only）。Q4 的残余是
+**个别 dwell 略超（c2 3.57 s）和两条第二圈访问回环（c3 0.32、c6 0.01）**，不再是"停-转"。
+
+### 80.2 corner 1.0 暴露的新问题（要修）
+103b：`Traj finish` 后 FSM 进入 `WAIT_GOAL`，但 pacer 未到点（水平误差 10.1 m 是下一条腿的目标），
+plan box 不重发 goal → SUPER 静默 3 s → supervisor ABORT。说明 **FSM 对"轨迹提前结束但未到点"没有兜底**。
+修复（下轮）：plan-box 在检测到 SUPER 参考静默 >0.5 s 且 pacer 未到时**重发当前 goal**；
+FSM 的 WAIT_GOAL 也应接受重复 goal 并重新 GENERATE_TRAJ（而不是等新目标）。
+corner 1.0 本身也更容易让计划在角点前结束（CUSP 6 次/137° 折叠），暂不作为默认。
+
+### 80.3 下一步
+1. 加 **WAIT_GOAL 死锁兜底**（plan-box 重发 goal + 相关日志），保证任何配置下不再出现"静默 3 s"；
+2. 102a 基线上调 `PRE_GOAL_M=1.2` / `ARRIVE_M=0.5`，目标：消掉 c2 的 3.57 s dwell 与第二圈回环；
+3. 通过后按 Phase 2 跑四图（frozen+s22/s23/s24），判据：Q4 全过、Q1=0、P1 PASS、速度 p50≥1.2/p90≥1.6。
