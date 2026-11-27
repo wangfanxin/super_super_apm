@@ -100,3 +100,9 @@ docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
                          结论：换段 |dv| p50 0.01 / max 0.12 m/s、角度 max 2.5°，**换段几乎不连续**；
                          掉速发生在每条腿起点后 0.4-0.6 s，伴随短冻结（见 FLIGHT-ANALYSIS §77）
 
+== 当前最佳单趟 phase102a-01-01（44基线+REF-WASHOUT τ2.0/vmax0.15+REF_ALONG_FLOOR=0.9+corner0.9）
+  sheet-BEST-102a.png    全套图 contact sheet（topdown/launch/lap1/lap2/xyz-t/速度/clearance/P1/audit/6角点）
+  phase102a-01-01_topdown.png 等 15 张单图 + planexec-102a.png + handover-audit-102a.png
+  15行 14/15（W4 record-only，owner已批准）；Q1=1、Q3 0.223 PASS、P1 PASS、W6 0.270；角点首访真值 0.53–0.75
+  ⚠ 重复性：同配置复飞 Q3 0.309/0.309、W6 0.313/0.346 —— 该配置是"边缘好趟"，尚未稳定达标（FLIGHT-ANALYSIS §84/§85）
+
