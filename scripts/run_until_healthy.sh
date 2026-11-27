@@ -204,7 +204,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --ref-gov-along ${REF_GOV_ALONG:-0} \
 --ref-gov-ks ${REF_GOV_KS:-4.0} \
 --ref-gov-dec ${REF_GOV_DEC:-2.0} \
---ref-gov-min-mps ${REF_GOV_MIN:-0} --ref-gov-plan-feed ${REF_GOV_PLAN_FEED:-0} --ref-gov-plan-feed-ks ${REF_GOV_PLAN_FEED_KS:-4.0} \
+--ref-gov-min-mps ${REF_GOV_MIN:-0} --leg-debug ${LEG_DEBUG:-0} --ref-washout-tau ${REF_WASHOUT_TAU:-0} --ref-washout-vmax ${REF_WASHOUT_VMAX:-0.15} --ref-gov-plan-feed ${REF_GOV_PLAN_FEED:-0} --ref-gov-plan-feed-ks ${REF_GOV_PLAN_FEED_KS:-4.0} \
 --ref-along-floor ${REF_ALONG_FLOOR:-0} \
 --ref-catchup-mps ${REF_CATCHUP_MPS:-0.5} \
 --ref-lead-s ${REF_LEAD_S:-0} \

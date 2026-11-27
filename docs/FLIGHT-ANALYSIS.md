@@ -1309,3 +1309,36 @@ BT navigator / NavigateThroughPoses+RemovePassedGoals / velocity_smoother / smoo
   演进清单 = patch22 → 真正的 through-poses/goal queue；velocity smoother 合并为一层；smoother 用标准算法并在走廊内约束。
 - **风险**：删除必须在 Phase 1 连续规划通过后逐项进行，每删一组用离线 audit（换段/腿起点 dip）+ 一趟 SITL 回归；
   任何一组删除若使 P1 出现 >1 m 尖峰或 W6 p90 >0.35，即回滚该组。
+
+## 79. Phase 1 首个真修复：REF-WASHOUT（参考交接"洗涤器"）——100a 首次 15/15 且 W4 CLEAR（2026-11-27）
+
+### 79.1 诊断（phase99a，带 LEG_DEBUG 的溯源飞行；该趟后段因主机 H6 饿死而无效，但前 9 条腿数据可用）
+
+- **腿起点掉速不是 MINCO 的锅**：leg 3–9 的 `raw`（SUPER 发布速度）=0.74–1.06 m/s；
+- **也不是调速器的锅**：`gov`=0.80（有 `REF_ALONG_FLOOR=0.9`）；
+- **是 `--ref-no-retract` 的冻结+清零**：这些拍 `clamp=0.00`、`final`=0.02–0.48，`retr` 计数持续 +1；
+  最后两条腿（10–11）`raw=0.80` 恒定、`final=0.02–0.12`。
+- 机理：换腿时 SUPER 新轨迹从**实测位姿**起规划，而已发布参考点领先实测约 0.3–0.5 m（跟跟踪延迟），
+  所以新参考"落在已发布点后方" → no-retract 冻结位置、清零速度 → 腿起点 reference 掉速。
+
+### 79.2 修复：`--ref-washout-tau` / `--ref-washout-vmax`（plan-box，不改 SUPER/接口）
+
+不冻结、不零速：保持 `s.v = 规划速度`，把"新参考与已发布点的差"作为**衰减 offset** 叠加到发布位置：
+`p_pub = p_plan + off`，`off` 以 τ 秒指数衰减，且 `|doff/dt| ≤ vmax`（默认 0.15 m/s），
+因此位置连续、速度只被轻微修正（最多 -0.15 m/s），等 offset 洗完就完全回到规划参考。
+
+### 79.3 实测
+
+| 趟 | 配置 | 15 行 | H 行 | W4 | W6 p90 | Q3 | P1 | Q1 | Q4（角点真值） |
+|---|---|---|---|---|---|---|---|---|---|
+| **100a** | 44 基线 + **washout τ2.0/vmax0.15** + `REF_ALONG_FLOOR=0.9`（corner 0.8） | **15/15** | 全 True | **+0.041 CLEAR** | 0.257 | **0.222 PASS** | **PASS（2 个>0.5m，无>1m）** | 2 段 | 0.28–0.63（c6 第二圈 0.01）❌ |
+| 101a | 再抬 floor=1.0、corner=0.9 | —（LIO stale abort，仅 12/13 点） | H5/H6 True | — | 0.288 | 0.262 ❌ | 尖峰 1.14 ❌ | 1 段 | 变差 | **否决** |
+
+**100a 是到目前为止最好的一趟**：首次做到 **15 行全过 + W4 CLEAR + Q3/P1/W6 全 PASS**；
+余下问题集中在 **Q4（角点真值最低 0.28–0.63，个别第二圈 0.01）** 与 Q1（2 段）、Q2（−0.059）。
+
+### 79.4 注意/下一步
+- 审计脚本的"leg-start dip / cruise"比例会低估（角点出弯本来就慢于腿中巡航）；
+  Phase 1 的离线判据改为：**腿起点 0.8 s 内最低 published |v| ≥ 0.9×该腿起点速度**、恢复 ≤0.2 s、短冻结=0。
+- 下一步（仍在 44/washout 基线上）：① washout 参数（vmax 0.20–0.25、τ1.2–1.5）减小残差；
+  ② floor 0.9→0.95、corner 0.8→0.85 小步抬升，逐趟看 Q4/P1/W6；③ Q4 的第二圈回环单独查；④ 达标后进四图。

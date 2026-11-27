@@ -150,6 +150,20 @@ def audited(run, tag):
         # time until the published speed exceeds 0.5 m/s after the segment start (corner restart cost)
         above = np.flatnonzero(ss > 0.5)
         s["t_to_0p5"] = float(t[i0 + above[0]] - t[i0]) if above.size else float("nan")
+        # ---- Phase-1 offline gate: LEG-START DIP ------------------------------------------
+        # what the aircraft actually sees in the first 0.8 s of a new leg, against that leg's own
+        # cruise speed.  A continuous plan should keep dip08/cruise near 1.0.
+        n08 = int(min(len(ss), max(3, int(round(0.8 / max(0.01, float(np.median(np.diff(t[i0:i1])))))))))
+        if n08 >= 3:
+            first = ss[:n08]
+            jdip = int(np.argmin(first))
+            cruise = float(np.percentile(ss, 90)) if ss.size else float("nan")
+            target = 0.8 * cruise
+            after = jdip + int(np.argmax(ss[jdip:] >= target)) if np.any(ss[jdip:] >= target) else -1
+            s["dip08"] = float(first[jdip])
+            s["dip08_ratio"] = float(first[jdip] / cruise) if cruise > 0.1 else float("nan")
+            s["t_rec"] = float(t[i0 + after] - t[i0 + jdip]) if after >= 0 else float("nan")
+            s["n08"] = n08
     # inner segments only (drop the pad/vertical first and the landing last)
     tids = sorted({s["tid"] for s in seg_out})
     inner = [s for s in seg_out if len(tids) > 2 and tids[1] <= s["tid"] <= tids[-2]]
@@ -157,7 +171,9 @@ def audited(run, tag):
     out = {"tag": tag, "n_cmd": int(len(t)), "n_seg": len(seg_out), "n_ho": len(ho),
            "segments": seg_out, "handovers": ho,
            "inner": [{"tid": s["tid"], "v_start": s["v_start"], "t_to_0p5": s["t_to_0p5"],
-                      "vmin": s["vmin"], "minv_from_start_s": s["minv_from_start_s"]} for s in inner],
+                      "vmin": s["vmin"], "minv_from_start_s": s["minv_from_start_s"],
+                      "dip08": s.get("dip08"), "dip08_ratio": s.get("dip08_ratio"),
+                      "t_rec": s.get("t_rec")} for s in inner],
            "short_holds": short_holds,
            "holds": holds, "n_holds": len(holds),
            "glitches": glitches[:200], "n_glitches": len(glitches),
@@ -244,6 +260,15 @@ def report(o):
         sh = [h["dur"] for h in o.get("short_holds", [])]
         print("   short frozen-holds (<5 s): %d, total %.2f s, longest %.2f s" %
               (len(sh), sum(sh), max(sh) if sh else 0.0))
+        dip = [x["dip08"] for x in o["inner"] if x.get("dip08") is not None]
+        rat = [x["dip08_ratio"] for x in o["inner"] if x.get("dip08_ratio") is not None and np.isfinite(x["dip08_ratio"])]
+        rec = [x["t_rec"] for x in o["inner"] if x.get("t_rec") is not None and np.isfinite(x["t_rec"])]
+        if dip:
+            print("   LEG-START DIP (first 0.8 s): min |v| median %.2f m/s, ratio to leg cruise median %.2f, "
+                  "recovery to 0.8*cruise median %.2f s | legs with ratio<0.6: %d/%d" %
+                  (float(np.median(dip)), float(np.median(rat)) if rat else float("nan"),
+                   float(np.median(rec)) if rec else float("nan"),
+                   sum(1 for r in rat if r < 0.6), len(rat)))
 
 
 def figure(tags, out):

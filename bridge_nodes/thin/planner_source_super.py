@@ -327,6 +327,15 @@ def main() -> int:
     ap.add_argument("--ref-catchup-mps", type=float, default=0.5,
                     help="参考最多可以比规划自己快多少（m/s）。这是 ke2-01-01 那个'追缺口追到 6 m/s、"
                          "飞出场地'的直接修复：参考只许追赶，不许超过它追的那条轨迹太多。")
+    ap.add_argument("--ref-washout-tau", type=float, default=0.0,
+                    help=">0 = 参考交接『洗涤器』：当新参考落后于已发布点时，不冻结/不零速，而是保持位置连续"
+                         "（offset = last_pub - plan）并以时间常数 tau 秒把它洗掉；offset 的变化率 "
+                         "≤ --ref-washout-vmax。这样参考位置不回跳、速度也不会掉到 0。0=关（旧 no-retract 行为）。")
+    ap.add_argument("--ref-washout-vmax", type=float, default=0.15,
+                    help="洗涤器 offset 变化率上限（m/s），默认 0.15（即速度最多被拉低 0.15 m/s）。")
+    ap.add_argument("--leg-debug", type=int, default=0,
+                    help="1 = 每次换 leg 后的 1.2 s 内打印逐级速度（raw SUPER / slew / clamp / governor / final），"
+                         "用来定位『腿起点掉速』是规划侧还是薄层侧。0=关。")
     ap.add_argument("--ref-gov-plan-feed", type=int, default=0,
                     help="1 = 调速器沿航迹律改成**规划速度前馈 + P 修正**：v_ref = un + ks*(dxy·u)。"
                          "现有律 v_ref = kp*(dxy·u) 在角点必然掉到 0.1-0.3 m/s（实测 dxyalong 只剩 0.02 m），"
@@ -1462,7 +1471,24 @@ def main() -> int:
                 if retract < -0.05:
                     state["n_retract"] = state.get("n_retract", 0) + 1
                     state["_rdr_hit"] = True
-                    if int(getattr(args, "ref_handover_gate", 0)) and state.get("last_dir") is not None:
+                    if float(getattr(args, "ref_washout_tau", 0.0) or 0.0) > 0.0:
+                        # WHTF-REF-WASHOUT (Phase 1, 2026-11-27): keep POSITION continuous instead of
+                        # freezing/zeroing.  MEASURED phase99a: at every leg start the new SUPER plan
+                        # starts from the MEASURED pose while the published reference is ahead by the
+                        # tracking lag (~0.3-0.5 m); the old no-retract branch then froze position and
+                        # zeroed velocity (clamp=0.00, final 0.02-0.36 while raw/slew/gov were 0.80).
+                        # Washout keeps s.v = plan velocity, re-anchors a decaying offset so the
+                        # published position stays continuous, and limits the offset rate.
+                        _woff = state.get("wash_off")
+                        _wnew = np.asarray(state["last_pub"], float)[:2] - np.asarray(s.p, float)[:2]
+                        if _woff is None or float(np.linalg.norm(np.asarray(_woff, float)[:2])) < 0.05:
+                            state["wash_off"] = np.array([_wnew[0], _wnew[1], 0.0], float)
+                            state["wash_n"] = int(state.get("wash_n", 0)) + 1
+                            if state["wash_n"] in (1, 10, 50, 200):
+                                print("REF-WASHOUT #%d: re-anchor |off| %.3f m at leg start"
+                                      % (state["wash_n"], float(np.linalg.norm(_wnew))), flush=True)
+                        # s.p / s.v / s.a stay = plan; the offset is applied at publish time below.
+                    elif int(getattr(args, "ref_handover_gate", 0)) and state.get("last_dir") is not None:
                         # WHTF-HANDOVER-GATE (round 17): keep publishing the previous reference --
                         # frozen pose, LAST NON-ZERO velocity -- for a short window instead of a zero step.
                         _gt0 = state.get("gate_t0")
@@ -1855,6 +1881,29 @@ def main() -> int:
         #   发布路径上，让飞控也收到更平滑的参考。
         #   实现放在 src/whtf/ros/ref_lp.py（纯 numpy，可单测：scripts/test_ref_lp.py 断言
         #   τ=0 严格直通、直流增益 1、无过冲、不超前、dt≤0 不动状态）。
+        # WHTF-REF-WASHOUT (cont.): publish plan + decaying offset; offset rate capped.
+        _wtau = float(getattr(args, "ref_washout_tau", 0.0) or 0.0)
+        if _wtau > 0.0 and state.get("wash_off") is not None:
+            _dtw = max(1e-3, now - float(state.get("last_pub_t", now - 1.0 / max(1.0, args.cmd_rate))))
+            _woff = np.asarray(state["wash_off"], float).copy()
+            _decay = np.exp(-_dtw / max(0.05, _wtau))
+            _woff_new = _woff * _decay
+            _doff = (_woff_new - _woff) / _dtw
+            _dmax = max(1e-3, float(getattr(args, "ref_washout_vmax", 0.15) or 0.15))
+            _dn = float(np.linalg.norm(_doff[:2]))
+            if _dn > _dmax:
+                _doff = _doff * (_dmax / _dn)
+                _woff_new = _woff + _doff * _dtw
+            s.p = np.asarray(s.p, float).copy()
+            s.p[:2] = s.p[:2] + _woff_new[:2]
+            s.v = np.asarray(s.v, float).copy()
+            s.v[:2] = s.v[:2] + _doff[:2]
+            state["wash_off"] = _woff_new
+            state["wash_v"] = float(np.linalg.norm(_doff[:2]))
+            if float(np.linalg.norm(_woff_new[:2])) < 1e-3:
+                state["wash_off"] = None
+        elif state.get("wash_off") is not None and float(getattr(args, "ref_washout_tau", 0.0) or 0.0) <= 0.0:
+            state["wash_off"] = None
         state["_v_before_lp"] = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
         _tau = float(getattr(args, "ref_lp_tau", 0.0) or 0.0)
         if _tau > 0.0:
@@ -1896,6 +1945,38 @@ def main() -> int:
                               % (state["final_slew_n"], _n, _a, float(np.linalg.norm(_vdes[:2]))),
                               flush=True)
         state["pub_prev"] = (np.asarray(p_pub, float).copy(), np.asarray(v_pub, float).copy())
+        # ★★ LEG-DEBUG (Phase 1, 2026-11-27): what happens in the first 1.2 s of a new leg? ★★
+        if int(getattr(args, "leg_debug", 0)):
+            _leg_now = pacer.i_leg + 1
+            if state.get("leg_dbg_prev") != _leg_now:
+                state["leg_dbg_prev"] = _leg_now
+                state["leg_dbg_t0"] = now
+                state["leg_dbg_n"] = 0
+            _age = now - float(state.get("leg_dbg_t0", now))
+            if _age <= 1.2:
+                state["leg_dbg_n"] = int(state.get("leg_dbg_n", 0)) + 1
+                if state["leg_dbg_n"] % 5 == 1:      # every 5th 100 Hz tick = 50 ms
+                    _raw = 0.0
+                    if state.get("ref") is not None:
+                        try:
+                            _raw = float(np.linalg.norm(np.asarray(state["ref"][1], float)[:2]))
+                        except Exception:  # noqa: BLE001
+                            pass
+                    print("LEGDBG leg=%d age=%.2f raw=%.2f slew=%.2f clamp=%.2f gov=%.2f final=%.2f "
+                          "dxyalong=%.3f un=%.2f hold=%d retr=%d" % (
+                              _leg_now, _age, _raw,
+                              float(state.get("_v_after_slew", -1.0)),
+                              float(state.get("_v_after_clamp", -1.0)),
+                              float(state.get("gov_un", -1.0)),
+                              float(np.linalg.norm(np.asarray(v_pub, float)[:2])),
+                              float(state.get("gov_dxy_along", -999.0)),
+                              float(state.get("gov_un", -1.0)),
+                              int(state.get("is_hold", 0)),
+                              int(state.get("n_retract", 0))), flush=True)
+                    if state.get("wash_off") is not None:
+                        print("   LEGDBG wash |off|=%.3f vcorr=%.2f" % (
+                            float(np.linalg.norm(np.asarray(state["wash_off"], float)[:2])),
+                            float(state.get("wash_v", 0.0))), flush=True)
         # ★★ LOWSPEED PROVENANCE (round 18, temporary) ★★ which stage turns 0.8 m/s into 0.2?
         _vrp = float(np.linalg.norm(np.asarray(v_pub, float)[:2]))
         _now_ls = now
