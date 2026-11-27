@@ -327,6 +327,17 @@ def main() -> int:
     ap.add_argument("--ref-catchup-mps", type=float, default=0.5,
                     help="参考最多可以比规划自己快多少（m/s）。这是 ke2-01-01 那个'追缺口追到 6 m/s、"
                          "飞出场地'的直接修复：参考只许追赶，不许超过它追的那条轨迹太多。")
+    ap.add_argument("--ref-shell-jerk", type=float, default=0.0,
+                    help=">0 = D2.2 单层 PVA 运动学壳：对发布 PVA 做 加速度/加加速度 限幅 + deadband + 数据龄归零。"
+                         "单位 m/s^3；0=关（保持旧行为）。壳只平滑速度/加速度，位置仍取规划位置。")
+    ap.add_argument("--ref-shell-acc", type=float, default=0.0,
+                    help="壳的加速度上限（m/s^2）；0=沿用 ref-gov-acc。")
+    ap.add_argument("--ref-shell-vmax", type=float, default=0.0,
+                    help="壳的最大速度（m/s）；0=不额外限速。")
+    ap.add_argument("--ref-shell-deadband", type=float, default=0.0,
+                    help="速度 deadband（m/s）：目标与当前都小于它时把速度清零。")
+    ap.add_argument("--ref-shell-timeout", type=float, default=0.0,
+                    help="参考数据龄超过该秒数时把 v/a 归零（hold），0=关。")
     ap.add_argument("--ref-faithful", type=int, default=0,
                     help="1 = 忠实发布模式：跳过调速器（along 律），发布速度直接取 SUPER 规划速度，只过一层"
                          "加速度限幅（|dv| <= ref-gov-acc*dt）+ 位置洗涤器；用于验证『MINCO 的 PVA 本来就够好』。")
@@ -1992,6 +2003,51 @@ def main() -> int:
                         print("FINAL-SLEW #%d: |dv| %.2f -> %.2f m/s (bind, |v| now %.2f m/s)"
                               % (state["final_slew_n"], _n, _a, float(np.linalg.norm(_vdes[:2]))),
                               flush=True)
+        # ---- WHTF-PVA-SHELL (D2.2, round 16): ONE kinematic shell for the published PVA ----
+        # The audit (Nav2 velocity_smoother comparison) found the reference is rewritten by ~9 serial
+        # stages with no jerk limit, no deadband and no data-age zeroing.  This shell is the single
+        # place for those: jerk-limited acceleration, optional max speed, deadband, and timeout->hold.
+        # Position stays the planned position; only v/a are smoothed (A/B via --ref-shell-jerk).
+        if float(getattr(args, "ref_shell_jerk", 0.0) or 0.0) > 0.0 and not state.get("is_hold"):
+            _dt_s = max(1e-3, now - float(state.get("last_pub_t", now - 1.0 / max(1.0, args.cmd_rate))))
+            _v_des = np.asarray(v_pub, float).copy()
+            _v_sh = state.get("shell_v")
+            _a_sh = state.get("shell_a")
+            if _v_sh is None or _a_sh is None or _dt_s > 0.5:
+                _v_sh = _v_des.copy()
+                _a_sh = np.zeros(3)
+            _acc_max = float(getattr(args, "ref_shell_acc", 0.0) or 0.0)
+            if _acc_max <= 0.0:
+                _acc_max = float(getattr(args, "ref_gov_acc", 8.0) or 8.0)
+            _jerk = float(getattr(args, "ref_shell_jerk", 0.0) or 0.0)
+            _a_des = (_v_des - _v_sh) / _dt_s
+            _an = float(np.linalg.norm(_a_des))
+            if _an > _acc_max and _an > 1e-9:
+                _a_des *= _acc_max / _an
+            _daj = _a_des - np.asarray(_a_sh, float)
+            _dajn = float(np.linalg.norm(_daj))
+            if _dajn > _jerk * _dt_s and _dajn > 1e-9:
+                _daj *= (_jerk * _dt_s) / _dajn
+            _a_new = np.asarray(_a_sh, float) + _daj
+            _v_new = np.asarray(_v_sh, float) + _a_new * _dt_s
+            _vmax_s = float(getattr(args, "ref_shell_vmax", 0.0) or 0.0)
+            if _vmax_s > 0.0:
+                _vn = float(np.linalg.norm(_v_new))
+                if _vn > _vmax_s and _vn > 1e-9:
+                    _v_new *= _vmax_s / _vn
+            _db = float(getattr(args, "ref_shell_deadband", 0.0) or 0.0)
+            if _db > 0.0 and float(np.linalg.norm(_v_new)) < _db and float(np.linalg.norm(_v_des)) < _db:
+                _v_new = np.zeros(3)
+                _a_new = np.zeros(3)
+            _to = float(getattr(args, "ref_shell_timeout", 0.0) or 0.0)
+            if _to > 0.0 and state.get("ref_wall") and (now - state["ref_wall"]) > _to:
+                _v_new = np.zeros(3)
+                _a_new = np.zeros(3)
+            v_pub = np.asarray(_v_new, float).copy()
+            a_pub = np.asarray(_a_new, float).copy()
+            state["shell_v"] = v_pub.copy()
+            state["shell_a"] = a_pub.copy()
+            state["shell_n"] = int(state.get("shell_n", 0)) + 1
         state["pub_prev"] = (np.asarray(p_pub, float).copy(), np.asarray(v_pub, float).copy())
         try:
             state["pub_v"] = np.asarray(v_pub, float).copy()
