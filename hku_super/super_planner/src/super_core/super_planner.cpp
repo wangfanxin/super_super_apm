@@ -592,7 +592,12 @@ namespace super_planner {
             // *    If the whole trajectory if free,  the whole trajectory should be receding and if not, or a new goal
             // *    is given, we should only receiding a small distance and replan new trajectory ASAP
             double split_dis = cfg_.receding_dis;
-            if (last_exp_traj_info.wholeTrajKnownFree() && !gi_.new_goal && cfg_.receding_dis > 0.0) {
+            /// WHTF-KEEP-OLD-GOAL (patch 22, plan A, 2026-11-27).  For a NEW GOAL, drop no part of the
+            /// committed trajectory: keep it up to its END (the previous corner) so the corner is a
+            /// guide point of the new trajectory and the A* starts AT the corner instead of 1 m before
+            /// it.  The corner stays inside the same keepout, so W1b is untouched.
+            if ((!gi_.new_goal || cfg_.keep_old_goal_guide)
+                && last_exp_traj_info.wholeTrajKnownFree() && cfg_.receding_dis > 0.0) {
                 split_dis = std::numeric_limits<double>::max();
             }
 

@@ -1676,6 +1676,9 @@ def main() -> int:
                     #   桥又把速度字段钳到 1.50 ⇒ 位置与速度自相矛盾，且参考在 5.5 与 0 之间方波跳变，
                     #   姿态环根本跟不上 —— 这就是"冲过头再回来"的来源。
                     v_cap = min(vmax_x, float(un) + float(getattr(args, "ref_catchup_mps", 0.5) or 0.5))
+                    state["gov_dxy_along"] = float(dxy @ uxy)
+                    state["gov_dxy_n"] = float(np.linalg.norm(dxy))
+                    state["gov_un"] = float(un)
                     spd = max(0.0, min(v_cap, args.ref_gov_kp * float(dxy @ uxy)))
                     # ★ 不许停住（第 88 轮补）★ 投影律在拐弯处必然掉到 0：实测 44 次/趟、19 次贴角点，
                     #   每次都跟着一次"飞机冲到 2-3 m/s 再追"的爆发。规划还在动时给一个下限，
@@ -1893,7 +1896,7 @@ def main() -> int:
                 _sv = float(np.linalg.norm(np.asarray(state.get("v_slew", np.zeros(3)), float)[:2]))
                 _pre_lp = float(np.linalg.norm(np.asarray(s.v, float)[:2]))
                 print("LOWSPEED raw=%.2f slew=%.2f pre_lp=%.2f final=%.2f age=%.2f hold=%d "
-                      "retract=%d gate=%d clamped=%d src=%s vslew=%.2f clamp=%d vclamp=%.2f vgov=%.2f vb_lp=%.2f dlast=%.2f leg=%d"
+                      "retract=%d gate=%d clamped=%d src=%s vslew=%.2f clamp=%d vclamp=%.2f vgov=%.2f vb_lp=%.2f dxyalong=%.2f un=%.2f dlast=%.2f leg=%d"
                       % (_refv, _sv, _pre_lp, _vrp,
                          (now - state["ref_wall"]) if state["ref_wall"] else -1.0,
                          1 if state.get("is_hold") else 0,
@@ -1902,6 +1905,7 @@ def main() -> int:
                          float(state.get("_v_after_slew", -1.0)), int(state.get("_clamp_hit", 0)),
                          float(state.get("_v_after_clamp", -1.0)), float(state.get("_v_after_gov", -1.0)),
                          float(state.get("_v_before_lp", -1.0)),
+                         float(state.get("gov_dxy_along", -999.0)), float(state.get("gov_un", -999.0)),
                          float(np.linalg.norm(np.asarray(s.p, float)[:2] - np.asarray(state["last_pub"], float)[:2]))
                          if state.get("last_pub") is not None else -1.0,
                          pacer.i_leg + 1), flush=True)
