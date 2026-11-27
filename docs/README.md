@@ -4,15 +4,17 @@
 SITL 飞机、雷达/IMU 仿真、Super-LIO 定位、SUPER 轨迹规划、plan box（目标/参考整形）、
 MAVLink 桥 + supervisor、真值采集、验收与出图工具，全部在本仓库内，可直接复现每一趟飞行。
 
-## 当前状态（2026-11-26）
+## 当前状态（2026-11-27）
 
 | 项 | 状态 |
 |---|---|
-| **当前最佳（9f+，已确认）** | **phase23c-01-01**：除已知 P0（H2）外 **15/15 行全过**；W1/W1b 13/13、W4 **+0.009 m CLEAR**、W3 bias **+0.003**、W6 p90 0.280、W2 p90 1.44 |
-| 历史最佳实飞（旧） | **phase9f-01-01**：W4 **+0.027 m CLEAR**、W6 p90 0.262、W3 bias -0.113（高度基准未修） |
-| 机体 | `sim/models/quad_1kg_250mm.json`（1.0 kg / 250 mm）；台架实测 8.34 m/s、PVA 8 m/s 跟踪 p90 0.24 m |
-| 地图 | 冻结 SPEC 地图 `sim/worlds/forest_hex12.yaml`（六边形半径 10 m、边长 10 m、3 圈、522 柱、柱距 1.0 m） |
-| 速度阶梯 | 1.35 m/s 已可用；2.5/4 m/s 在**大世界**上有正项但未达标；8 m/s 仅在机体能力台架达成 |
+| **当前最佳** | **44 基线 + `REF_ALONG_FLOOR=0.9`**（agile + `REF_NO_RETRACT=1` + `PRE_GOAL_M=0.8`，corner 0.8；参考速度下限=0.9×规划速度）。四图复测（`docs/FLIGHT-ANALYSIS.md` §76）：frozen 14/15（仅 W4）、s22 14/15（仅 W4）、s23 **15/15**、s24 **15/15**；Q3 四图 PASS（0.21–0.23）、W6 p90 0.24–0.28、P1（规划-执行偏差+尖峰）3/4 PASS；**角点真值典型 0.3–0.7 m/s（旧基线 0.02–0.12）** |
+| 15 行全过对照 | phase44b（无下限）：W4 **+0.037**、W6 0.259、Q1 1 段、Q3 0.193 —— 但角点真值 0.02–0.12 |
+| 已知未过 | W4 点净空（frozen/s22 接触，本阶段按 owner 要求只记录）、Q4 第二圈仍有回环、s24 有 1 个 1.29 m 的 P1 尖峰、Q1 底边窄缝 1–2 段 |
+| 机体 | `sim/models/quad_1kg_250mm.json`（1.0 kg / 250 mm）；台架 8.34 m/s、PVA 8 m/s 跟踪 p90 0.24 m |
+| 地图 | 冻结 SPEC 地图 `sim/worlds/forest_hex12.yaml`（半径 10 m、522 柱、柱距 1.0 m）+ 同规则 seed `s22/s23/s24`；大世界 `forest_hex16/hex18_low`（1546 柱，LiDAR 负载会掉果，需先降负载） |
+| 速度阶梯 | 1.35 m/s 已可用（94a/98s22/98s23/98s24）；2.5 档在 3 m 走廊不稳定；4 m/s 大世界首测出现 SITL/FCU 发散（H5）；8 m/s 仅机体台架 |
+| **下一步方向** | 按 Nav2 式分层重做薄层：多目标"穿过"语义 + 前视/曲率限速跟随器 + goal/progress checker + 恢复层；见 `docs/NAV2-THIN-LAYER.md` |
 
 ### 9f+（新最佳配置）
 
@@ -95,6 +97,7 @@ python3 scripts/accept.py --run .runs/missionA-demo01-01-01 --world sim/worlds/f
 | `docs/PIPELINE.md` | 完整链路（进程/话题/坐标系/控制/估计/规划/数据管线/约定与坑） |
 | `docs/ACCEPTANCE.md` | 15 行验收集（H*/W*）+ 判定标准 + 证据政策 |
 | `docs/FLIGHT-ANALYSIS.md` | 飞行分析：当前最佳（9f+）、9f 实飞结果、9f vs 21a、定位/高度分解、角点问题、速度阶梯、实验历史、下一步 |
+| `docs/NAV2-THIN-LAYER.md` | Nav2 调研（commit c3dea921ad12 快照）：行为树 FSM、goal/progress checker、NavigateThroughPoses、RPP 跟随律、smoother；与我们薄层的逐条 gap 与重做方案 |
 
 > 历史进度日志已合并进 `docs/FLIGHT-ANALYSIS.md` 的附录，独立的 CHANGELOG 已删除。
 
