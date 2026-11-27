@@ -327,6 +327,12 @@ def main() -> int:
     ap.add_argument("--ref-catchup-mps", type=float, default=0.5,
                     help="参考最多可以比规划自己快多少（m/s）。这是 ke2-01-01 那个'追缺口追到 6 m/s、"
                          "飞出场地'的直接修复：参考只许追赶，不许超过它追的那条轨迹太多。")
+    ap.add_argument("--ref-gov-plan-feed", type=int, default=0,
+                    help="1 = 调速器沿航迹律改成**规划速度前馈 + P 修正**：v_ref = un + ks*(dxy·u)。"
+                         "现有律 v_ref = kp*(dxy·u) 在角点必然掉到 0.1-0.3 m/s（实测 dxyalong 只剩 0.02 m），"
+                         "因为规划路径在转弯、沿当前方向的前进缺口消失；前馈律则保持规划自己的速度。0=关。")
+    ap.add_argument("--ref-gov-plan-feed-ks", type=float, default=4.0,
+                    help="--ref-gov-plan-feed 1 时的沿航迹修正增益（m/s per m）。")
     ap.add_argument("--ref-gov-min-mps", type=float, default=0.0,
                     help="参考调速器的**最小速度下限**（m/s）：>0 时调速器输出速度幅值不低于该值"
                          "（只放大、不改变方向）。目标：角点/交接处参考不停在 0.2-0.3 m/s，"
@@ -1679,7 +1685,16 @@ def main() -> int:
                     state["gov_dxy_along"] = float(dxy @ uxy)
                     state["gov_dxy_n"] = float(np.linalg.norm(dxy))
                     state["gov_un"] = float(un)
-                    spd = max(0.0, min(v_cap, args.ref_gov_kp * float(dxy @ uxy)))
+                    if int(getattr(args, "ref_gov_plan_feed", 0)):
+                        # WHTF-GOV-PLAN-FEED (round 33, 2026-11-27): plan-speed feed-forward + P
+                        # correction.  MEASURED phase92a: at every corner dxy·u collapses to 0.02 m, so
+                        # the pure proportional law kp*(dxy·u) commands 12*0.02 = 0.27 m/s while the
+                        # planned speed is 0.80 -- that IS the corner deceleration of the accepted arm.
+                        # Feeding `un` forward keeps the planned speed and only corrects the residual lag.
+                        spd = max(0.0, min(v_cap, float(un) + float(getattr(args, "ref_gov_plan_feed_ks", 4.0))
+                                           * float(dxy @ uxy)))
+                    else:
+                        spd = max(0.0, min(v_cap, args.ref_gov_kp * float(dxy @ uxy)))
                     # ★ 不许停住（第 88 轮补）★ 投影律在拐弯处必然掉到 0：实测 44 次/趟、19 次贴角点，
                     #   每次都跟着一次"飞机冲到 2-3 m/s 再追"的爆发。规划还在动时给一个下限，
                     #   参考就只在**规划自己停住**时停（SPEC S1 要求）。
