@@ -200,11 +200,36 @@ def main() -> int:
              % (p1_p90, p1_max, n05, dur05, peak05, n10,
                 "" if n10 == 0 else " (longest %.2f s, peak %.2f)" % (dur10, peak10),
                 p1_geo_p90, p1_geo_max))]
+    # ---- S1/S2 owner-rule diagnostics (2026-11-27): record-only, do NOT gate yet -------------
+    # S1: every truth sample below HALF the configured speed counts as a problem to investigate
+    #     (1.35/2 = 0.675 m/s), excluding the launch and terminal-deceleration windows.
+    # S2: path loops are speed-independent (a fast circle never drops below half speed).
+    try:
+        import low_speed_census as _LSC
+        _cen = _LSC.census(tag, 0.675)
+        _tr = [r for r in _cen.get("rows", []) if r["stream"] == "truth" and r["class_"] not in ("LAUNCH", "END")]
+        s1_ok = None
+        s1_det = "%d segment(s), total %.2f s below 0.675 m/s outside launch/end" % (
+            len(_tr), sum(r["dur"] for r in _tr))
+        _lps = _cen.get("loops", [])
+        s2_ok = None
+        s2_det = "%d path loop(s), total %.1f s (examples: %s)" % (
+            len(_lps), sum(l["dur"] for l in _lps),
+            ", ".join("(%.1f,%.1f) %.1fs vmin %.2f" % (l["pos"][0], l["pos"][1], l["dur"], l["vmin"])
+                      for l in sorted(_lps, key=lambda x: -x["dur"])[:3]) if _lps else "none")
+    except Exception as _e:                          # noqa: BLE001
+        s1_ok, s1_det, s2_ok, s2_det = None, "census failed: %s" % _e, None, "census failed"
+    rows += [("S1", "low-speed census (truth <0.675 m/s, excl launch/end)", s1_ok, s1_det),
+             ("S2", "path loops (speed-independent)", s2_ok, s2_det)]
     print("== %s quality rows (owner's judgements, 2026-11-26)" % tag)
     for key, title, ok, det in rows:
-        print("  [%s] %-2s %-52s %s" % ("PASS" if ok else "FAIL", key, title, det))
-    n_bad = sum(1 for _, _, ok, _ in rows if not ok)
-    print("QUALITY: %s (%d/%d fail)" % ("PASS" if n_bad == 0 else "FAIL", n_bad, len(rows)))
+        tag_ok = "INFO" if ok is None else ("PASS" if ok else "FAIL")
+        print("  [%s] %-2s %-52s %s" % (tag_ok, key, title, det))
+    gated = [r for r in rows if r[2] is not None]
+    n_bad = sum(1 for _, _, ok, _ in gated if not ok)
+    print("QUALITY: %s (%d/%d fail; %d record-only)" %
+          ("PASS" if n_bad == 0 and len(gated) >= 5 else "FAIL", n_bad, len(gated),
+           len(rows) - len(gated)))
     if a.json:
         json.dump({"tag": tag, "rows": [{"id": k, "title": t_, "ok": ok, "detail": det}
                                         for k, t_, ok, det in rows]}, open(a.json, "w"), indent=1)

@@ -1509,3 +1509,38 @@ W1/W1b/W2 全过；但 W6/Q3 仍踩线（W6 p90 0.291 但 per-quarter spread 超
 1. 给 plan-box 加**逐 0.5 s 目标/进度日志**（模拟时间、leg、距目标、目标点、指令速度），把"环"的 sim 时间与日志对上；
 2. 查这些边中点环的机理（重点怀疑：pacer 的 extended-goal/carrot 反复、SUPER 在窄缝处 replan 出的短弧交替）；
 3. 修复后把"非起飞/终点的低速真值点总时长"和"路径环个数"作为新的验收行（S1/S2，先记录后设门槛）。
+
+## 87. Phase 1 round 9：owner 规则落成 S1/S2 行 + 逐拍目标日志；120a 首次 Q1=0（2026-11-27）
+
+### 87.1 新增（代码）
+- `quality_rows.py` 增加 **S1/S2 记录行**（`[INFO]`，不参与 gate，等稳定后再设门槛）：
+  - **S1**：真值 `|v|<0.675 m/s`（=1.35/2，owner 规则）且**非起飞/非终点**的段数与总时长；
+  - **S2**：与速度无关的**路径环**个数与总时长（来自 `low_speed_census.py` 的滑窗 path/net 检测）。
+- plan-box 新增 `--plan-debug`：每 0.5 s 打印一行
+  `PLANDBG wall=... leg=k/13 tgt=(L) d=... goal_i=... sent=(L) cmd=... ref_age=... hold/retr/wash=...`；
+  `setpoints.csv` 同时有 `t_wall`/`t_sim_us`，所以飞完可把离线发现的环/低速点对到薄层状态。
+
+### 87.2 实测：120a 是**新的最佳质量趟**
+配置同 102a（44+washout+floor0.9+corner0.9+hs config）：
+
+| 项 | 结果 |
+|---|---|
+| 15 行 | **14/15（仅 W4，record-only）**，W6 PASS |
+| **Q1** | **0 段 PASS**（首次！） |
+| Q3 | **0.231 PASS** |
+| P1 | **PASS**（无 >1 m 尖峰） |
+| **S1** | **1.02 s**（非起飞/终点低速，历史最好） |
+| **S2** | **1 个**（4.3 s，右上前边中点 (7.1,5.1) 的小 S 形折叠，vmin 0.51） |
+| Q2 / Q4 | Q2 −0.118 ❌（record 项）；Q4 c2/c4/c5 ok，c1 0.33/c3 0.36/c6 仍差（c1 是起飞后首角） |
+
+**归因（PLANDBG + CUSP）**：
+- 该 S 折叠期间 `leg=3/13`、`goal_i=2`、`d`（到 target 距离）从 8.2 涨到 11.9 m、`cmd` 在 1.24–1.35 → 0.46/0.35 → 1.12 之间；
+- plan-box 的 CUSP 检测记录 `origin=super` 的折返（`CUSP #2: 164° at L(4.02,-7.64), leg 3`）；
+- 说明折叠来自 **SUPER 参考在边中点处的 guide 形状**（绕障碍后回折），薄层只是忠实转发（washout/retract 均为 0），不是薄层再加工。
+- 该位置的 cmd 路径与 truth 路径都包含这个小 S 折叠，所以是**规划侧**问题，不是纯跟踪。
+
+### 87.3 下一步
+1. 用 PLANDBG+CUSP 对**每条腿**做一次折叠清单（leg 3 是重点），查 guide 为何在边中点回折（3×3 m 角点 keepout/绕障缺口？）；
+2. 试用 `--ref-no-fold`（已有开关）与 SUPER patch21（guide round，当前 flag=0）对比 120a 配置下的 S1/S2；
+3. Q4 的 c1（起飞后首角 0.33）与 c6（末角/第二圈）分别按"首段瞬态"与"终点减速"处理；
+4. 120a 复飞 2 趟确认 S1/S2/Q1 是否可重复（若可重复，Phase 1 可进入四图）。

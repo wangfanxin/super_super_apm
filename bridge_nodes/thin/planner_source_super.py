@@ -336,6 +336,9 @@ def main() -> int:
                          "≤ --ref-washout-vmax。这样参考位置不回跳、速度也不会掉到 0。0=关（旧 no-retract 行为）。")
     ap.add_argument("--ref-washout-vmax", type=float, default=0.15,
                     help="洗涤器 offset 变化率上限（m/s），默认 0.15（即速度最多被拉低 0.15 m/s）。")
+    ap.add_argument("--plan-debug", type=int, default=0,
+                    help="1 = 每 0.5 s 打印一行目标/进度（wall 时间、leg、距 target、goal_i、发布速度、ref age、"
+                         "hold/retract/washout），用来把离线发现的『路径环』对到薄层决策上。")
     ap.add_argument("--leg-debug", type=int, default=0,
                     help="1 = 每次换 leg 后的 1.2 s 内打印逐级速度（raw SUPER / slew / clamp / governor / final），"
                          "用来定位『腿起点掉速』是规划侧还是薄层侧。0=关。")
@@ -1990,6 +1993,36 @@ def main() -> int:
                               % (state["final_slew_n"], _n, _a, float(np.linalg.norm(_vdes[:2]))),
                               flush=True)
         state["pub_prev"] = (np.asarray(p_pub, float).copy(), np.asarray(v_pub, float).copy())
+        try:
+            state["pub_v"] = np.asarray(v_pub, float).copy()
+        except Exception:                            # noqa: BLE001
+            pass
+        # ★★ PLAN-DEBUG (Phase 1, 2026-11-27): one line every 0.5 s of WALL time, so the offline loop /
+        # low-speed census (sim time) can be aligned to what the thin layer was doing (leg, goal, distance,
+        # published speed, reference age).  setpoints.csv has both t_wall and t_sim_us, so the wall->sim map
+        # exists after the flight without instrumenting the plan box with the sim clock.
+        if int(getattr(args, "plan_debug", 0)):
+            _noww = time.monotonic()
+            if _noww - float(state.get("plan_dbg_last", -1e9)) >= 0.5:
+                state["plan_dbg_last"] = _noww
+                try:
+                    _p = here_w()
+                    _leg = int(pacer.i_leg)
+                    _tgt = corners_l[_leg] if _leg < len(corners_l) else None
+                    _d = float(np.linalg.norm(np.asarray(_p, float)[:2] - np.asarray(_tgt, float)[:2])) if _p is not None and _tgt is not None else float("nan")
+                    _gi = int(state.get("goal_i", -1))
+                    _sent = corners_l[_gi] if 0 <= _gi < len(corners_l) else None
+                    _cmdv = float(np.linalg.norm(np.asarray(state.get("pub_v", np.zeros(3)), float)[:2])) if state.get("pub_v") is not None else -1.0
+                    print("PLANDBG wall=%.3f leg=%d/%d tgt=(%.2f,%.2f) d=%.2f goal_i=%d sent=(%s) "
+                          "cmd=%.2f ref_age=%.2f hold=%d retr=%d wash=%.2f" % (
+                              _noww, _leg + 1, len(corners_l), float(_tgt[0]), float(_tgt[1]), _d, _gi,
+                              "%.2f,%.2f" % (float(_sent[0]), float(_sent[1])) if _sent is not None else "nan",
+                              _cmdv, (time.monotonic() - state["ref_wall"]) if state["ref_wall"] else -1.0,
+                              int(state.get("is_hold", 0)), int(state.get("n_retract", 0)),
+                              float(np.linalg.norm(np.asarray(state["wash_off"], float)[:2])) if state.get("wash_off") is not None else 0.0),
+                      flush=True)
+                except Exception as _e:  # noqa: BLE001
+                    print("PLANDBG error:", _e, flush=True)
         # ★★ LEG-DEBUG (Phase 1, 2026-11-27): what happens in the first 1.2 s of a new leg? ★★
         if int(getattr(args, "leg_debug", 0)):
             _leg_now = pacer.i_leg + 1
