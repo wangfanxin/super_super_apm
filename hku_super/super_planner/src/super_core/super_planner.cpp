@@ -61,6 +61,7 @@ namespace super_planner {
         std::cout << " -- [SUPER] CONFIG: general_bc=" << (cfg_.general_bc_en ? 1 : 0)
                   << " keep_old_goal_guide=" << (cfg_.keep_old_goal_guide ? 1 : 0)
                   << " guide_hyst=" << (cfg_.guide_hyst_en ? 1 : 0)
+                  << " guide_cache=" << (cfg_.guide_cache_en ? 1 : 0)
                   << " hot_start=" << (cfg_.hot_start_en ? 1 : 0)
                   << " hot_ratio=" << cfg_.hot_start_vel_ratio
                   << " pva_tail_len=" << cfg_.pva_tail_len
@@ -417,6 +418,7 @@ namespace super_planner {
         bool used_general_bc = false;   ///< WHTF-GENERAL-BC (patch 17) -- for the zero-start retry below
         PolytopeVec sfc;
         vec_Vec3f guide_path;
+        bool astar_used = false;   ///< WHTF-REPLAN-DEBUG: did this replan run A*?
         // the guide_stamp saves a TT
         vector<double> guide_stamp;
         double guide_path_end_vel{0.0};
@@ -615,6 +617,17 @@ namespace super_planner {
                 && last_exp_traj_info.wholeTrajKnownFree() && cfg_.receding_dis > 0.0) {
                 split_dis = std::numeric_limits<double>::max();
             }
+            if (std::getenv("WHTF_REPLAN_DEBUG") != nullptr) {
+                std::ostringstream ros_;
+                ros_.setf(std::ios::fixed); ros_.precision(3);
+                ros_ << "REPLANDBG wall=" << ros_ptr_->getSimTime()
+                     << " new_goal=" << (gi_.new_goal ? 1 : 0)
+                     << " keep=" << (cfg_.keep_old_goal_guide ? 1 : 0)
+                     << " whole_free=" << (last_exp_traj_info.wholeTrajKnownFree() ? 1 : 0)
+                     << " split=" << (split_dis > 1e5 ? -1.0 : split_dis)
+                     << " remain=" << (cmd_traj_info_.getTotalDuration() - replan_state_TT);
+                std::cout << ros_.str() << std::endl;
+            }
 
 
             // * 7）Begin replan process, first get the replan state from the committed trajectory.
@@ -715,6 +728,7 @@ namespace super_planner {
 //                        return FAILED;
 //                    }
 //                }
+                astar_used = true;
                 if (!PathSearch(guide_path.back(), gi_.goal_p, temp_horizon, new_path)) {
                     ros_ptr_->warn(" -- [SUPER] PathSearch for new path failed");
                     return FAILED;
@@ -773,6 +787,64 @@ namespace super_planner {
                 }
             }
         }
+
+        /// WHTF-GUIDE-CACHE (Phase 1 round 14, 2026-11-27): Nav2 CheckIfNewPathNeeded-style path reuse.
+        /// MEASURED (guide_flip.py, 129a/130a/131a): the guide polyline changes at 7.3-7.5 Hz with a base
+        /// jump p90 of 0.36-0.40 m and 105-116 jumps >0.35 m per sortie - the A* tail is re-chosen every
+        /// replan.  If the goal has not moved, the cached guide is still collision-free on the SAME
+        /// inflated map and it is younger than guide_cache_max_age, reuse it (cropped from the current
+        /// position); only fall back to a fresh A* when one of those fails.
+        if (cfg_.guide_cache_en && guide_path.size() >= 3) {
+            static vec_Vec3f cache_guide;
+            static Vec3f cache_goal(9999, 9999, 9999);
+            static double cache_wall = -1e9;
+            const double now_wall = ros_ptr_->getSimTime();
+            bool reused = false;
+            if (!cache_guide.empty() && (gi_.goal_p - cache_goal).norm() < 0.3 &&
+                (now_wall - cache_wall) <= cfg_.guide_cache_max_age) {
+                bool free_ok = true;
+                for (size_t j = 0; j < cache_guide.size() && free_ok; ++j) {
+                    if (map_ptr_->isOccupiedInflate(cache_guide[j])) { free_ok = false; }
+                    if (j + 1 < cache_guide.size()) {
+                        const Vec3f m = (cache_guide[j] + cache_guide[j + 1]) * 0.5f;
+                        if (map_ptr_->isOccupiedInflate(m)) { free_ok = false; }
+                    }
+                }
+                if (free_ok) {
+                    const Vec3f start = guide_path.front();
+                    double dbest = 1e9;
+                    size_t jbest = 0;
+                    for (size_t j = 0; j < cache_guide.size(); ++j) {
+                        const double dd = (cache_guide[j] - start).norm();
+                        if (dd < dbest) { dbest = dd; jbest = j; }
+                    }
+                    if (dbest < 0.8) {
+                        vec_Vec3f g2;
+                        g2.reserve(cache_guide.size() - jbest + 2);
+                        g2.push_back(start);
+                        for (size_t j = jbest; j < cache_guide.size(); ++j) { g2.push_back(cache_guide[j]); }
+                        if ((g2.back() - gi_.goal_p).norm() > 0.05) { g2.push_back(gi_.goal_p); }
+                        guide_path = g2;
+                        guide_stamp.clear();
+                        double tt = 0.0;
+                        const double vr = std::max(cfg_.exp_traj_cfg.max_vel, 1e-3);
+                        for (size_t i = 0; i < guide_path.size(); ++i) {
+                            if (i > 0) { tt += (guide_path[i] - guide_path[i - 1]).norm() / vr; }
+                            guide_stamp.emplace_back(tt);
+                        }
+                        reused = true;
+                        std::cout << " -- [SUPER] GUIDE-CACHE: reused " << guide_path.size()
+                                  << " pts (age " << (now_wall - cache_wall) << " s)" << std::endl;
+                    }
+                }
+            }
+            if (!reused) {
+                cache_guide = guide_path;
+                cache_goal = gi_.goal_p;
+                cache_wall = now_wall;
+            }
+        }
+        guide_path_length = geometry_utils::computePathLength(guide_path);
 
         const bool connected_goal = (guide_path.back().head(2) - gi_.goal_p.head(2)).norm() < cfg_.resolution * 2;
         out_exp_traj_info.setGoalConnectedFlag(connected_goal);
@@ -1002,7 +1074,7 @@ namespace super_planner {
                 os.setf(std::ios::fixed); os.precision(2);
                 os << "GUIDEDBG wall=" << wall << " n=" << guide_path.size()
                    << " goal=(" << gi_.goal_p.x() << "," << gi_.goal_p.y() << ")"
-                   << " len=" << guide_path_length << " pts=";
+                   << " len=" << guide_path_length << " astar=" << (astar_used ? 1 : 0) << " pts=";
                 const size_t stride = std::max<size_t>(1, guide_path.size() / 40);
                 for (size_t i = 0; i < guide_path.size(); i += stride) {
                     os << "(" << guide_path[i].x() << "," << guide_path[i].y() << ")";

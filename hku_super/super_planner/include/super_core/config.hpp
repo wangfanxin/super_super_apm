@@ -78,6 +78,8 @@ namespace super_planner {
         /// to its END (the previous corner) as the guide prefix, so the corner stays a guide point.
         bool keep_old_goal_guide;
         bool guide_hyst_en;
+        bool guide_cache_en;
+        double guide_cache_max_age;
         /// WHTF-ADAPTIVE-TAIL (patch 20): choose the run-out direction/length from the map's free space
         /// instead of always following goal_v.  Only active when pva_tail_len > 0.
         bool pva_tail_adaptive;
@@ -144,6 +146,8 @@ namespace super_planner {
             loader.LoadParam("super_planner/pva_tail_len", pva_tail_len, 0.0);
             loader.LoadParam("super_planner/keep_old_goal_guide", keep_old_goal_guide, false);
             loader.LoadParam("super_planner/guide_hyst_en", guide_hyst_en, false);
+            loader.LoadParam("super_planner/guide_cache_en", guide_cache_en, false);
+            loader.LoadParam("super_planner/guide_cache_max_age", guide_cache_max_age, 1.0);
             loader.LoadParam("super_planner/pva_tail_adaptive", pva_tail_adaptive, false);
             loader.LoadParam("super_planner/guide_round_en", guide_round_en, false);
             loader.LoadParam("super_planner/guide_round_radius", guide_round_radius, 0.5);
