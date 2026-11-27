@@ -1886,3 +1886,36 @@ FCU 姿态/速度环饱和、MINCO 交接 jerk、薄层加工、测量伪影等�
       或在 Route Manager 内启用 pass-by 记账（已有 `--pass-by-m` 开关，先离线核对语义再飞）；
    b. W4 接触：用 audit C5 的碰撞门思路（对已发布 PVA 前向采样 vs 柱几何）做**安全限幅**，或速度阶梯前必须先解决；
    c. 速度 p90 / 角点阈值按档重订（§94.3），然后进入 2.5 m/s 档。
+
+## 99. round 21：pass-by 到达语义补齐 W1 —— 四图首次全部 15/15 且 W4 全部 CLEAR（2026-11-28）
+
+### 99.1 改动（机制，非参考层）
+s22 的 W1 失败根因：W1b 显示真值 **13/13 按序通过（最近 0.43 m）**，但 pacer 的到达半径是 0.3 m → 判不到。
+pacer 里**已有** Nav2 式 "PASSED THE WAYPOINT" 判据（`--pass-by-m` 横向半宽 + `--pass-by-long-m` 纵向盒长，
+后者防半平面误判——历史事故 13.78 m 外误判到达），默认 0。本轮仅打开：
+`PASS_BY_M=0.6 PASS_BY_LONG_M=1.0`，其余配置不变（lead 0.06 + guide_cache + washout + floor0.9 + corner0.9）。
+
+### 99.2 四图结果（全 15/15）
+| 地图 | 15 行 | W4 | W2 p90 | W6 p90 | Q3 | P1 | Q1 | S1 | S2 |
+|---|---|---|---|---|---|---|---|---|---|
+| frozen（151a） | **15/15** | **CLEAR +0.077** | 1.47 | 0.221 | 0.163 | PASS（max 0.59） | 1 | 1.24 s | 2 |
+| s22（150s22b） | **15/15** | **CLEAR +0.031** | 1.49 | 0.239 | 0.168 | **FAIL（1 个 1.49 m 尖峰）** | **0** | 0.60 s | 2 |
+| s23（152s23b） | **15/15** | **CLEAR +0.014** | 1.50 | 0.207 | 0.156 | PASS（max 0.73） | 1 | 0.71 s | 1 |
+| s24（153s24c） | **15/15** | **CLEAR +0.024** | 1.44 | 0.214 | 0.168 | **PASS（0 尖峰，max 0.49）** | 1 | **0.10 s** | 1 |
+
+**这是第一次四张图同时满足：15/15 全过、W4 CLEAR、W6 ≤0.24、Q3 ≤0.17、Q1 ≤1、S1 ≤1.24 s。**
+- Q4 仍有角点 vmin <0.4 的个别访问（c2/c3 一次 0.17–0.21 m/s），P1 在 s22 有 1 个 1.49 m 尖峰（其余图 0–1 个 <1m）；
+- 速度 p90 1.44–1.50（旧 Phase-2 判据 p90≥1.6 在 1.35 档不可达，需按档重订）；角点目标 ≥0.8 未达成（当前 0.4–0.8）。
+
+### 99.3 当前最佳配置（冻结）
+`SUPER_CONFIG=super_planner_hex_hs_cache.yaml`（hot ratio 0.85 + guide_cache）
+`NAV_LEAD_S=0.06` `PASS_BY_M=0.6 PASS_BY_LONG_M=1.0`
+`REF_WASHOUT_TAU=2.0 REF_WASHOUT_VMAX=0.15 REF_NO_RETRACT=1 REF_ALONG_FLOOR=0.9`
+`GOAL_PVA=1 CORNER_MODE=bisector CORNER_SPEED=0.9 ARRIVE_M=0.3 PRE_GOAL_M=0.8`
+`REF_Z_OFFSET_M=0.118 REF_Z_HOLD=2.0 REF_Z_TOL=0.005 REF_Z_LATCH_M=1.2`
+`EXTRA_PARMS=guided_limits_bench5_vert_agile.parm`
+
+### 99.4 下一步
+1. s22 的 P1 1.49 m 尖峰单独查（用 plan_exec/PLANDBG 对时刻；其余图干净说明不是配置性问题）；
+2. Q4 角点 vmin：c2/c3 的第二圈访问仍是 0.17–0.21，下一步按 §86 的边中点/角点清单继续做**局部限速/绕行**（路线级，不是参考层）；
+3. Phase-2 判据按档重订（速度 p90、角点 vmin 随 max_vel 档给阈值），然后进入 2.5 m/s 档。
