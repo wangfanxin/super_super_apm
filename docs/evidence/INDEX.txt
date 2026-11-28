@@ -12,6 +12,7 @@ EXTRA_PARMS=guided_limits_bench5_vert_agile.parm
 final/sheet-BEST-180d.png    完美候选（1/2 趟）：15 行全过、W4 +0.084 CLEAR、Q2 **−0.016 PASS**、Q4 全过、
                              Q1=0、Q3 0.161、W6 0.226、P1 PASS(max 0.496)、S1 0.83 s、S2 1 环/3.5 s、handover 13/13
 final/phase180d-01-01_*.png  180d 全套单图；planexec-180d / handover-audit-180d / low-speed-180d
+final/phase180d-01-01_rest2rest.png  180d 的 14 次 rest2rest 逐事件图（平面/速度/放大三面板，§137）
 final/sheet-BEST-180b.png    15 行全过但 Q2 −0.039/Q4 c3 FAIL
 （round53 实验：184b/184d/184e/184g 为保守建图 A/B；184a/184c/184f 无效入 _invalid）
 
