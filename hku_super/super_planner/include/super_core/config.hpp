@@ -70,6 +70,13 @@ namespace super_planner {
         double resolution;
         double planning_horizon;
         double receding_dis;
+        /// WHTF-TRAJ-CLEARANCE (2026-11-28): post-plan check of the committed trajectory against the
+        /// planner's OWN INFLATED map.  The Q2 analysis showed the committed trajectory can pass
+        /// 3-7 cm from a trunk even with robot_r=0.10 (CIRI/SFC does not always honour robot_r along the
+        /// whole path), so plans that graze the inflation shell are rejected / logged here.
+        /// 0 = off, 1 = log only, 2 = reject the plan (keep the old committed trajectory).
+        int traj_clearance_check_mode;
+        double traj_clearance_dt;
         /// WHTF-PVA-TAIL (patch 15): length (m) of a straight run-out appended past a PVA goal along the
         /// goal's terminal velocity, so the trajectory does not END on the corner.  0 = historical behaviour.
         double pva_tail_len;
@@ -142,6 +149,8 @@ namespace super_planner {
             loader.LoadParam("super_planner/corridor_line_max_length", corridor_line_max_length, 3.0);
             loader.LoadParam("super_planner/planning_horizon", planning_horizon, 10.0);
             loader.LoadParam("super_planner/receding_dis", receding_dis, 5.0);
+            loader.LoadParam("super_planner/traj_clearance_check_mode", traj_clearance_check_mode, 0);
+            loader.LoadParam("super_planner/traj_clearance_dt", traj_clearance_dt, 0.05);
             loader.LoadParam("super_planner/pva_tail_len", pva_tail_len, 0.0);
             loader.LoadParam("super_planner/keep_old_goal_guide", keep_old_goal_guide, false);
             loader.LoadParam("super_planner/handover_policy", handover_policy, std::string("defer"));

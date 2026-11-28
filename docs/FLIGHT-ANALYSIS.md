@@ -3096,3 +3096,30 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
    若拒绝风暴，则对该 plan 用更大 inflation 的 A* 重试一次（上限 1 次）。
 2. 离线先把历史 run 的 committed trajectory 用同一函数回放（traj.csv.cmd），量化"多少计划会被拒/误拒"（0 飞行门禁）。
 3. 通过后再 A/B 2 趟；若拒绝率过高，退回"减小窄缝处参考速度（曲率限速）"。
+
+## 134. round 51：净空后校验 + 未知空间膨胀实验（184a/184b）（2026-11-28）
+
+### 134.1 实现
+- `super_planner` 新增 **TRAJ-CLEARANCE 后校验**（`traj_clearance_check_mode`：0=off，1=log，2=reject）：
+  对装配后的 committed trajectory 按 `traj_clearance_dt=0.05 s` 采样，查询 planner 自己的 INFLATED 地图
+  (`map_ptr_->isOccupiedInflate`)；命中则打日志（含首个违例时刻/位置/时长），mode≥2 时返回 FAILED（保留旧轨迹）。
+- 新配置：`..._clrlog.yaml`（mode=1）、`..._clrrej.yaml`（mode=2）、`..._unk.yaml`（`unk_inflation_step=1` +
+  `frontend_in_known_free=true` + mode=1）。
+
+### 134.2 飞行
+| 趟 | 配置 | H6 | W4 | Q2 | Q1 | Q3 | Q4 | S2 | TRAJ-CLEARANCE 命中 |
+|---|---|---|---|---|---|---|---|---|---|
+| 184a | clrlog | FAIL(118.8 ms) | **−0.077 CONTACT** | −0.177 | 0 | 0.142* | c3 FAIL | 1 环/4.3 s* | **0 条** |
+| 184b | unk | pass(89.5 ms) | **−0.014 CONTACT** | −0.114 | 0 | 0.142 | c3 FAIL | 1 环/4.3 s | **0 条** |
+
+### 134.3 关键结论
+- **planner 自己的膨胀地图在违例处是"自由"的**：两趟都在 pillar (7.75,3.54) 附近（同一窄缝）真值擦柱，
+  但后校验 0 命中 → 不是 SFC/优化器违反 robot_r，而是**地图本身在该柱周围缺观测/膨胀不足**
+  （密集柱场遮挡下只看到部分面，0.2 m 膨胀壳没有盖住被遮挡的一侧）。
+- 因此"净空后校验"只能防地图已知的贴柱，**防不了雷达没看到的面**；需要让地图/膨胀**更保守**：
+  下一步测试 `inflation_step: 3`（0.3 m 膨胀壳，纯地图保守化，不改 PID/不改任务），
+  并用同一后校验与 W4/Q2 评估；若仍擦同一柱，则说明该柱确实在雷达盲区，需要更大的膨胀或换视点。
+
+### 134.4 状态
+- 当前最佳仍是 **180d**（完美候选 1/2；15 行全过、Q2 −0.016 PASS、Q4 全过）。
+- 拒绝数据：r15/r20 配置已删；184a 因 H6 无效、184b W4 CONTACT → 仅作机制证据保留。

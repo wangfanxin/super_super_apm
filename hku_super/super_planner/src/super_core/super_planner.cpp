@@ -1182,6 +1182,41 @@ namespace super_planner {
         temp_exp_traj = temp_exp_traj + out_traj;
         temp_exp_traj.start_WT = new_traj_WT; //last_exp_traj_info.replan_start_WT ;
 
+        /// WHTF-TRAJ-CLEARANCE (2026-11-28): the Q2 analysis found the committed trajectory itself can
+        /// pass within 3-7 cm of a trunk although the configured robot_r is 0.10 m -- CIRI/SFC does not
+        /// enforce robot_r along the whole path (sparse map points / polytope slack).  Check the assembled
+        /// trajectory against the planner's own INFLATED map (the same 0.2 m shell the A* uses).  Mode 1
+        /// logs, mode 2 rejects the plan so the previous committed trajectory is kept.
+        if (cfg_.traj_clearance_check_mode > 0) {
+            const double _dur = temp_exp_traj.getTotalDuration();
+            const double _dt = std::max(1e-3, cfg_.traj_clearance_dt);
+            int _viol = 0;
+            double _first_t = -1.0;
+            Vec3f _first_p = Vec3f::Zero();
+            for (double _tt = 0.0; _tt <= _dur + 1e-9; _tt += _dt) {
+                Vec3f _p = temp_exp_traj.getPos(_tt);
+                if (map_ptr_->isOccupiedInflate(_p)) {
+                    if (_viol == 0) { _first_t = _tt; _first_p = _p; }
+                    _viol++;
+                }
+            }
+            if (_viol > 0) {
+                static double _last_log_wt = -1e9;
+                const double _now = ros_ptr_->getSimTime();
+                if (_now - _last_log_wt > 1.0) {
+                    _last_log_wt = _now;
+                    ros_ptr_->warn(" -- [SUPER] TRAJ-CLEARANCE: {} sample(s) of the new committed trajectory "
+                                   "are inside the INFLATED map (first t={:.2f} s, p=[{:.2f},{:.2f},{:.2f}], "
+                                   "dur={:.2f} s, mode={})",
+                                   _viol, _first_t, _first_p.x(), _first_p.y(), _first_p.z(), _dur,
+                                   cfg_.traj_clearance_check_mode);
+                }
+                if (cfg_.traj_clearance_check_mode >= 2) {
+                    return FAILED;
+                }
+            }
+        }
+
         if (!last_exp_traj_info.empty()) {
             StatePVAJ yaw_replan_state;
             if (!guide_yaw_traj.getState(replan_state_TT, yaw_replan_state)) {
