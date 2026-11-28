@@ -53,7 +53,15 @@ else
 fi
 
 step "Phase 2 recording base: rosbag2 -> CSV derivation (synthetic, no flight)"
-python3 tests/check_bag_pipeline.py || note_fail "check_bag_pipeline.py (rosbag2 -> CSV derivation)"
+# KNOWN FLAKE (2026-11-28): the rosbag2 playback probe intermittently loses its ROS graph when the host is
+# loaded (round45-50: ~1 in 5 gate runs with no code change).  One immediate retry keeps the gate honest
+# without hiding a real derivation regression: a genuine break fails both attempts.
+if ! python3 tests/check_bag_pipeline.py; then
+  echo "   (bag pipeline probe failed once -- retrying with a clean harness)"
+  bash scripts/clean_harness.sh >/dev/null 2>&1 || true
+  sleep 2
+  python3 tests/check_bag_pipeline.py || note_fail "check_bag_pipeline.py (rosbag2 -> CSV derivation, 2 attempts)"
+fi
 python3 tests/check_timebase.py || note_fail "check_timebase.py (D4 truth time base: t_sim_us + manifest mapping)"
 python3 tests/check_nav_gates.py || note_fail "check_nav_gates.py (Phase 3: explicit extnav refusal table)"
 python3 tests/check_traj_error.py || note_fail "check_traj_error.py (Phase 5 extras: APE/RPE + manifest completeness)"
