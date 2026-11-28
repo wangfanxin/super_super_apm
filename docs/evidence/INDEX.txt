@@ -16,6 +16,15 @@ final/phase180d-01-01_rest2rest.png  180d 的 14 次 rest2rest 逐事件图（�
 final/sheet-BEST-180b.png    15 行全过但 Q2 −0.039/Q4 c3 FAIL
 （round53 实验：184b/184d/184e/184g 为保守建图 A/B；184a/184c/184f 无效入 _invalid）
 
+## 四图复测（2026-11-29，当前最佳配置）
+final/fourmap-best.png              frozen/s22/s23/s24 指标对比（W4/Q2/Q1/S2/R2R/S1）
+final/sheet-fourmap-frozen.png      frozen=phase188a：14/14、W4 +0.084、Q2 −0.016 PASS
+final/sheet-fourmap-s22.png         s22=phase187b：13/14（W4 −0.021）、Q2 −0.121
+final/sheet-fourmap-s23.png         s23=phase188c：14/14、W4 +0.040、Q2 −0.060
+final/sheet-fourmap-s24.png         s24=phase187d：13/14（W4 −0.045）、Q2 −0.145
+final/phase188a/187b/188c/187d-01-01_* 四图各套单图（topdown/timeseries/corner/planexec/low-speed/rest2rest/velocity）
+说明：187a/187c 首批因 LIO/起飞异常无效，重飞为 188a/188c。
+
 ## 四图最佳证据（frozen / s22 / s23 / s24，全部 15/15 + W4 CLEAR）
 final/BEST-fourmap.txt              四图关键数字汇总
 final/sheet-BEST-158a.png           frozen 复现趟（W6 0.220 / Q3 0.163 / P1 0 尖峰 / S1 0.55 s / S2 1）

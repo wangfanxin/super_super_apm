@@ -3334,3 +3334,29 @@ IIR 平滑），并把**发布参考点的前进速率**限制为 `v_lim*dt`（�
   起点位置用实测（不领先、不切角），起点速度/加速度用上一段进度点（保持速度连续），再 2 趟 A/B。
 - 证据：`splice-ab.png`、`sheet-phase186a/b.png`、`phase186a-01-01_rest2rest.png`（4 次事件）、
   `phase186a-01-01_velocity-tracking.png`；instrumentation `REPLAN-START` 日志已加入。
+
+## 142. round 59：当前最佳配置的四图复测（frozen / s22 / s23 / s24，各 1 趟 valid）
+
+配置 = 当前最佳（`super_planner_hex_hs_cache.yaml` + `handover_policy: defer` + item2/4 修复 + 180d 环境；
+`CORNER_SPEED=0.9`、`PRE_GOAL_M=0.8`、`PASS_BY_M=0.6/1.0`、`REF_ALONG_FLOOR=0.9`、z 0.118/2.0/0.005/1.2）。
+飞行：frozen=`phase188a`、s22=`phase187b`、s23=`phase188c`、s24=`phase187d`（187a/187c 的第一批因 LIO/起飞
+异常无效，已移入 `_invalid` 并重飞）。
+
+| 地图 | 15 行 | W4（全速率） | W6 p90 | Q1 | Q2 | Q3 | Q4 | S1 | S2 | R2R |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **frozen** | **14/14** | **+0.084 CLEAR** | 0.196 | 1 段 | **−0.016 PASS** | 0.130 | FAIL(c2/c3) | 1.31 s | 4 环/7.0 s | 14 |
+| s22 | 13/14（W4） | −0.021 CONTACT | 0.213 | 0 | −0.121 | 0.142 | FAIL | 0.92 | 3 环/4.1 s | 16 |
+| s23 | **14/14** | **+0.040 CLEAR** | 0.215 | 0 | −0.060 | 0.155 | FAIL | 1.11 | 2 环/4.1 s | 15 |
+| s24 | 13/14（W4） | −0.045 CONTACT | 0.222 | 0 | −0.145 | 0.160 | FAIL | 0.83 | 1 环/3.2 s | 14 |
+
+- **frozen 仍是唯一 Q2 PASS 的图**（−0.016）；三张 seed 图 Q2 全部 FAIL（−0.060…−0.145），
+  W4 只有 s23 转正（+0.040）。说明 Q2/W4 的临界性**与地图强相关**（不同柱布局 → 参考最贴柱点不同），
+  不是单一冻结图的偶然；
+- 四图 W1b 均 13/13、W6 0.196–0.222、Q3 0.130–0.160、P1 无 >1 m 尖峰；
+- Q4 四图都有个别角点 FAIL（c2/c3 等，dwell/vmin 抖动）；S2 1–4 环（c1 钩形环为主）；
+- R2R 14–16（DEFER 结构），与单图基线一致。
+- 证据：`fourmap-best.png`（四图指标对比）、`sheet-fourmap-{frozen,s22,s23,s24}.png`、
+  `phase{188a,187b,188c,187d}-01-01_*`（topdown/timeseries/corner/planexec/low-speed/rest2rest/velocity）、
+  `planexec-*.png`、`low-speed-*.png`、`handover-audit-*.png`。
+- 结论：**1.35 的"完美"仍只在 frozen 上接近**（且 Q1/Q4/S2 未全过）；四图统一达标还需要先解决
+  Q2/W4 的"参考贴柱"根因（地图/时序，见 §133–§136），不是换图能绕过的。
