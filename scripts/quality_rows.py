@@ -265,12 +265,70 @@ def main() -> int:
             if m and float(m.group(1)) < 5.0:
                 _short += 1
         _resync = _txt.count("CARROT-RESYNC")
+        # 2026-11-28 review: split rest2rest into pad / corner / mid-leg / landing / chase.
+        # COMMIT lines carry an EPOCH sim=.  Instead of fitting epoch->sim (error prone), use the PLANDBG
+        # lines interleaved in the same log: each has plan-box wall= which maps to sim through setpoints.csv
+        # (t_wall<->t_sim_us) and carries the pacer leg.  phase.csv gives the leg start sims in the same clock.
+        _tw = np.array([float(x["t_wall"]) for x in sp]) if False else None
+        _phase = []
+        _ph_csv = os.path.join(run, "phase.csv")
+        if os.path.isfile(_ph_csv):
+            try:
+                for _r in _rows(_ph_csv):
+                    _phase.append((float(_r.get("t_sim_us") or 0) * 1e-6, (_r.get("phase") or "").strip()))
+                _phase.sort()
+            except Exception:                            # noqa: BLE001
+                _phase = []
+        _leg_starts = [t0 for t0, nm in _phase if nm.startswith("leg")]
+        _land_start = next((t0 for t0, nm in _phase if nm == "land"), None)
+        _first_leg = _leg_starts[0] if _leg_starts else None
+        # wall->sim table from setpoints.csv
+        _srows = _rows(os.path.join(run, "setpoints.csv"))
+        _w = np.array([float(r["t_wall"]) for r in _srows])
+        _s = np.array([float(r["t_sim_us"]) * 1e-6 for r in _srows])
+        _oo = np.argsort(_s); _s, _w = _s[_oo], _w[_oo]
+        _kk = np.concatenate([[True], np.diff(_s) > 1e-9]); _s, _w = _s[_kk], _w[_kk]
+        _cls = {"pad": 0, "corner": 0, "mid-leg": 0, "landing": 0, "chase": 0, "unknown": 0}
+        _ev = []
+        _cur_sim = None
+        _cur_leg = None
+        for _ln in _txt.splitlines():
+            if "PLANDBG wall=" in _ln:
+                _mw = _re3.search(r"wall=([0-9.]+)", _ln)
+                if _mw and _w.size > 1:
+                    _cur_sim = float(np.interp(float(_mw.group(1)), _w, _s))
+                continue
+            if "COMMIT " in _ln and "rest2rest" in _ln and _cur_sim is not None:
+                _ev.append(_cur_sim)
+        _ev.sort()
+        _last = None
+        for _sv in _ev:
+            if _first_leg is None:
+                _c = "unknown"
+            elif _land_start is not None and _sv >= _land_start:
+                _c = "landing"
+            elif _sv < _first_leg - 2.0:
+                _c = "pad"
+            else:
+                # a corner handover happens at a leg boundary (the old trajectory ends at the corner);
+                # the phase boundary may be a few seconds before/after the commit, so use a +-5 s band
+                _near = bool(_leg_starts) and min(abs(_sv - _t0) for _t0 in _leg_starts) < 5.0
+                _c = "corner" if _near else "mid-leg"
+            if _last is not None and _sv - _last < 5.0 and _c in ("corner", "mid-leg"):
+                _c = "chase"
+            _cls[_c] += 1
+            _last = _sv
+        if not _ev:
+            _cls = {"pad": 0, "corner": 0, "mid-leg": 0, "landing": 0, "chase": 0, "unknown": len(_commit)}
         r2r_det = ("TrajFinish %d, PlanFromRest ok %d, failed %d; defer-decisions %d%s; "
-                   "rest2rest commits %d (short<5s: %d, chase-like); resync %d; per corner %.2f"
+                   "rest2rest commits %d(short<5s %d); resync %d; per corner %.2f; "
+                   "classes pad %d/corner %d/mid %d/landing %d/chase %d%s"
                    % (_fin, _ok, _fail, len(_decs),
                       (" remain(min/p50 %.2f/%.2f s)" % (min(_rems), float(np.median(_rems)))) if _rems else "",
                       len(_commit), _short, _resync,
-                      _ok / max(1.0, (len(_cen.get("corners", [])) - 1))))
+                      _ok / max(1.0, (len(_cen.get("corners", [])) - 1)),
+                      _cls["pad"], _cls["corner"], _cls["mid-leg"], _cls["landing"], _cls["chase"],
+                      "" if _ev else " (no COMMIT/PLANDBG pairing -> classes unavailable)"))
         adv_ok = None
         _legs = []
         for ln in _adv:

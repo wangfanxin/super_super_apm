@@ -12,7 +12,7 @@ MAVLink 桥 + supervisor、真值采集、验收与出图工具，全部在本�
 | 项 | 状态 |
 |---|---|
 | **当前最佳（可飞行基线）** | `super_planner_hex_hs_cache.yaml`（handover=defer）+ `NAV_LEAD_S=0.06` + `PASS_BY_M=0.6/PASS_BY_LONG_M=1.0` + `REF_WASHOUT_TAU=2.0/VMAX=0.15` + `REF_NO_RETRACT=1` + `REF_ALONG_FLOOR=0.9` + `GOAL_PVA=1` + `CORNER_MODE=bisector` + `CORNER_SPEED=0.9` + `ARRIVE_M=0.3` + `PRE_GOAL_M=0.8` + z 0.118/2.0/0.005/1.2；`EXTRA_PARMS=guided_limits_bench5_vert_agile.parm` |
-| 代表趟 177b / 177c | 15 行 **14/15 + 14/15**（W4：177b **CONTACT −0.000 m**、177c CLEAR +0.006 m）；W1b 13/13；Q3 0.157/0.154；W6 0.231/0.241；P1 PASS（max 0.665/0.721，0 个 >1 m）；Q1 1/2 段；S1 **3.45/5.54 s**；S2 **6/6 环（7.9/7.2 s，已去 padding）**；R2R **16/21 次 rest2rest**；Q2 **FAIL −0.100/−0.094**；Q4 仍有个别角点 vmin<0.4 |
+| 代表趟 **180b**（新二进制，当前最佳） | **15 行全过**；W4 **CLEAR +0.061**；W6 0.209；Q3 0.145；P1 PASS（max 0.355，0 个 >0.5 m）；Q1 **0**；S1 1.17 s；S2 2 环/3.7 s；R2R 15 次（pad 3/corner 11/mid 0/chase 1）；Q2 **−0.039（FAIL）**；Q4 c3 vmin 0.32（FAIL） |
 | 已知未过（1.35 "完美"还差） | **W4 点净空**（177b 已接触）、**Q2 机身净空**（−0.10 m，两趟都 FAIL）、Q1 1–2 段、Q4 角点、S1 1–6 s、S2 6 环、每角点 rest2rest（R2R 1.3–2.1 次/角点）、末目标偶发参考环 |
 | 机制现状 | 换目标用 DEFER（等旧轨迹飞完再 rest2rest）；已实现 R1a（提前推进）但两路独立审查判定 **NO-GO**（A* 会绕过当前角点 → pacer 卡死），需先修"旧轨迹整段作 guide / via points"；另发现 `backup_traj_en` 是死参数、committed 会被备份刹车段截断 → 腿中段 rest2rest |
 | 机体 / 地图 | `sim/models/quad_1kg_250mm.json`（1.0 kg / 250 mm）；冻结 `forest_hex12.yaml`（半径 10、522 柱、1 m 柱距）+ seed s22/s23/s24；大世界 hex12w 已接入（6000 点/帧、geofence 16、planner map ±18 m） |

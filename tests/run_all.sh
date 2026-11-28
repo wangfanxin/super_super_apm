@@ -38,6 +38,19 @@ bash scripts/check_pattern.sh || note_fail "check_pattern.sh (see sim/pattern/RE
 step "unit tests"
 python3 scripts/test_ref_lp.py || note_fail "test_ref_lp.py"
 python3 scripts/archive/harness/test-stall-gate.py || note_fail "test-stall-gate.py"
+python3 tests/test_metrics.py || note_fail "test_metrics.py (S2 multi-scale / no-padding regression)"
+
+step "0-flight handover audit (per-leg pass-by; SKIP without runs)"
+if [ -d .runs/missionA-phase180b-01-01 ]; then
+  if python3 scripts/check_handover_via.py --tag phase180b-01-01 > /tmp/gate_handover_via.txt 2>&1; then
+    tail -1 /tmp/gate_handover_via.txt
+  else
+    tail -20 /tmp/gate_handover_via.txt
+    note_fail "check_handover_via.py on phase180b-01-01 (a pacer corner is not passed)"
+  fi
+else
+  echo "   SKIP (no phase180b-01-01 run in .runs)"
+fi
 
 step "Phase 2 recording base: rosbag2 -> CSV derivation (synthetic, no flight)"
 python3 tests/check_bag_pipeline.py || note_fail "check_bag_pipeline.py (rosbag2 -> CSV derivation)"

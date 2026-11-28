@@ -92,12 +92,16 @@ W4 加入"路线在任务高度带的采样"等）。默认关闭，**所有正�
    （见 `docs/README.md` 与 `docs/PIPELINE.md`）。
 6. **只飞 SITL，不飞真机；不 push。**
 
-## 当前基线（2026-11-26）
+## 当前基线（2026-11-28 校正）
 
-- 当前最佳（9f+，已确认）：`phase23c-01-01` —— 除 H2 外 **15/15 行全过**；W4 **+0.009 m CLEAR**、
-  W3 bias **+0.003**、W6 p90 0.280、W2 p90 1.44、W1b 13/13、高度残差 p50 2.2 cm。
-- 历史最佳（旧）：`phase9f-01-01` —— W4 +0.027 CLEAR、W6 p90 0.262，但 W3 bias −0.113（高度基准未修）。
-- 基线航班与证据：`docs/evidence/phase23c-*`、`phase9f-*`（详见 `docs/evidence/INDEX.txt`）。
+- 当前最佳（新二进制，item2/4 修复后）：`phase180b-01-01` —— **15 行全过**、W4 **CLEAR +0.061**（全速率）、
+  W6 p90 0.209、Q3 0.145、Q1 **0**、P1 PASS（max 0.355，0 个 >0.5 m）、S2 2 环/3.7 s、S1 1.17 s；
+  Q2 **−0.039（仍 FAIL，门槛 −0.02）**、Q4 c3 vmin 0.32（仍 FAIL）。
+- 旧二进制对照：`phase177b/177c` —— 15 行 14/15（W4 CONTACT −0.000 / CLEAR +0.006）、W6 0.231/0.241、
+  Q1 1/2；S2 老旧口径不可直接比。
+- 证据：`docs/evidence/final/sheet-BEST-180b.png` + `phase180b-01-01_*`（详见 `docs/evidence/INDEX.txt`）。
+- 完美定义见 `docs/FLIGHT-ANALYSIS.md` §124/§127：有效性 + 15 行 + W4>0 + Q2≥−0.02 + Q1=0 + Q4 全过 +
+  R2R（chase=0 / mid-leg=0 / full-leg≤2/趟），连续 2 趟同配置。
 
 ## 泛化评估（owner 2026-11-26）
 

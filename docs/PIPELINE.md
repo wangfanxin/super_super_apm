@@ -87,13 +87,11 @@ lidar_imu（10 Hz 点云 + 200 Hz IMU）
   |---|---|
   | patch 9 | 重规划时保持发布已提交轨迹（不静默） |
   | patch 10 | `super_planner/replan_time_limit` 墙钟预算（0.35 s） |
-  | patch 11 | 拒绝"第一步就反向"的规划 |
-  | patch 14 `patch_super_smooth_handover.py` | 新目标先走**连续重规划**（旧轨迹做 guide），失败才回退 `new_goal=true` → 显著减少角点停-走 |
   | patch 15 `patch_super_pva_tail.py` | PVA goal 后追加 `pva_tail_len` 米直线延长段（默认 0=关），让轨迹终点不在角点；**实验开关，尚未定论** |
-- plan box 的目标/到达参数（当前默认 / 9f+ 值）：
-  `--target-mode corner`、`--arrive-m`（默认 1.0 / 9f+ 0.3）、`--pre-goal-m 0`、`--goal-lookahead-m 0`、
-  `--corner-carry-m 0`、`--goal-lead 0`、`--pass-by-m 0`、`--corner-mode bisector`、`--corner-speed 0.8`、
-  `--goal-pva 1`。
+- plan box 的目标/到达参数（当前最佳 180b 实际值）：
+  `--arrive-m 0.3 --pre-goal-m 0.8 --pass-by-m 0.6 --pass-by-long-m 1.0 --corner-mode bisector
+   --corner-speed 0.9 --goal-pva 1`；`--advance-lookahead-s`（R1'，默认 0）、`--advance-max-m 3.8`、
+  `--resync-s 1.5`、`--dispatch-lookahead`（默认 0）。
   （`CORNER_EXIT_LOOK/TRIGGER` 与 `REF_DEADRECKON` 已在清理中删除——它们被真飞否决。）
 
 ## 6. 世界与任务
