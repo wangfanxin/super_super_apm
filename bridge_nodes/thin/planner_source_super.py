@@ -500,6 +500,10 @@ def main() -> int:
                     help="PVA goal 的出弯速度大小，m/s。由几何决定：本世界两个紧角净空圆角 R=0.95 m，"
                          "v=sqrt(a_lat*R)≈2.0（scripts/corner_room.py）；2.5 m/s 时深偏差 0.40 m，"
                          "仍小于紧角的参考净空 0.45 m，但余量很薄。")
+    ap.add_argument("--dispatch-lookahead", type=int, default=0,
+                    help="1 = R1 机制：始终把**下一个角点**（pacer.i_leg+1）作为 SUPER 目标，"
+                         "让当前角点成为轨迹内部点（薄层的 through-poses）。"
+                         "0 = 旧行为（角点前 --pre-goal-m 才推进目标）。首腿（竖直起飞）不启用。")
     ap.add_argument("--goal-lead", type=int, default=0,
                     help="★ 让当前角点成为轨迹的**内部点** ★ 发给 SUPER 的 goal 提前 k 个航点，"
                          "pacer 仍然量到当前角点（到达判据不变），而 SUPER 规划的是一条跨过该角点、"
@@ -1073,6 +1077,22 @@ def main() -> int:
                         print("GOAL-YAW-GATE: hold goal switch (heading gap %.0f deg > %.0f, held %.2f s)"
                               % (_ang, _gate_deg, _held), flush=True)
                     return
+        # ★ R1 DISPATCH-LOOKAHEAD (2026-11-28, mechanism): target the NEXT corner, so the corner the
+        # pacer is measuring is an INTERIOR point of the committed trajectory (thin-layer through-poses).
+        # The old rule sent the next goal only --pre-goal-m before the corner, which made the committed
+        # trajectory END at the corner and forced a rest2rest handover there (MEASURED 177b: 16 TrajFinish +
+        # 16 PlanFromRest per flight, hooks 1-2 s after each).  The first leg (vertical take-off) keeps the
+        # old rule: planning horizontally to corner 1 while the pad leg has not arrived would skip the climb.
+        if int(getattr(args, "dispatch_lookahead", 0)) and pacer.i_leg >= 1:
+            _la_sent = int(min(pacer.i_leg + 1, len(corners_l) - 1))
+            if _la_sent != sent_i:
+                if state.get("la_n") is None or state.get("la_n") != _la_sent:
+                    state["la_n"] = _la_sent
+                    print("DISPATCH-LOOKAHEAD: leg %d/%d in hand -> SUPER target corner %d (interior corner %d)"
+                          % (pacer.i_leg + 1, len(corners_l), _la_sent, pacer.i_leg), flush=True)
+                sent_i = _la_sent
+                # pre-goal latch / carrot must not fight the lookahead target
+                state["pre_goal_leg"] = None
         if sent_i == state["goal_i"] and not force:
             return
         if sent_i == state["goal_i"] and force and (now_goal() - state["last_goal_t"]) < 1.0:
