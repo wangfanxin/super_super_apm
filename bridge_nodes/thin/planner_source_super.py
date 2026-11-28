@@ -500,6 +500,12 @@ def main() -> int:
                     help="PVA goal 的出弯速度大小，m/s。由几何决定：本世界两个紧角净空圆角 R=0.95 m，"
                          "v=sqrt(a_lat*R)≈2.0（scripts/corner_room.py）；2.5 m/s 时深偏差 0.40 m，"
                          "仍小于紧角的参考净空 0.45 m，但余量很薄。")
+    ap.add_argument("--advance-lookahead-s", type=float, default=2.4,
+                    help="R1a：把'推进到下一个角点'的触发距离改为 **v_f·该秒数 + margin**（v_f=低通后的 LIO 水平速度）。"
+                         "取 2.4（DEFER 窗口上界 2.0 s + 0.4 s 裕度）让 goal 切换发生在旧轨迹还剩 >2 s 时，"
+                         "从而走 replan 拼接分支而不是'飞完→rest2rest'。0 = 关闭（沿用 --pre-goal-m）。")
+    ap.add_argument("--advance-margin-m", type=float, default=0.4,
+                    help="R1a 触发距离的距离余量（m）。")
     ap.add_argument("--dispatch-lookahead", type=int, default=0,
                     help="1 = R1 机制：始终把**下一个角点**（pacer.i_leg+1）作为 SUPER 目标，"
                          "让当前角点成为轨迹内部点（薄层的 through-poses）。"
@@ -1039,7 +1045,32 @@ def main() -> int:
         # ⚠ 停机坪那一条腿（i_leg=0，竖直起飞）**不能用 pre-goal**：实测 missionA-pg-01（tag 撞名，
         #   旧记录已覆盖），距停机坪 0 m < 2 m 立刻把目标换成角点 1 → 竖直腿被跳过 → 飞机没爬升，
         #   truth 最高 0.389 m、setpoints.csv 为空。
-        if pre > 0.0 and pacer.i_leg >= 1 and pacer.i_leg < len(corners_l) - 1:
+        adv_s = float(getattr(args, "advance_lookahead_s", 0.0) or 0.0)
+        adv_m = float(getattr(args, "advance_margin_m", 0.0) or 0.0)
+        if adv_s > 0.0 and pacer.i_leg >= 1 and pacer.i_leg < len(corners_l) - 1:
+            # R1a: advance the goal EARLY ENOUGH that the old committed trajectory still has more than the
+            # DEFER window (2.0 s) left, so the planner replans mid-leg (splice) instead of flying the old
+            # trajectory to its end and restarting from the measured state (rest2rest).
+            if state.get("pre_goal_leg") == pacer.i_leg:
+                sent_i = pacer.i_leg + 1
+            else:
+                p_w_now = here_w()
+                if p_w_now is not None:
+                    d_now = float(np.linalg.norm(np.asarray(p_w_now, float)[:2]
+                                                 - corners_w[pacer.i_leg][:2]))
+                    _vl = state.get("v_l")
+                    _v_now = float(np.linalg.norm(np.asarray(_vl, float)[:2])) if _vl is not None else 0.0
+                    # speed estimate FILTERED: the raw LIO speed spikes 2-3x at corner transients and would
+                    # advance the goal 5-7 m early (offline replay), re-introducing the corner-cut risk.
+                    state["v_f"] = 0.85 * float(state.get("v_f", _v_now)) + 0.15 * _v_now
+                    v_est = float(state.get("v_f", _v_now))
+                    d_adv = v_est * adv_s + adv_m
+                    if d_now < d_adv:
+                        sent_i = pacer.i_leg + 1
+                        state["pre_goal_leg"] = pacer.i_leg
+                        print("ADVANCE-LOOKAHEAD: leg %d/%d advance at d=%.2f m (v=%.2f m/s, d_adv=%.2f m)"
+                              % (pacer.i_leg + 1, len(corners_l), d_now, v_est, d_adv), flush=True)
+        elif pre > 0.0 and pacer.i_leg >= 1 and pacer.i_leg < len(corners_l) - 1:
             if state["pre_goal_leg"] == pacer.i_leg:
                 # already advanced for THIS leg: keep the next corner as the goal (monotonic, no A/B flip)
                 sent_i = pacer.i_leg + 1

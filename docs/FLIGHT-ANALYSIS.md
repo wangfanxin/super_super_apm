@@ -2701,3 +2701,29 @@ Q1 1（0.47 s @(7.4,3.9)）、S1 1.09 s、S2 3 环/10.1 s（c1/c2 真值钩形 +
 C++ through-poses：A*/guide 支持 via points（`PathSearch` 接受"当前角点+目标角点"两个 via，路径穿过两者），
 FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `getNearestFurtherGoalPoint`/`inside_poly_goals`
 等上游残留，改造成本中等但可控。
+
+## 122. round 39：R1a 实现（速度缩放提前推进）+ 离线校验，并启动三路独立审查（2026-11-28）
+
+### 122.1 R1a 实现（薄层，opt-in）
+`planner_source_super.py` 新增 `--advance-lookahead-s`（默认 0=关；建议 2.4）与 `--advance-margin-m`（0.4）：
+- 替换固定 `PRE_GOAL_M=0.8` 的推进规则：当**距当前角点距离 < v_f·T + margin** 时把目标推进到下一个角点；
+- `v_f` 是 **LIO 水平速度低通**（0.85/0.15）：原始速度在角点瞬态会尖到 2–3 倍，离线回放显示直接用原始速度
+  会让推进距离在 3–7 m 抖动，重新引入"角点被 A* 绕过"的风险；
+- `T=2.4 s` 由 **DEFER 窗口上界 2.0 s + 0.4 s 裕度**推导：保证 goal 切换时旧轨迹剩余 >2 s → 走 replan 拼接分支
+  （而不是 DEFER→飞完→rest2rest）。`R1`（始终下一个角点）保留为实验开关（默认关，W1b 风险更高）。
+- 旧行为（`--advance-lookahead-s 0`）完全不变，可回退。
+
+### 122.2 离线校验（`scripts/dispatch_replay.py`，0 飞行）
+用 177b/177c 的记录真值重放 pacer，统计"goal 切换时离旧目标还剩多少米"：
+| dispatch | 177b | 177c | 解读 |
+|---|---|---|---|
+| OLD（0.8 m 固定） | p50 **0.80 m**，13/13 <2 m | 0.80 m，13/13 | 切换后 ~0.6 s 旧轨迹结束 → DEFER → rest2rest |
+| R1（始终下一个角点） | p50 **10.27 m** | 10.26 m | 剩余一整条腿，但角点可能被 A* 绕过（W1b 风险） |
+| **R1a（2.4 s + 0.4 m，滤波速度）** | p50 **3.60 m**（≈2.8 s），1/13 <2 m | **3.74 m**，1/13 | 超过 DEFER 窗口，同时仍在角点前 2.6–3.7 m（角点接近风险低） |
+
+### 122.3 三路独立审查（owner 要求）
+已派出三个只读审查子代理分别审查全链路：
+- `reviewer-planner`：SUPER 规划器 + FSM（DEFER/splice/generateExpTraj/A*/MINCO/config）正确性与 R1a 可行性；
+- `reviewer-thinlayer`：薄层 dispatch/pacer + bridge + PSC 控制链、R1a 边界与日志需求；
+- `reviewer-eval`：验收指标/工具/门禁/文档一致性/证据可复现性。
+三份报告回来后合并成审查结论，再决定 R1a 是否试飞（不先飞）。

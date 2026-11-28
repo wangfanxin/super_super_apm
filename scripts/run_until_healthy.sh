@@ -178,7 +178,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --entry-max-speed-mps ${ENTRY_MAX_MPS:-0} \
 --goal-lookahead-m ${GOAL_LOOKAHEAD_M:-0.0} \
 --goal-lead ${GOAL_LEAD:-0} \
---dispatch-lookahead ${DISPATCH_LOOKAHEAD:-0} --pre-goal-m ${PRE_GOAL_M:-0} \
+--dispatch-lookahead ${DISPATCH_LOOKAHEAD:-0} --advance-lookahead-s ${ADVANCE_LOOKAHEAD_S:-0} --advance-margin-m ${ADVANCE_MARGIN_M:-0.4} --pre-goal-m ${PRE_GOAL_M:-0} \
 --poly-check ${POLY_CHECK:-0} \
 --clr-gov-margin ${CLR_GOV_M:-0} \
 --time-scale ${TIME_SCALE:-1.0} \

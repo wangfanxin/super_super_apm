@@ -67,6 +67,9 @@ def main():
     ap.add_argument("--pre-goal-m", type=float, default=0.8)
     ap.add_argument("--settle-speed", type=float, default=6.0)
     ap.add_argument("--settle-s", type=float, default=6.0)
+    ap.add_argument("--advance-s", type=float, default=2.4,
+                    help="R1a: advance when distance-to-target < v*advance_s + margin")
+    ap.add_argument("--advance-margin", type=float, default=0.3)
     a = ap.parse_args()
     from cmd_stream import TourPacer
     corners = world_corners(os.path.join(ROOT, a.world))
@@ -81,12 +84,12 @@ def main():
 
     class Clock:
         t = 0.0
-    for mode in ("old", "lookahead"):
+    for mode in ("old", "lookahead", "r1a"):
         clk = Clock()
         pacer = TourPacer(tour, 0.0, a.arrive_m, a.settle_speed, a.settle_s, 40.0, 0.0,
                           seg_len_w=lambda i: float(np.linalg.norm(tour[i][:2] - tour[max(i - 1, 0)][:2])),
                           pass_by_m=a.pass_by_m, pass_by_long_m=a.pass_by_long_m)
-        sent = 0; switches = []; last_t = None
+        sent = 0; switches = []; last_t = None; latched = -1
         for i in range(1, len(t)):
             dt = t[i] - t[i - 1]
             if dt <= 0:
@@ -96,12 +99,27 @@ def main():
             pacer.step(tuple(P[i]), v_h, clk.t)
             if mode == "lookahead" and pacer.i_leg >= 1:
                 new_sent = int(min(pacer.i_leg + 1, len(tour) - 1))
+            elif mode == "r1a" and pacer.i_leg >= 1 and pacer.i_leg < len(tour) - 1:
+                if latched == pacer.i_leg:
+                    new_sent = int(pacer.i_leg + 1)
+                else:
+                    d_now = float(np.linalg.norm(P[i, :2] - tour[pacer.i_leg][:2]))
+                    v_raw = float(np.linalg.norm(P[i, :2] - P[i - 1, :2]) / dt) if dt > 0 else 0.0
+                    vf = 0.85 * locals().get("v_f", v_raw) + 0.15 * v_raw
+                    v_f = vf
+                    v_est = vf
+                    if d_now < v_est * a.advance_s + a.advance_margin:
+                        new_sent = int(pacer.i_leg + 1); latched = pacer.i_leg
+                    else:
+                        new_sent = int(pacer.i_leg)
             else:
                 new_sent = int(pacer.i_leg)
                 # pre-goal rule: advance when within pre_goal of the in-hand target
                 if 0.0 < a.pre_goal_m and pacer.i_leg < len(tour) - 1:
-                    if np.linalg.norm(P[i, :2] - tour[pacer.i_leg][:2]) < a.pre_goal_m:
+                    if latched == pacer.i_leg:
                         new_sent = int(pacer.i_leg + 1)
+                    elif np.linalg.norm(P[i, :2] - tour[pacer.i_leg][:2]) < a.pre_goal_m:
+                        new_sent = int(pacer.i_leg + 1); latched = pacer.i_leg
             if new_sent != sent:
                 # how much of the leg to the CURRENT sent target is still ahead?
                 remain = float(np.linalg.norm(P[i, :2] - tour[sent][:2])) if sent < len(tour) else 0.0
