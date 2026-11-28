@@ -2494,3 +2494,31 @@ A* 内核（astar.cpp:233）：
 
 判据：15 行、H0–H6 clean、W1b 13/13、Q1、Q3、W6、P1、S2（环数/总时长）、corner truth vmin；
 外加日志里 `handover=splice` 与 `GUIDE-CACHE/REPLANDBG` 行为。
+
+## 116. round 34：handover_policy A/B 结果（defer vs splice，2 趟/arm，2026-11-28 12:30）
+
+配置：frozen hex12；其余 = §99.3 最佳配置（lead 0.06、pass-by 0.6/1.0、washout、corner 0.9）。
+A 臂 = `hs_cache`（handover=defer，默认）；B 臂 = `hs_splice`（handover=splice，立即从旧参考状态拼接 + 旧轨迹作 guide）。
+
+| 臂 | 趟 | 15 行 | W4 | W2 p90 | W6 p90 | Q3 | P1 | Q1 | S1 | S2（环/总时长） |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A defer | 177b | **15/15** | **CLEAR +0.006** | 1.48 | 0.231 | 0.157 | PASS（max 0.665） | 1 | 1.09 s | 3 环/10.1 s |
+| A defer | 177c | **15/15** | **CLEAR +0.008** | 1.53 | 0.241 | 0.154 | PASS（max 0.721） | 2 | 2.70 s | 4 环/12.1 s |
+| B splice | 178a | 14/15（W4） | −0.075 接触 | 1.56 | **0.289** | **0.278** | **FAIL（1.09 尖峰）** | 2 | 0.26 s | **5 环/20.1 s** |
+| B splice | 178b | 14/15（W4,W6） | −0.087 接触 | 1.53 | 0.249(fail) | 0.243 | **FAIL（1.43 尖峰）** | 5 | 1.28 s | 2 环/7.7 s |
+
+**结论（2 趟/arm）**：
+- **splice 两趟都差于 defer**：W4 两趟接触、Q3/W6 变差、P1 两趟都出现 >1 m 尖峰、S2 一臂更差；
+- defer 两趟均 **15/15 + W4 CLEAR + W6 0.231–0.241 + Q3 0.154–0.157 + P1 PASS**，基线稳定；
+- 说明"立即 replan + 旧参考状态拼接 + 旧轨迹作 guide"这个**直接实现**不够：splice 在换目标处把旧轨迹的
+  末端（旧角点）作为 guide 内部点、A* 从那里接到新目标，MINCO 的曲率/加速度在拼接处仍有跳变；
+  且新目标提前（pre-goal 0.8 m）到达时，replan 发生在转弯前，新轨迹终点远（下一个角点），
+  MINCO 的终端约束与旧速度方向的耦合没有处理（需要更细的 terminal-yaw/guide 过渡或 through-poses）。
+- **判定：splice 暂不采用**，默认保持 defer（已有 15/15 基线）；`hs_splice.yaml` 保留为实验配置。
+
+**下一步候选**（不急于再飞）：
+1. 给 splice 加 **REPLANDBG/WHTF_REPLAN_DEBUG 日志 + 失败码统计**，先看清每趟 splice 的 plan 成功率、
+   拼接点曲率、terminal 状态，再决定是否改；
+2. 真正彻底的是 **through-poses**（一次发当前+下一角点，规划一条穿越轨迹），但要改 FSM/规划器，工作量大；
+3. 在 defer 基线上先合入已验证的 **final-arrive 0.5**（176a 显示末段绕圈消失）与 **yaw gate**（需更多重复），
+   把 1.35 做到"15/15 + W4/Q2 记录项 + S2≤1 + Q1≤1 + P1 PASS"。

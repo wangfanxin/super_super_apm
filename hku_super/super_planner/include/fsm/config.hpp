@@ -47,6 +47,9 @@ namespace fsm {
         double click_height{};
 
         bool click_yaw_en{};
+        /// WHTF-HANDOVER-POLICY: "defer" = old DEFER-HANDOVER; "splice" = replan the new goal immediately
+        /// and let SuperPlanner start from its old committed trajectory (see docs/FLIGHT-ANALYSIS.md §113/§115).
+        string handover_policy;
         string cmd_topic, mpc_cmd_topic, click_goal_topic;
         double yaw_dot_max{};
 
@@ -65,6 +68,7 @@ namespace fsm {
             loader.LoadParam("fsm/click_goal_topic", click_goal_topic, string("/planning/click_goal_topic"));
 
 
+            loader.LoadParam("super_planner/handover_policy", handover_policy, string("defer"));
             loader.LoadParam("super_planner/yaw_dot_max", yaw_dot_max, 1.0, true);
             loader.LoadParam("super_planner/visualization_en", visualization_en, false, true);
             loader.LoadParam("rog_map/resolution", resolution, 0.1, true);
