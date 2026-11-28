@@ -2851,3 +2851,30 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
 - R1a B（2 趟）：A + `ADVANCE_LOOKAHEAD_S=2.4 ADVANCE_MARGIN_M=0.4`；
 - 每趟记录：15 行、W4 全速率、Q1/Q2/Q3/Q4、P1、S1/S2、**R2R（rest2rest 次数与 corner/mid-leg 分类）**、
   ADV 事件、W1b。
+
+## 126. round 43：item2/4 修复后的基线飞行 + R1a 再测（2 趟均无效/有害）（2026-11-28）
+
+### 126.1 基线 180a（backup 真关 / 普通 replan 恢复整段 / PVA 终端修正 / 心跳加锁）
+- 15 行：**14/15（W4 CONTACT −0.012）**，W1b 13/13，W6 0.224，P1 PASS（0 个 >0.5 m 尖峰）；
+- **Q1 = 0 段**（首个 0 段趟）、Q3 0.164、S2 **1 环/3.5 s**（旧口径 6 环/7.9 s）→ 轨迹几何明显更干净；
+- 但 **R2R 仍是 15 次 rest2rest**（每角点 1.25），committed 轨迹时长 p50 4.44 s / max 10.2 s —— 说明
+  "backup 截断"不是 rest2rest 的唯一来源；DEFER 的"角点前才换目标→飞完旧轨迹→rest2rest"仍在主导；
+- Q2 仍 FAIL（−0.112），S1 2.74 s。
+
+### 126.2 R1a（B 臂，ADVANCE_LOOKAHEAD_S=2.4 / margin=0.4，2 趟）
+| 趟 | 有效性 | W1/W1b | 结果 |
+|---|---|---|---|
+| 181a | **H6 FAIL**（raycast max 383 ms / 42 skips） | 5/13, 5/13 | 59 次 TrajFinish/60 rest2rest、Q1 7、S2 7 环/162 s、Q4 dwell 4.0 → 角点被系统性绕过 |
+| 181b | **H6/H5 FAIL**（max 1563 ms；估计器丢失、max v 14.2 m/s） | 6/13, 4/13 | 42 rest2rest、**PlanFromRest failed 90 次**、S2 4 环/85 s |
+- 两趟都无效（H6/主机）但规划器侧的失败信号是真实的：R1a 在"提前换目标"后，committed 目标与 pacer 的
+  in-hand 角点频繁错位/规划失败 → 系统回退到 rest2rest → 角点被切、pacer 判不到 → 进一步失败。
+- 之前两路审查的 A* 结论（提前换目标后 A* 会切角）与这两趟的现象一致；**R1a 判定：再次否决**。
+- 注意：本轮的 split 修复（new_goal 保留旧轨迹到角点）**没有**救回 R1a，说明问题不止在 guide 前缀，
+  而在"提前换目标"本身与 pacer/FSM 的耦合（目标序列、DEFER 回退、失败风暴）。
+
+### 126.3 结论与下一步
+- item2/4 的机制修复**保留**（baseline 180a 的 Q1=0、S2=1 环是正向信号，需 2 趟确认）；
+- R1a 不再按"薄层提前推进"路线投入；换目标问题转 **C++ through-poses（via points）**：
+  规划器一次接受"当前角点 + 下一角点"作为 via，路径必须穿过 via，pacer 只做记账；
+- 下一步：① 补 180b 基线重复（确认 Q1/S2 改善不是方差）；② 实现 via-point 版 FSM/A*（工作量中等，先离线门禁
+  `check_guide_via.py` 扩展为"path 必须经过 via"）；③ 修 Q2/W4 的真实擦碰（曲率限速/路径净空），再谈 1.35 "完美"。
