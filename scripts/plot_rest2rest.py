@@ -42,11 +42,31 @@ def main():
     d = L.load(a.tag)
     t, E, N, ts, ce, cn = d["t"], d["E"], d["N"], d["ts"], d["ce"], d["cn"]
     corners = d["corners"]
-    # truth / reference speed
+    # truth speed
     vt = np.hypot(np.gradient(E, t), np.gradient(N, t))
-    vr = np.hypot(np.gradient(ce, ts), np.gradient(cn, ts))
-    ker = np.ones(9) / 9.0
-    vr = np.convolve(np.pad(vr, 4, mode="edge"), ker, mode="valid")
+    # REFERENCE speed: take the velocity FIELD of the published PVA (traj.csv.cmd vx_l/vy_l).  Differentiating
+    # the 50-100 Hz setpoints positions produces spurious zeros at every direction change (aliasing sawtooth) --
+    # that artefact was once mis-read as "the reference brakes to 0 at a rest2rest".
+    tr = list(csv.DictReader(open(os.path.join(run, "traj.csv.cmd.csv"))))
+    tt = np.array([float(r["t_us"]) * 1e-6 for r in tr])
+    vr_raw = np.hypot([float(r["vx_l"]) for r in tr], [float(r["vy_l"]) for r in tr])
+    oo = np.argsort(tt); tt, vr_raw = tt[oo], vr_raw[oo]
+    kk = np.concatenate([[True], np.diff(tt) > 1e-9]); tt, vr_raw = tt[kk], vr_raw[kk]
+    te = tt - tt[0]
+    # align the SUPER epoch clock to sim by matching the speed profile to the truth's (one constant offset)
+    best = (1e9, 0.0)
+    for s0 in np.arange(0.0, 60.0, 0.05):
+        vv = np.interp(t, te + s0, vr_raw, left=np.nan, right=np.nan)
+        m = np.isfinite(vv) & (t > 35) & (t < 140)
+        if m.sum() < 200:
+            continue
+        err = np.nanmean(np.abs(vv[m] - vt[m]))
+        if err < best[0]:
+            best = (err, s0)
+    ref_off = best[1]
+    vr = np.interp(t, te + ref_off, vr_raw, left=0.0, right=0.0)
+    print("reference speed from traj.csv.cmd velocity field (clock offset %.2f s, speed err %.2f m/s)"
+          % (ref_off, best[0]))
     ev = [e for e in events(a.tag, run) if np.isfinite(e[0])]
     print("== rest2rest events: %d" % len(ev))
     rows = []
@@ -62,9 +82,11 @@ def main():
             dc, lab = float("nan"), "?"
         w = (t >= te - 1.0) & (t <= te + 1.5)
         vmin = float(np.min(vt[w])) if w.any() else float("nan")
-        rows.append((i, te, lab, dc, vmin, dur))
-        print("  #%2d t=%7.2f s  %-4s d(corner)=%.2f m  truth v_min(±1s)=%.2f m/s  prev traj %.2f s"
-              % (i, te, lab, dc, vmin, dur))
+        w2 = np.abs(t - te) <= 0.5
+        vref = float(np.median(vr[w2])) if w2.any() else float("nan")
+        rows.append((i, te, lab, dc, vmin, dur, vref))
+        print("  #%2d t=%7.2f s  %-4s d(corner)=%.2f m  truth v_min(±1s)=%.2f  ref|v|@event=%.2f m/s  prev traj %.2f s"
+              % (i, te, lab, dc, vmin, vref, dur))
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -90,13 +112,14 @@ def main():
     ax.set_aspect("equal"); ax.grid(alpha=0.25); ax.legend(loc="upper right", fontsize=9)
     ax2 = fig.add_subplot(gs[1, :])
     ax2.plot(t, vt, "-", color="0.15", lw=0.9, label="truth |v|")
-    ax2.plot(ts, vr, "-", color="#e08a1e", lw=0.8, alpha=0.8, label="reference |v|")
+    ax2.plot(t, vr, "-", color="#e08a1e", lw=1.0, alpha=0.9, label="reference |v| (SUPER velocity field)")
     for (te, _) in ev:
         ax2.axvline(te, color="#c02020", ls="--", lw=0.8, alpha=0.6)
     ax2.set_ylabel("speed [m/s]"); ax2.grid(alpha=0.25); ax2.legend(loc="upper right", fontsize=9)
     ax2.set_title("speed vs time (dashed = rest2rest commit)")
     # zoom: pick the event closest to a real corner
     pick = int(np.argmin([r[3] for r in rows])) if rows else 0
+    # rows now = (i, t, lab, dc, vmin, dur, vref)
     te = rows[pick][1]; cc_idx = None
     if corners:
         j = int(np.argmin(np.abs(t - te)))
@@ -106,16 +129,16 @@ def main():
     wsel = (t >= te - 4) & (t <= te + 4)
     ax3.plot(t[wsel], vt[wsel], "-", color="0.15", lw=1.2, label="truth |v|")
     wsel2 = (ts >= te - 4) & (ts <= te + 4)
-    ax3.plot(ts[wsel2], vr[wsel2], "-", color="#e08a1e", lw=1.2, label="reference |v|")
+    ax3.plot(t[wsel], vr[wsel], "-", color="#e08a1e", lw=1.2, label="reference |v| (SUPER field)")
     if corners and cc_idx is not None:
         c = corners[cc_idx]
         dt_ = np.hypot(E - c[0], N - c[1]); dr_ = np.hypot(ce - c[0], cn - c[1])
         ax3.plot(t[wsel], dt_[wsel], "--", color="#1f6fd0", lw=1.0, label="truth dist to corner")
-        ax3.plot(ts[wsel2], dr_[wsel2], ":", color="#1f6fd0", lw=1.0, label="ref dist to corner")
+        ax3.plot(ts[wsel2], dr_[wsel2], ":", color="#1f6fd0", lw=1.0, label="ref dist to corner (setpoints)")
     ax3.axvline(te, color="#c02020", ls="--", lw=1.2)
     ax3.set_xlabel("sim time [s]"); ax3.set_ylabel("m  /  m/s")
-    ax3.set_title("zoom around rest2rest #%d (corner c%d): the reference stops at the corner, then replans from "
-                  "the measured state" % (pick + 1, (cc_idx + 1) if cc_idx is not None else -1))
+    ax3.set_title("zoom around rest2rest #%d (corner c%d): new plan starts from the MEASURED state "
+                  "(hot_start, v~0.3-0.5 m/s here), not from rest" % (pick + 1, (cc_idx + 1) if cc_idx is not None else -1))
     ax3.grid(alpha=0.25); ax3.legend(loc="best", fontsize=9)
     out = a.out or os.path.join(ROOT, "docs", "evidence", "final", "%s_rest2rest.png" % a.tag)
     fig.savefig(out, dpi=110, bbox_inches="tight")
