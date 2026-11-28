@@ -33,6 +33,7 @@ fsm:
 super_planner:
   # Phase 1 round14: Nav2 CheckIfNewPathNeeded-style guide reuse (A/B switch)
   guide_cache_en: true
+  handover_policy: defer   # owner-approved policy: defer (old) | splice (immediate handover from old reference)
   guide_cache_max_age: 1.0
   backup_traj_en: false   # 两轨迹：任意时刻可刹停
   detailed_log_en: false

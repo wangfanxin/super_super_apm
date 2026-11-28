@@ -137,7 +137,7 @@ namespace super_planner {
         auto log_commit = [&](const char *where, int backup_rc) {
             double T = cmd_traj_info_.getTotalDuration();
             Vec3f e = cmd_traj_info_.getPos(T);
-            std::cout << " -- [SUPER] COMMIT " << where << " total=" << T
+            std::cout << " -- [SUPER] COMMIT sim=" << ros_ptr_->getSimTime() << " " << where << " total=" << T
                       << " end=(" << e.transpose() << ") backup_rc=" << backup_rc << std::endl;
         };
         if (!cfg_.backup_traj_en) {
@@ -264,7 +264,7 @@ namespace super_planner {
         auto log_commit = [&](const char *where, int backup_rc) {
             double T = cmd_traj_info_.getTotalDuration();
             Vec3f e = cmd_traj_info_.getPos(T);
-            std::cout << " -- [SUPER] COMMIT " << where << " total=" << T
+            std::cout << " -- [SUPER] COMMIT sim=" << ros_ptr_->getSimTime() << " " << where << " total=" << T
                       << " end=(" << e.transpose() << ") backup_rc=" << backup_rc << std::endl;
         };
         if (!cfg_.backup_traj_en) {
@@ -655,16 +655,23 @@ namespace super_planner {
             /// committed trajectory: keep it up to its END (the previous corner) so the corner is a
             /// guide point of the new trajectory and the A* starts AT the corner instead of 1 m before
             /// it.  The corner stays inside the same keepout, so W1b is untouched.
-            if (last_exp_traj_info.wholeTrajKnownFree() && cfg_.receding_dis > 0.0) {
+            if (cfg_.receding_dis > 0.0) {
                 if (!gi_.new_goal) {
                     // UPSTREAM behaviour for an ordinary replan: the whole committed trajectory is the
-                    // guide (round33 had changed this to 12 m, which re-enabled A* every tick and mixed
-                    // the variable into every A/B -- 2026-11-28 review P1-5).
-                    split_dis = std::numeric_limits<double>::max();
+                    // guide when it is known free (round33 had changed this to 12 m for every replan).
+                    if (last_exp_traj_info.wholeTrajKnownFree()) {
+                        split_dis = std::numeric_limits<double>::max();
+                    }
                 } else {
                     // HANDOVER (defer or splice): keep the old trajectory -- including the corner it ends
                     // at -- as the guide prefix, so that corner is an INTERIOR point instead of being cut
                     // by a fresh A*; leave the A* a usable horizon (planning_horizon - 4 m).
+                    // 2026-11-28 audit: this MUST NOT be gated by wholeTrajKnownFree(), which checks the
+                    // committed trajectory against the 0.2 m INFLATED map while MINCO only guarantees
+                    // robot_r=0.10 m -- the gate was almost always false, so round42's prefix retention
+                    // silently fell back to split=1.0 m and A* cut the corner (R1a's real failure mode).
+                    // If the old prefix does hit a NEW obstacle, MINCO/SFC rejects the plan and the
+                    // committed trajectory is kept (FAILED), which is the safe outcome.
                     split_dis = std::max(cfg_.receding_dis, cfg_.planning_horizon - 4.0);
                 }
             }

@@ -52,6 +52,18 @@ def main() -> int:
     run = os.path.abspath(a.run) if a.run else _P.sortie(a.tag)
     tag = os.path.basename(run).replace("missionA-", "")
     import yaml
+    # 2026-11-28 audit: the landing phase must not be graded as a corner visit (180a's Q4 "FAIL" was the
+    # vertical landing inside c6's window) nor counted in S1's terminal window.
+    t_land = None
+    _ph = os.path.join(run, "phase.csv")
+    if os.path.isfile(_ph):
+        try:
+            for _r in _rows(_ph):
+                if (_r.get("phase") or "").strip() == "land":
+                    t_land = float(_r.get("t_sim_us") or 0) * 1e-6
+                    break
+        except Exception:                            # noqa: BLE001
+            t_land = None
     w = yaml.safe_load(open(a.world, encoding="utf-8"))
     pil = w.get("pillars") or []
     zs = float((w.get("pillar_geometry") or {}).get("z_split", 2.1))
@@ -128,8 +140,14 @@ def main() -> int:
         visits.append(near[start:])
         dets, ok = [], True
         for vi in visits:
+            if t_land is not None and t[vi[0]] >= t_land - 1.0:
+                continue
             t0 = t[vi[0]]
             wt = (t >= t0 - 1.5) & (t <= t0 + 4.0) & fly
+            if t_land is not None:
+                wt = wt & (t <= t_land - 1.0)      # do not grade the landing as a corner visit
+            if wt.sum() < 5:
+                continue
             dwell = float(np.sum(np.linalg.norm(np.column_stack([E, N])[wt] - c, axis=1) < 1.5)
                           * float(np.median(np.diff(t[wt])) if wt.sum() > 2 else 0.05))
             # the owner's judgement is "不要再在角点停-转": the truth's minimum speed inside the visit
@@ -209,15 +227,16 @@ def main() -> int:
         _cen = _LSC.census(tag, 0.675)
         _tr = [r for r in _cen.get("rows", []) if r["stream"] == "truth" and r["class_"] not in ("LAUNCH", "END")]
         s1_ok = None
-        s1_det = "%d segment(s), total %.2f s below 0.675 m/s outside launch/end" % (
-            len(_tr), sum(r["dur"] for r in _tr))
+        s1_det = "%d segment(s), total %.2f s below 0.675 m/s outside launch/end%s" % (
+            len(_tr), sum(r["dur"] for r in _tr),
+            (" (land excluded at %.1f s)" % _cen["t_land"]) if _cen.get("t_land") else "")
         _lps = _cen.get("loops", [])
         s2_ok = None
         s2_det = "%d path loop(s), total %.1f s (examples: %s)" % (
             len(_lps), sum(l["dur"] for l in _lps),
             ", ".join("(%.1f,%.1f) %.1fs vmin %.2f" % (l["pos"][0], l["pos"][1], l["dur"], l["vmin"])
                       for l in sorted(_lps, key=lambda x: -x["dur"])[:3]) if _lps else "none")
-    except Exception as _e:                          # noqa: BLE001
+    except (Exception, SystemExit) as _e:             # noqa: BLE001  (SystemExit for _invalid/ runs)
         s1_ok, s1_det, s2_ok, s2_det = None, "census failed: %s" % _e, None, "census failed"
     rows += [("S1", "low-speed census (truth <0.675 m/s, excl launch/end)", s1_ok, s1_det),
              ("S2", "path loops (speed-independent)", s2_ok, s2_det)]
@@ -235,8 +254,23 @@ def main() -> int:
         _adv = [ln for ln in _txt.splitlines() if "ADVANCE-LOOKAHEAD" in ln]
         _defer = _txt.count("DEFER-HANDOVER")
         r2r_ok = None
-        r2r_det = ("TrajFinish %d, PlanFromRest ok %d, failed %d, defer(pre) lines %d; per corner %.2f"
-                   % (_fin, _ok, _fail, _defer, _ok / max(1.0, (len(_cen.get("corners", [])) - 1))))
+        import re as _re3
+        _decs = [ln for ln in _txt.splitlines() if "HANDOVER-DECIDE" in ln]
+        _rems = [float(m.group(1)) for ln in _decs
+                 for m in [_re3.search(r"remain=([0-9.]+)s", ln)] if m]
+        _commit = [ln for ln in _txt.splitlines() if "COMMIT " in ln and "rest2rest" in ln]
+        _short = 0
+        for ln in _commit:
+            m = _re3.search(r"total=([0-9.]+)", ln)
+            if m and float(m.group(1)) < 5.0:
+                _short += 1
+        _resync = _txt.count("CARROT-RESYNC")
+        r2r_det = ("TrajFinish %d, PlanFromRest ok %d, failed %d; defer-decisions %d%s; "
+                   "rest2rest commits %d (short<5s: %d, chase-like); resync %d; per corner %.2f"
+                   % (_fin, _ok, _fail, len(_decs),
+                      (" remain(min/p50 %.2f/%.2f s)" % (min(_rems), float(np.median(_rems)))) if _rems else "",
+                      len(_commit), _short, _resync,
+                      _ok / max(1.0, (len(_cen.get("corners", [])) - 1))))
         adv_ok = None
         _legs = []
         for ln in _adv:

@@ -2923,3 +2923,35 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
    - `_invalid/` run 的 quality 不可复现（census 不认 `_invalid`）；
    - `check_guide_via.py` 的 horizon/advance 口径与被测 split 参数不一致、未接入 gate；
    - accept 的 Q4 需排除 land 相位、S1 的 END 需排除降落、H6/H5 需限定 flight window。
+
+## 128. round 45：审查后修复落地 + 180b 全过 + R1' 首次有效验证（2026-11-28）
+
+### 128.1 已修（0 飞行）
+- **配置副本同步**（`scripts/install_config_hex.sh`）：现在同步 hku_super/config 全部 yaml 到两个 loader 目录并 `cmp` 校验，
+  失败即 FATAL；`super_planner/config/super_planner_hex_hs_cache.yaml` 的 `handover_policy` 缺失已修复
+  （此前日志 "Load param handover_policy failed, use default: defer"）。
+- **R1' 前缀保留解耦**（`super_planner.cpp`）：`new_goal` 的 `split_dis=max(receding, horizon-4)` **不再受
+  `wholeTrajKnownFree()`（0.2 m 膨胀图）闸门控制**；若旧前缀真的撞上新障碍，MINCO/SFC 会拒绝并保留旧轨迹。
+  180b 日志已出现 `REPLANDBG ... new_goal=1 split=12.000 whole_free=1`，**证明 round42 的前缀修复此前从未生效、现在生效了**。
+- **advance clamp**：`d_adv = min(v_f·adv_s, --advance-max-m(3.8)) + margin`；**resync**：plan-box 超前而 pacer
+  1.5 s 未推进 → 回退 pacer 在手角点（修了 181c 的 `resync_t=None` TypeError）。
+- **日志/口径**：`COMMIT sim=...`、`HANDOVER-DECIDE policy=<cfg> path=check-defer`、`HANDOVER-PATH policy=<cfg> path=immediate-replan`、
+  `ADVANCE t_wall=`；`PLANDBG d` 改为 W 系；**H6 只统计 takeoff..land 窗口**；**Q4 排除 land 相位**；
+  **S1 用 phase.csv 的 land 起点排除降落**；`quality_rows` 的 S1/S2 支持 `_invalid/`（SystemExit 兜底）、
+  R2R 加 defer-decisions/remain/short-commit/resync 统计。
+- 所有修复后：`check_static PASS`、`GATE PASS`、`check_guide_via PASS`。
+
+### 128.2 180b 基线（新二进制，2 趟中的第 1 趟）
+- **15 行全部通过**：W4 **CLEAR +0.061**、W1b 13/13、W6 0.209、H6 max 39 ms/skip 3；
+- 质量：**Q1=0**、Q3 0.145、P1 PASS（0 个 >0.5 m，max 0.355）、S2 **2 环/3.7 s**（c1 3.5 s + 0.2 s）、
+  S1 1.17 s（land 142.4 s 已排除）、Q2 **−0.039（FAIL，但已接近 −0.02 门槛）**、Q4 c3 vmin 0.32 FAIL；
+- R2R：TrajFinish 15 / rest2rest 15、defer 决策 71 次（remain p50 0.33 s）→ 与 180a 同构：**角点 rest2rest 仍由 DEFER 主导**。
+- 结论：**180b 是 item2/4 修复后首个 15/15 + W4 CLEAR 的候选基线**；仍需 180c 复现。
+
+### 128.3 R1' 首次有效验证（但两趟都因主机/自身 bug 无效）
+| 趟 | 有效性 | 关键发现 |
+|---|---|---|
+| 181c | ABORT（plan-box 在 38 s 崩溃） | **REPLANDBG new_goal=1 split=12.000 whole_free=1 出现**（前缀保留已生效）；崩溃原因是我的 resync 代码 `float(None)`，已修 |
+| 181e | H6 max 100.3 ms（86.4 s）/ LIO stale → 估计器丢失（tap 81 m vs FCU 14.8 m） | 8 次 advance 触发；主机 load 6.7、scan 有 100 ms + behind → **主机无效，不是 R1' 结论** |
+- 需在主机干净时重飞 R1' 2 趟；判据：15 行、W4/Q2、R2R（chase=0、mid-leg=0、defer 决策 remain 应显著 >0.33 s）、
+  ADV 事件全部 pass、S2 只剩 c1 钩形环、W1b 13/13。

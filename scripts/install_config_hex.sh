@@ -25,10 +25,20 @@ CFG=super_planner_hex.yaml
 SRC="${SUPER_PLANNER_ROOT:?}/config/$CFG"
 DIRS="${SUPER_PLANNER_ROOT:?}/super_planner/config ${WS_SUPER:?}/src/super_planner/config"
 
+# 2026-11-28 review P2-4: sync EVERY config, not just the hex one -- the loader copy of
+# super_planner_hex_hs_cache.yaml was missing handover_policy, so fsm_node silently used the default and an
+# A/B that only edited hku_super/config would have been a no-op.  Any mismatch is FATAL.
+SRCDIR="${SUPER_PLANNER_ROOT:?}/config"
 for d in $DIRS; do
   [ -d "$d" ] || { echo "MISSING config dir: $d" >&2; exit 1; }
-  cp "$SRC" "$d/$CFG"
-  echo "installed -> $d/$CFG"
+  for f in "$SRCDIR"/*.yaml; do
+    b=$(basename "$f")
+    cp "$f" "$d/$b"
+    if ! cmp -s "$f" "$d/$b"; then
+      echo "FATAL: config copy differs after install: $d/$b" >&2; exit 1
+    fi
+  done
+  echo "installed all configs -> $d  ($(ls "$d"/*.yaml | wc -l) files)"
 done
 
 echo "== read back the values that decide behaviour, from the LOADED copy"

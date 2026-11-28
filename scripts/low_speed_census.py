@@ -188,6 +188,22 @@ def census(tag, threshold):
     if air.sum() < 50:
         return {"tag": tag, "error": "no flight window"}
     t0_air, t1_air = float(t[air][0]), float(t[air][-1])
+    # 2026-11-28 audit: the landing deceleration was being counted in S1 because END started at the wrong
+    # time.  phase.csv gives the land phase start; samples at/after it are terminal, not mid-path.
+    _land = None
+    try:
+        _rd = run_dir(tag)
+        _ph = os.path.join(_rd, "phase.csv")
+        if os.path.isfile(_ph):
+            with open(_ph) as _fh:
+                for _row in csv.DictReader(_fh):
+                    if (_row.get("phase") or "").strip() == "land":
+                        _land = float(_row.get("t_sim_us") or 0) * 1e-6
+                        break
+    except Exception:                                    # noqa: BLE001
+        _land = None
+    if _land is not None and t0_air < _land < t1_air:
+        t1_air = _land
     # first corner arrival = first time truth is within 1.2 m of corner[1] (corner list includes pad=first?)
     first_arr = t0_air + 10.0
     last_arr = t1_air
@@ -203,6 +219,8 @@ def census(tag, threshold):
                     # (177b: 90.1 s of a 146 s flight) and silently excluded the whole second lap from
                     # the census.  The end window must start from the LAST approach to the final corner.
                     last_arr = float(t[idx[-1]])
+    if _land is not None:
+        last_arr = min(last_arr, t1_air)
     if last_arr < first_arr + 10:
         last_arr = t1_air - 8.0
     rows = []
@@ -262,7 +280,8 @@ def census(tag, threshold):
             rows.append(dict(stream=name, t0=float(t[i0]), t1=float(t[i1]), dur=dt, vmin=vmin,
                              tmin=tmin, pos=[pE, pN], near_corner=[float(near[0]), float(near[1])] if near else None,
                              d_corner=dnear, class_=cls, path_net=ratio))
-    out = dict(tag=tag, threshold=threshold, t_air=[t0_air, t1_air], first_arr=first_arr, last_arr=last_arr,
+    out = dict(tag=tag, threshold=threshold, t_air=[t0_air, t1_air], t_land=_land,
+               first_arr=first_arr, last_arr=last_arr,
                corners=corners, rows=rows, loops=path_loops(tag), cmd_align=cmd_align)
     return out
 

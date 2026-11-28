@@ -504,6 +504,12 @@ def main() -> int:
                     help="R1a：把'推进到下一个角点'的触发距离改为 **v_f·该秒数 + margin**（v_f=低通后的 LIO 水平速度）。"
                          "取 2.4（DEFER 窗口上界 2.0 s + 0.4 s 裕度）让 goal 切换发生在旧轨迹还剩 >2 s 时，"
                          "从而走 replan 拼接分支而不是'飞完→rest2rest'。0 = 关闭（沿用 --pre-goal-m）。")
+    ap.add_argument("--resync-s", type=float, default=1.5,
+                    help="R1' resync 超时（s）：plan-box 的目标超前于 pacer，且飞机已到达该目标而 pacer leg 未推进"
+                         "超过该时长时，退回 pacer 在手角点。0=关闭。")
+    ap.add_argument("--advance-max-m", type=float, default=3.8,
+                    help="R1' advance 距离的硬上限（m）：LIO 速度在角点瞬态会尖到 2-4 倍，实测 d_adv 被放大到 6.6-10.2 m，"
+                         "等价于被否的 R1；这里把 d_adv 钳在 ≤ 该值。")
     ap.add_argument("--advance-margin-m", type=float, default=0.4,
                     help="R1a 触发距离的距离余量（m）。")
     ap.add_argument("--dispatch-lookahead", type=int, default=0,
@@ -1087,16 +1093,18 @@ def main() -> int:
                                                  - corners_w[pacer.i_leg][:2]))
                     _vl = state.get("v_l")
                     _v_now = float(np.linalg.norm(np.asarray(_vl, float)[:2])) if _vl is not None else 0.0
-                    # speed estimate FILTERED: the raw LIO speed spikes 2-3x at corner transients and would
-                    # advance the goal 5-7 m early (offline replay), re-introducing the corner-cut risk.
+                    # speed estimate FILTERED: the raw LIO speed spikes 2-4x at corner transients.
                     state["v_f"] = 0.85 * float(state.get("v_f", _v_now)) + 0.15 * _v_now
                     v_est = float(state.get("v_f", _v_now))
-                    d_adv = v_est * adv_s + adv_m
+                    _adv_max = float(getattr(args, "advance_max_m", 3.8) or 3.8)
+                    d_adv = min(v_est * adv_s, _adv_max) + adv_m
                     if d_now < d_adv:
                         sent_i = pacer.i_leg + 1
                         state["pre_goal_leg"] = pacer.i_leg
-                        print("ADVANCE-LOOKAHEAD: leg %d/%d advance at d=%.2f m (v=%.2f m/s, d_adv=%.2f m)"
-                              % (pacer.i_leg + 1, len(corners_l), d_now, v_est, d_adv), flush=True)
+                        print("ADVANCE-LOOKAHEAD t_wall=%.3f leg %d/%d advance at d=%.2f m "
+                              "(v=%.2f m/s, d_adv=%.2f m, cap=%.2f)"
+                              % (time.monotonic(), pacer.i_leg + 1, len(corners_l), d_now, v_est, d_adv,
+                                 _adv_max), flush=True)
         elif pre > 0.0 and pacer.i_leg >= 1 and pacer.i_leg < len(corners_l) - 1:
             if state["pre_goal_leg"] == pacer.i_leg:
                 # already advanced for THIS leg: keep the next corner as the goal (monotonic, no A/B flip)
@@ -1151,6 +1159,29 @@ def main() -> int:
                 sent_i = _la_sent
                 # pre-goal latch / carrot must not fight the lookahead target
                 state["pre_goal_leg"] = None
+        # ★ R1' RESYNC (2026-11-28 audit): one missed pass-by used to shift the target sequence forever.
+        # If the plan box is AHEAD of the pacer (sent_i > pacer.i_leg) and the aircraft has already reached
+        # the sent target while the pacer's in-hand leg has not advanced for > --resync-s seconds, fall back
+        # to the in-hand corner and let the planner re-approach it (instead of chasing a corner further on).
+        _resync_s = float(getattr(args, "resync_s", 1.5) or 0.0)
+        if _resync_s > 0.0 and sent_i > pacer.i_leg:
+            _p_rs = here_w()
+            if _p_rs is not None:
+                _d_sent = float(np.linalg.norm(np.asarray(_p_rs, float)[:2]
+                                              - corners_w[min(sent_i, len(corners_w) - 1)][:2]))
+                if _d_sent < 0.6:
+                    if state.get("resync_leg") != pacer.i_leg:
+                        state["resync_leg"] = pacer.i_leg
+                        state["resync_t"] = now_goal()
+                    elif now_goal() - float(state.get("resync_t") or now_goal()) > _resync_s:
+                        print("CARROT-RESYNC t_wall=%.3f leg %d/%d: sent target reached (d=%.2f m) but pacer "
+                              "did not advance for %.1f s -> fall back to the in-hand corner"
+                              % (time.monotonic(), pacer.i_leg + 1, len(corners_l), _d_sent, _resync_s), flush=True)
+                        sent_i = pacer.i_leg
+                        state["pre_goal_leg"] = None
+                        state["resync_t"] = now_goal()
+                else:
+                    state["resync_t"] = None
         if sent_i == state["goal_i"] and not force:
             return
         if sent_i == state["goal_i"] and force and (now_goal() - state["last_goal_t"]) < 1.0:
@@ -2123,7 +2154,12 @@ def main() -> int:
                     _p = here_w()
                     _leg = int(pacer.i_leg)
                     _tgt = corners_l[_leg] if _leg < len(corners_l) else None
-                    _d = float(np.linalg.norm(np.asarray(_p, float)[:2] - np.asarray(_tgt, float)[:2])) if _p is not None and _tgt is not None else float("nan")
+                    # 2026-11-28 audit: _p is here_w() (W) but _tgt was corners_l (L, rotZ +90) -> the old
+                    # "d" was meaningless.  Compute it in W; keep tgt printed in L for continuity with the
+                    # other PLANDBG fields (goal/sent are L).
+                    _tgt_w = corners_w[_leg] if _leg < len(corners_w) else None
+                    _d = (float(np.linalg.norm(np.asarray(_p, float)[:2] - np.asarray(_tgt_w, float)[:2]))
+                          if _p is not None and _tgt_w is not None else float("nan"))
                     _gi = int(state.get("goal_i", -1))
                     _sent = corners_l[_gi] if 0 <= _gi < len(corners_l) else None
                     _cmdv = float(np.linalg.norm(np.asarray(state.get("pub_v", np.zeros(3)), float)[:2])) if state.get("pub_v") is not None else -1.0

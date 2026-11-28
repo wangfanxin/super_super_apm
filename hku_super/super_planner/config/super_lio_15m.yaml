@@ -44,6 +44,11 @@ super_planner:
   #   失败期间规划盒没有参考、发 hold，飞机就悬停。
   #   SFC / A* / MINCO / 终点仍要停 —— 只补起始速度。补丁：scripts/patch_super_hot_start.py
   hot_start_en: false
+  # ★ goal_pva_en：goal 带终点速度（patch_goal_pva.py）★
+  #   true 时轨迹的 pos_fina_state.col(1/2) 来自 goal 的 v/a，而不是强制静止 ——
+  #   于是'角点作为 goal'可以不被刹停。配合薄层 --goal-pva 1 --corner-speed 2.0。
+  #   转角速度由几何定（scripts/corner_room.py）：紧角 R=0.95 m -> 2.0 m/s。
+  goal_pva_en: false
   corridor_bound_dis: 0.8       # 森林档：走廊贴得紧
   corridor_line_max_length: 1.0
   safe_corridor_line_max_length: 6.0

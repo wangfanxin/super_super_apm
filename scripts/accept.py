@@ -368,6 +368,26 @@ def main():
     # older sortie can still be graded).  No threshold is changed: p50/p99/max of cast_ms and the number of
     # non-"ok" rows answer exactly the same question with per-frame precision.
     scan_csv = os.path.join(args.run, "scans.csv")
+    # 2026-11-28 audit: the LiDAR budget is a VALIDITY row, so it must be graded over the FLIGHT window
+    # (takeoff..land) -- pre-flight and post-landing scans are not part of the flight (181a's single 383 ms
+    # scan was the last scan after the landing abort).  phase.csv carries takeoff/land sim times.
+    _fwin = None
+    _phase_csv = os.path.join(args.run, "phase.csv")
+    if os.path.isfile(_phase_csv):
+        try:
+            _t0 = _t1 = None
+            with open(_phase_csv) as _fh:
+                for _row in _csv.DictReader(_fh):
+                    _ph = (_row.get("phase") or "").strip()
+                    _ts = float(_row.get("t_sim_us") or 0) * 1e-6
+                    if _ph == "takeoff" and _t0 is None:
+                        _t0 = _ts
+                    if _ph == "land" and _t1 is None:
+                        _t1 = _ts
+            if _t0 is not None and _t1 is not None and _t1 > _t0:
+                _fwin = (_t0, _t1)
+        except Exception:                               # noqa: BLE001
+            _fwin = None
     _st = None
     if os.path.isfile(scan_csv):
         try:
@@ -376,6 +396,9 @@ def main():
             casts, skipped = [], 0
             with open(scan_csv) as fh:
                 for row in _csv.DictReader(fh):
+                    _ts = float(row.get("t_start_us") or 0) * 1e-6
+                    if _fwin is not None and not (_fwin[0] <= _ts <= _fwin[1]):
+                        continue
                     reason = (row.get("reason") or "").strip()
                     if reason == "ok":
                         casts.append(float(row.get("cast_ms") or 0.0))
@@ -418,7 +441,7 @@ def main():
               "raycast p50 %.1f ms, MAX %.1f ms (gate 100), scans skipped %d (gate 20) [per-scan: %s]%s\n"
               "%s"
               % (_st["cast_p50"], _st["cast_max"], _st["skipped"], _st.get("source", "aggregate"),
-                 _h6_extra,
+                 _h6_extra + (" [flight window %.1f-%.1f s]" % _fwin if _fwin else ""),
                  "" if _ok else "a skipped scan is a cloud gap: Super-LIO then scan-matches across it and\n"
                                 "diverges (yaw steps up to 154 deg were measured), and the FCU follows the bad\n"
                                 "estimate out of the fence.  THE CONTROL ROWS BELOW DESCRIBE A STARVED SENSOR"))
