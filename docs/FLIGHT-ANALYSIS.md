@@ -2158,3 +2158,48 @@ plan-box 新增：
 **结论**：158a 的"好"是相对的——它没有 P1 尖峰、Q1≤1，但末段仍有一个 4.7 s 的小环；
 150s22b/153s24c 的环分别来自"换目标时钩形"和"换目标后参考卷曲"，都属于**目标切换/到达语义**，
 而不是之前修掉的那批参考加工/跟踪带宽问题。修法不需要新层，只需把到达与切换语义收尾。
+
+## 109. 调研（owner 问"HKU 自己用什么"）：SUPER 的两条接口与 100 Hz MPC（2026-11-28）
+
+来源（外链，只读）：
+- SUPER README：<https://github.com/hku-mars/SUPER>
+- 维护者在 issue #5 的官方回答（关键）：
+  <https://github.com/hku-mars/SUPER/issues/5#issuecomment-2665989354> 与
+  <https://github.com/hku-mars/SUPER/issues/5#issuecomment-2811494801>
+- 本地消息定义：`hku_super/mars_uav_sim/mars_quadrotor_msgs/msg/PositionCommand.msg`、
+  `MpcPositionCommand.msg`
+
+### 109.1 HKU 的官方说法（原文要点）
+1. SUPER 把 committed trajectory 以**两种**方式发布：
+   - `PositionCommand`（position/velocity/acceleration/**jerk**/yaw/yaw_dot，另有 kx/kv 字段）
+     → **可以直接喂开源的 PX4 高层控制器**（ZJU Fast-Drone-250 的 `px4ctrl`）；
+   - `PolynomialTrajectory`（多项式轨迹）→ **给 MPC 用**，控制器可沿轨迹前向评估多个参考状态。
+2. 维护者明确：**SUPER 的 MPC 模块没有开源**（"not yet open-sourced，计划今年晚些时候"），
+   真机飞行用的是 **100 Hz MPC**，与 100 Hz 传播的里程计同步（FAST-LIO 原始频率与 LiDAR 同步，
+   他们用 IMU 传播到 100 Hz 给控制器）。
+3. 即：**PVA→px4ctrl 是"最简单的开源路径"，100 Hz MPC 才是他们真机高速飞行的实际控制层**。
+
+### 109.2 对我们的含义
+| 层 | HKU 真机 | 我们当前 |
+|---|---|---|
+| 规划 | 10 Hz SUPER（同样） | 10 Hz SUPER（同源） |
+| 轨迹接口 | 多项式/PVA 都可以 | PVA（PositionCommand 等价，我们还在 L 系并做 L→W 转换） |
+| 跟踪控制 | **100 Hz MPC**（未开源） | **ArduPilot PSC 级联 PID**（48 Hz nav / 50 Hz setpoint） |
+| 里程计 | LIO + IMU 传播到 100 Hz | LIO ~50 Hz（bridge 48 Hz 喂 EKF） |
+
+→ 这解释了为什么"PVA 明明一样，跟踪和速度上限却差很多"：**我们用的是他们文档里的"简单路径"（px4ctrl/PID），
+不是他们真机用的 MPC 路径**；且我们的 setpoint/nav 频率只有 ~48–50 Hz，跟踪带宽更低。
+
+### 109.3 因此"目标切换不连贯"的原因也清楚了
+- 我们只实现了 Nav2 的 **pass-by 记账**，没有实现 `NavigateThroughPoses` 的"规划器一次穿过多点"：
+  SUPER 仍是**每个 goal 一条 committed 轨迹**，换目标时新轨迹替换旧轨迹；
+  即使位置/速度连续（washout+goal_pva 保证 C0/C1 大致连续），**方向/曲率/加速度在切换处仍会跳变**；
+- HKU 用 MPC 时，MPC 每 10–20 ms 用"未来参考状态"重新求解，能消化换段处的参考变化；
+  我们让 PSC(PID) 去跟一个换段的 PVA，PID 没有预测能力 → 转弯中换目标就会出现钩形。
+- 这属于**控制层能力差异**，不是 rest2rest 一个点能完全解释；rest2rest 是诱因（per-goal 新轨迹），
+  但即便消除 rest2rest，PID 对换段参考的瞬态响应仍会滞后。
+
+### 109.4 结论与建议
+- 若目标是与 HKU 真机同级的 2.5→8 m/s：需要**高频（≥100 Hz）预测型跟踪**（MPC/速度层/加速度层），
+  这正好对应之前给 owner 的选项 A（速度层）与 C（MPC 作为跟踪层，而不是只当 PVA 生成器）；
+- 若保持当前 PVA→ArduPilot PSC：包线约 1.35–1.5 m/s，这是**接口/频率决定的**，不是再调 PID 能突破的。
