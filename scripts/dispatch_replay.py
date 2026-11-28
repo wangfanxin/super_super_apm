@@ -11,7 +11,7 @@ mid-leg, not after the trajectory ended).
 
 USAGE: python3 scripts/dispatch_replay.py --tag phase177b-01-01
 """
-import argparse, csv, os, sys
+import argparse, csv, json, os, sys
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -69,24 +69,50 @@ def main():
     ap.add_argument("--settle-s", type=float, default=6.0)
     ap.add_argument("--advance-s", type=float, default=2.4,
                     help="R1a: advance when distance-to-target < v*advance_s + margin")
-    ap.add_argument("--advance-margin", type=float, default=0.3)
+    ap.add_argument("--advance-margin", type=float, default=0.4,
+                    help="must match planner_source_super.py --advance-margin-m (0.4)")
+    ap.add_argument("--no-log-compare", action="store_true")
     a = ap.parse_args()
     from cmd_stream import TourPacer
-    corners = world_corners(os.path.join(ROOT, a.world))
-    # the mission tour: pad (0,0) then the corners, as the launcher builds it
-    tour = np.vstack([[0.0, 0.0, 2.0], corners])
+    corners_w = world_corners(os.path.join(ROOT, a.world))
     d = os.path.join(ROOT, ".runs", "missionA-%s" % a.tag)
+    # The TOUR is truncated by the launcher (`--laps`), and the plan box prints how many targets it
+    # flies.  Reproduce THAT tour, not the world file's full lap list (reviewer: replay used 19 targets
+    # while 177b flew 13, and the phantom 14th switch was counted).
+    n_targets = None
+    logp = os.path.join(d, "traj.log")
+    if os.path.isfile(logp):
+        import re as _re
+        for ln in open(logp, encoding="utf-8", errors="replace"):
+            m = _re.search(r"tour:.*=\s*(\d+)\s+targets", ln)
+            if m:
+                n_targets = int(m.group(1)); break
+    if n_targets is None:
+        n_targets = 13
+    tour = np.vstack([[0.0, 0.0, 2.0], corners_w[:max(1, n_targets - 1)]])
+    # settle parameters from the archived arm when present
+    settle_s, settle_speed, hold_s = 0.2, 6.0, 0.0
+    aj = os.path.join(d, "accept.json")
+    if os.path.isfile(aj):
+        try:
+            _arm = (json.load(open(aj)).get("arm") or {})
+            settle_s = float(_arm.get("SETTLE_S") or settle_s)
+            settle_speed = float(_arm.get("SETTLE_SPEED") or settle_speed)
+            hold_s = float(_arm.get("HOLD_S") or hold_s)
+        except Exception:
+            pass
     tap = list(csv.DictReader(open(os.path.join(d, "tap.csv"))))
     t = np.array([float(r["t_sim_us"]) * 1e-6 for r in tap])
     P = np.column_stack([[float(r["pe"]) for r in tap], [float(r["pn"]) for r in tap], -np.array([float(r["pd"]) for r in tap])])
     k = np.concatenate([[True], np.diff(t) > 1e-9]); t = t[k]; P = P[k]
     o = np.argsort(t); t = t[o]; P = P[o]
 
+    import json
     class Clock:
         t = 0.0
     for mode in ("old", "lookahead", "r1a"):
         clk = Clock()
-        pacer = TourPacer(tour, 0.0, a.arrive_m, a.settle_speed, a.settle_s, 40.0, 0.0,
+        pacer = TourPacer(tour, hold_s, a.arrive_m, settle_speed, settle_s, 40.0, 0.0,
                           seg_len_w=lambda i: float(np.linalg.norm(tour[i][:2] - tour[max(i - 1, 0)][:2])),
                           pass_by_m=a.pass_by_m, pass_by_long_m=a.pass_by_long_m)
         sent = 0; switches = []; last_t = None; latched = -1
@@ -115,7 +141,7 @@ def main():
             else:
                 new_sent = int(pacer.i_leg)
                 # pre-goal rule: advance when within pre_goal of the in-hand target
-                if 0.0 < a.pre_goal_m and pacer.i_leg < len(tour) - 1:
+                if 0.0 < a.pre_goal_m and pacer.i_leg >= 1 and pacer.i_leg < len(tour) - 1:
                     if latched == pacer.i_leg:
                         new_sent = int(pacer.i_leg + 1)
                     elif np.linalg.norm(P[i, :2] - tour[pacer.i_leg][:2]) < a.pre_goal_m:
@@ -133,6 +159,41 @@ def main():
             rem = np.array([s[3] for s in switches])
             print("   remaining-to-old-target at switch: p50 %.2f m, min %.2f m; switches with < 2.0 m: %d/%d"
                   % (np.median(rem), rem.min(), int(np.sum(rem < 2.0)), len(rem)))
+        if mode == "old" and not a.no_log_compare and os.path.isfile(logp):
+            # cross-check the predicted switch times against the recorded PLANDBG sent= changes
+            try:
+                import csv as _csv
+                sp = list(_csv.DictReader(open(os.path.join(d, "setpoints.csv"))))
+                tw = np.array([float(r["t_wall"]) for r in sp]); ts = np.array([float(r["t_sim_us"]) * 1e-6 for r in sp])
+                oo = np.argsort(ts); ts2, tw2 = ts[oo], tw[oo]
+                kk = np.concatenate([[True], np.diff(ts2) > 1e-9]); ts2, tw2 = ts2[kk], tw2[kk]
+                pred = [s[0] for s in switches]
+                rec = []
+                for ln in open(logp, encoding="utf-8", errors="replace"):
+                    if "PLANDBG wall=" not in ln:
+                        continue
+                    mm = _re.search(r"sent=\(([-0-9.]+),([-0-9.]+)\)", ln)
+                    ww = _re.search(r"wall=([0-9.]+)", ln)
+                    if not mm or not ww:
+                        continue
+                    sim = float(np.interp(float(ww.group(1)), tw2, ts2))
+                    cur = (round(float(mm.group(1)), 3), round(float(mm.group(2)), 3))
+                    rec.append((sim, cur))
+                rec_t = []
+                last = None
+                for sim, cur in rec:
+                    if last is not None and cur != last:
+                        rec_t.append(sim)
+                    last = cur
+                if pred and rec_t:
+                    errs = []
+                    for p_ in pred:
+                        j = int(np.argmin(np.abs(np.array(rec_t) - p_)))
+                        errs.append(rec_t[j] - p_)
+                    print("   predicted-vs-recorded switch times: n=%d/%d, |err| p50 %.2f s, max %.2f s"
+                          % (len(rec_t), len(pred), np.median(np.abs(errs)), np.max(np.abs(errs))))
+            except Exception as _e:
+                print("   log compare failed: %s" % _e)
 
 
 if __name__ == "__main__":

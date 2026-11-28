@@ -38,9 +38,9 @@ def git_rev(root):
     try:
         rev = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True, text=True,
                              timeout=10).stdout.strip()
-        dirty = subprocess.run(["git", "-C", root, "status", "--porcelain"], capture_output=True,
-                               text=True, timeout=10).stdout.count("\n")
-        return {"head": rev, "dirty_files": dirty}
+        lines = subprocess.run(["git", "-C", root, "status", "--porcelain"], capture_output=True,
+                               text=True, timeout=10).stdout.splitlines()
+        return {"head": rev, "dirty_files": len(lines), "dirty_paths": [ln[3:] for ln in lines[:30]]}
     except Exception:                                   # noqa: BLE001
         return {"head": None, "dirty_files": None}
 
@@ -59,10 +59,20 @@ def main():
     args = ap.parse_args()
 
     root = args.root or os.getcwd()
+    # 2026-11-28 review: the manifest must record the parameters that decide HOW the reference is shaped
+    # and dispatched, not just the paths -- otherwise a run cannot be re-flown from its own artifacts.
     env = {k: os.environ.get(k) for k in
            ("DSH_ROOT", "SUPER_PLANNER_ROOT", "SLAM_ROOT", "SIM_ROOT", "ARDUPILOT_DIR",
             "WS_SUPER", "LIO_WS", "ARDUPILOT_ROOT", "LIO_LOGS", "CALIB_FILE", "MID360_PATTERN",
-            "PLANNER", "SUPER_CONFIG")}
+            "PLANNER", "SUPER_CONFIG", "WORLD_NAME", "LAPS", "Z_M", "BRIDGE_FIELDS",
+            "NAV_LEAD_S", "NAV_GATE_MPS", "NAV_SKIP_MAX", "LIDAR_POINTS", "GEOFENCE_M",
+            "PASS_BY_M", "PASS_BY_LONG_M", "PRE_GOAL_M", "ARRIVE_M", "FINAL_ARRIVE_M",
+            "ADVANCE_LOOKAHEAD_S", "ADVANCE_MARGIN_M", "DISPATCH_LOOKAHEAD",
+            "GOAL_SWITCH_YAW_GATE_DEG", "GOAL_SWITCH_YAW_GATE_HOLD_S",
+            "REF_WASHOUT_TAU", "REF_WASHOUT_VMAX", "REF_NO_RETRACT", "REF_ALONG_FLOOR",
+            "REF_GOV_ALONG", "REF_MAX_MPS", "REPLAN_RATE",
+            "GOAL_PVA", "CORNER_MODE", "CORNER_SPEED", "CORNER_SPEED_LIST", "SETTLE_S",
+            "SETTLE_SPEED", "HOLD_S", "WARMUP_SECS", "EXTRA_PARMS")}
 
     # the planner binary actually run (the built fsm_node), and every loader copy of the config
     fsm = os.path.join(env.get("WS_SUPER") or "", "install/super_planner/lib/super_planner/fsm_node")
@@ -95,7 +105,8 @@ def main():
                     "config_loader_copies": loader_cfg},
         "world": {"path": args.world, "sha256": sha256(args.world)},
         "calib": {"path": args.calib, "sha256": sha256(args.calib)},
-        "parms": [{"path": p, "sha256": sha256(p)} for p in args.parm if p],
+        "parms": [{"path": (p or "").strip().strip(","), "sha256": sha256((p or "").strip().strip(","))}
+                  for p in args.parm if (p or "").strip().strip(",")],
         "ardupilot": {"root": ap_root, "rev": ap_rev},
         "argv": args.argv,
         "extra": [{"path": p, "sha256": sha256(p)} for p in args.extra if p],

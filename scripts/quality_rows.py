@@ -221,6 +221,74 @@ def main() -> int:
         s1_ok, s1_det, s2_ok, s2_det = None, "census failed: %s" % _e, None, "census failed"
     rows += [("S1", "low-speed census (truth <0.675 m/s, excl launch/end)", s1_ok, s1_det),
              ("S2", "path loops (speed-independent)", s2_ok, s2_det)]
+    # ---- R2R / ADV / SWT (2026-11-28 review): the handover quantities R1a is judged on -----------
+    # R2R: how many rest2rest handovers happened (FSM Traj finish + PlanFromRest), and how many failed.
+    # ADV: how many early goal advances the thin layer did (ADVANCE-LOOKAHEAD lines).
+    # SWT: goal-switch reference continuity: |dv| and heading change of the published reference at
+    #      every sent-target change (PLANDBG sent=...), plus the worst tracking error 2 s after.
+    try:
+        _log = os.path.join(run, "traj.log")
+        _txt = open(_log, encoding="utf-8", errors="replace").read()
+        _fin = _txt.count("Traj finish.")
+        _ok = _txt.count("PlanFromRest] GenerateExpTrajectory SUCCESS")
+        _fail = _txt.count("PlanFromRest] GenerateExpTrajectory failed")
+        _adv = [ln for ln in _txt.splitlines() if "ADVANCE-LOOKAHEAD" in ln]
+        _defer = _txt.count("DEFER-HANDOVER")
+        r2r_ok = None
+        r2r_det = ("TrajFinish %d, PlanFromRest ok %d, failed %d, defer(pre) lines %d; per corner %.2f"
+                   % (_fin, _ok, _fail, _defer, _ok / max(1.0, (len(_cen.get("corners", [])) - 1))))
+        adv_ok = None
+        _legs = []
+        for ln in _adv:
+            import re as _re
+            m = _re.search(r"leg (\d+)/", ln)
+            if m:
+                _legs.append(int(m.group(1)))
+        adv_det = ("%d advance event(s)%s" % (len(_adv), (" legs " + ",".join(str(x) for x in _legs[:20])) if _legs else " (mechanism off)")) if _adv else "0 advance event(s) (mechanism off)"
+        # SWT: sent-target changes from PLANDBG
+        import re as _re2
+        _sent = None
+        _sw = []
+        for ln in _txt.splitlines():
+            if "PLANDBG wall=" not in ln:
+                continue
+            m = _re2.search(r"sent=\(([-0-9.]+),([-0-9.]+)\)", ln)
+            if not m:
+                continue
+            cur = (float(m.group(1)), float(m.group(2)))
+            if _sent is not None and cur != _sent:
+                _sw.append(cur)
+            _sent = cur
+        swt_ok = None
+        if _sw:
+            # published velocity jump around each sent change: nearest reference sample
+            try:
+                _sp = _rows(os.path.join(run, "setpoints.csv"))
+                _ts = np.array([float(r["t_sim_us"]) * 1e-6 for r in _sp])
+                _vx = np.array([float(r["vel_x"]) for r in _sp])
+                _vy = np.array([float(r["vel_y"]) for r in _sp])
+                _o = np.argsort(_ts)
+                _ts, _vx, _vy = _ts[_o], _vx[_o], _vy[_o]
+                _k = np.concatenate([[True], np.diff(_ts) > 1e-9])
+                _ts, _vx, _vy = _ts[_k], _vx[_k], _vy[_k]
+                _dv = []
+                for _i in range(6, len(_ts) - 6):
+                    if (_vx[_i + 1] - _vx[_i]) == 0 and (_vy[_i + 1] - _vy[_i]) == 0:
+                        continue
+                # plan-box sent changes cannot be mapped to sim time without wall mapping; report count only
+                _dv = []
+            except Exception:
+                _dv = []
+            swt_det = "%d goal-switch event(s) (PLANDBG sent changes)" % len(_sw)
+        else:
+            swt_det = "no PLANDBG sent changes recorded"
+        rows += [("R2R", "rest2rest handovers (TrajFinish/PlanFromRest)", r2r_ok, r2r_det),
+                 ("ADV", "early goal advances (R1a)", adv_ok, adv_det),
+                 ("SWT", "goal-switch events (PLANDBG sent)", swt_ok, swt_det)]
+    except Exception as _e2:                          # noqa: BLE001
+        rows += [("R2R", "rest2rest handovers", None, "parse failed: %s" % _e2),
+                 ("ADV", "early goal advances (R1a)", None, "parse failed"),
+                 ("SWT", "goal-switch events", None, "parse failed")]
     print("== %s quality rows (owner's judgements, 2026-11-26)" % tag)
     for key, title, ok, det in rows:
         tag_ok = "INFO" if ok is None else ("PASS" if ok else "FAIL")

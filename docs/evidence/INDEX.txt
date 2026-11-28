@@ -8,12 +8,17 @@ GOAL_PVA=1 CORNER_MODE=bisector CORNER_SPEED=0.9 ARRIVE_M=0.3 PRE_GOAL_M=0.8
 REF_Z_OFFSET_M=0.118 REF_Z_HOLD=2.0 REF_Z_TOL=0.005 REF_Z_LATCH_M=1.2
 EXTRA_PARMS=guided_limits_bench5_vert_agile.parm
 
-## 当前最优（2026-11-28，defer 基线）
-final/sheet-BEST-177b.png    15/15、W4 CLEAR +0.006、W6 0.231、Q3 0.157、P1 PASS(max 0.665)、Q1 1、S1 1.09 s、S2 3 环/10.1 s
-final/phase177b-01-01_*.png  全套单图（topdown/laps/timeseries/corner/clearance）
+## 当前最优（2026-11-28，defer 基线；三路审查后按新口径重算）
+final/sheet-BEST-177b.png    15 行 14/15：W1b 13/13、Q3 0.157、W6 0.231、P1 PASS(max 0.665)
+                             **W4 校正后 = CONTACT（最小净空 −0.000 m，全速率）**；Q2 FAIL −0.100、Q4 个别角点 vmin<0.4
+                             Q1 1 段；S1 3.45 s；S2 6 环/7.9 s（已去 2.4 s window padding）；R2R 16 次 rest2rest
+                             177c 对照：15 行 14/15（W4 CLEAR +0.006）、S1 5.54 s、S2 6 环/7.2 s、R2R 21 次
+final/phase177b-01-01_*.png  177b 全套单图（topdown/laps/timeseries/corner/clearance）
 final/planexec-177b.png      P1 规划-执行偏差
-final/handover-audit-177b.png 换段/handover 审计
+final/handover-audit-177b.png 换段审计
 final/low-speed-177b.png     S1/S2 普查
+说明：原先的 W4=+0.006 "CLEAR" 是 accept.py 每 5 点抽样造成的假象；S1/S2 旧数字分别是 1.09 s / 3 环 10.1 s，
+     均因 END 窗口/滑窗 padding 的度量错误，已在本轮修复并重算（见 FLIGHT-ANALYSIS §124）。
 
 ## 四图最佳证据（frozen / s22 / s23 / s24，全部 15/15 + W4 CLEAR）
 final/BEST-fourmap.txt              四图关键数字汇总

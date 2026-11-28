@@ -4,17 +4,20 @@
 SITL 飞机、雷达/IMU 仿真、Super-LIO 定位、SUPER 轨迹规划、plan box（目标/参考整形）、
 MAVLink 桥 + supervisor、真值采集、验收与出图工具，全部在本仓库内，可直接复现每一趟飞行。
 
-## 当前状态（2026-11-27）
+## 当前状态（2026-11-28，三路独立审查后校正）
+
+> 2026-11-28 的独立审查发现两处度量错误并已修复：W4 原先是每 5 个真值点才检查一次（会把擦碰判成 CLEAR），
+> S1 的 END 窗口原先从"末角点首次到达"开始（把第二圈排除）。下面的数字是**修复后重算**的口径。
 
 | 项 | 状态 |
 |---|---|
-| **当前最佳** | **44 基线 + `REF_ALONG_FLOOR=0.9`**（agile + `REF_NO_RETRACT=1` + `PRE_GOAL_M=0.8`，corner 0.8；参考速度下限=0.9×规划速度）。四图复测（`docs/FLIGHT-ANALYSIS.md` §76）：frozen 14/15（仅 W4）、s22 14/15（仅 W4）、s23 **15/15**、s24 **15/15**；Q3 四图 PASS（0.21–0.23）、W6 p90 0.24–0.28、P1（规划-执行偏差+尖峰）3/4 PASS；**角点真值典型 0.3–0.7 m/s（旧基线 0.02–0.12）** |
-| 15 行全过对照 | phase44b（无下限）：W4 **+0.037**、W6 0.259、Q1 1 段、Q3 0.193 —— 但角点真值 0.02–0.12 |
-| 已知未过 | W4 点净空（frozen/s22 接触，本阶段按 owner 要求只记录）、Q4 第二圈仍有回环、s24 有 1 个 1.29 m 的 P1 尖峰、Q1 底边窄缝 1–2 段 |
-| 机体 | `sim/models/quad_1kg_250mm.json`（1.0 kg / 250 mm）；台架 8.34 m/s、PVA 8 m/s 跟踪 p90 0.24 m |
-| 地图 | 冻结 SPEC 地图 `sim/worlds/forest_hex12.yaml`（半径 10 m、522 柱、柱距 1.0 m）+ 同规则 seed `s22/s23/s24`；大世界 `forest_hex16/hex18_low`（1546 柱，LiDAR 负载会掉果，需先降负载） |
-| 速度阶梯 | 1.35 m/s 已可用（94a/98s22/98s23/98s24）；2.5 档在 3 m 走廊不稳定；4 m/s 大世界首测出现 SITL/FCU 发散（H5）；8 m/s 仅机体台架 |
-| **下一步方向** | 先规划连续化（SUPER 跨腿不重启 + 薄层忠实发 PVA），不引入引导层；离线审计已排除"换段不连续"（§77）；见 `docs/FLIGHT-ANALYSIS.md` §77 综合方案 + `docs/PIPELINE.md`（含 Nav2 附录） |
+| **当前最佳（可飞行基线）** | `super_planner_hex_hs_cache.yaml`（handover=defer）+ `NAV_LEAD_S=0.06` + `PASS_BY_M=0.6/PASS_BY_LONG_M=1.0` + `REF_WASHOUT_TAU=2.0/VMAX=0.15` + `REF_NO_RETRACT=1` + `REF_ALONG_FLOOR=0.9` + `GOAL_PVA=1` + `CORNER_MODE=bisector` + `CORNER_SPEED=0.9` + `ARRIVE_M=0.3` + `PRE_GOAL_M=0.8` + z 0.118/2.0/0.005/1.2；`EXTRA_PARMS=guided_limits_bench5_vert_agile.parm` |
+| 代表趟 177b / 177c | 15 行 **14/15 + 14/15**（W4：177b **CONTACT −0.000 m**、177c CLEAR +0.006 m）；W1b 13/13；Q3 0.157/0.154；W6 0.231/0.241；P1 PASS（max 0.665/0.721，0 个 >1 m）；Q1 1/2 段；S1 **3.45/5.54 s**；S2 **6/6 环（7.9/7.2 s，已去 padding）**；R2R **16/21 次 rest2rest**；Q2 **FAIL −0.100/−0.094**；Q4 仍有个别角点 vmin<0.4 |
+| 已知未过（1.35 "完美"还差） | **W4 点净空**（177b 已接触）、**Q2 机身净空**（−0.10 m，两趟都 FAIL）、Q1 1–2 段、Q4 角点、S1 1–6 s、S2 6 环、每角点 rest2rest（R2R 1.3–2.1 次/角点）、末目标偶发参考环 |
+| 机制现状 | 换目标用 DEFER（等旧轨迹飞完再 rest2rest）；已实现 R1a（提前推进）但两路独立审查判定 **NO-GO**（A* 会绕过当前角点 → pacer 卡死），需先修"旧轨迹整段作 guide / via points"；另发现 `backup_traj_en` 是死参数、committed 会被备份刹车段截断 → 腿中段 rest2rest |
+| 机体 / 地图 | `sim/models/quad_1kg_250mm.json`（1.0 kg / 250 mm）；冻结 `forest_hex12.yaml`（半径 10、522 柱、1 m 柱距）+ seed s22/s23/s24；大世界 hex12w 已接入（6000 点/帧、geofence 16、planner map ±18 m） |
+| 速度 | 1.35 m/s 可用；2.0/2.5 在 1.35 基线上跟踪不合格（§104–§106）；3 m/s 的 PVA 路线待 R1a/规划层修完再试 |
+| 下一步 | ① 修评测/门禁与文档（已做 W4/S1/S2/R2R，进行中）；② 修 backup 截断 + 半途换段（插桩）；③ R1a 改为 keep-old-guide/via 版本 + 离线 A* 门禁；④ 修 P0 竞态与 PVA 终端语义；然后才飞 |
 
 ### 9f+（新最佳配置）
 
@@ -94,26 +97,19 @@ python3 scripts/accept.py --run .runs/missionA-demo01-01-01 --world sim/worlds/f
 | 文档 | 内容 |
 |---|---|
 | `docs/README.md`（本文） | 入口、当前状态、架构、快速开始、证据索引 |
-| `docs/PIPELINE.md` | 完整链路（进程/话题/坐标系/控制/估计/规划/数据管线/约定与坑） |
-| `docs/ACCEPTANCE.md` | 15 行验收集（H*/W*）+ 判定标准 + 证据政策 |
-| `docs/FLIGHT-ANALYSIS.md` | 飞行分析：当前最佳（9f+）、9f 实飞结果、9f vs 21a、定位/高度分解、角点问题、速度阶梯、实验历史、下一步 |
-| `docs/PIPELINE.md`（含 Nav2 附录） | Nav2 调研（commit c3dea921ad12 快照）：行为树 FSM、goal/progress checker、NavigateThroughPoses、RPP 跟随律、smoother；与我们薄层的逐条 gap 与重做方案 |
+| `docs/PIPELINE.md` | 完整链路（进程/话题/坐标系/控制/估计/规划/数据管线/约定与坑）+ **Nav2 对照调研附录** |
+| `docs/ACCEPTANCE.md` | 15 行验收集（H*/W*）+ 质量行（Q*/P1/S1/S2/R2R）+ 判定标准 + 证据政策 |
+| `docs/FLIGHT-ANALYSIS.md` | 飞行分析：当前最佳、管线剖析（§113）、归因（§120/§123）、速度阶梯、实验历史、下一步 |
 
 > 历史进度日志已合并进 `docs/FLIGHT-ANALYSIS.md` 的附录，独立的 CHANGELOG 已删除。
 
 ## 证据（docs/evidence/）
 
-只保留**历史最佳轮次**（phase9f：1.35 m/s 最好实飞）、**当前轮次**（phase21a：新机制实验）
-和机体能力台架图；其余历史趟的图已按 owner 要求清理。
-
-- `phase23c-*`：当前最佳（9f+ 确认）——topdown 整趟/分圈、xyz-t、速度 2-范数、LIO/估计误差、
-  误差分解、高度、六角点法医、低速段 census
-- `phase9f-*`：历史最佳（旧）——同一套图
-- `bench-1kg-8ms.png` / `bench-pva-8ms.png`：1 kg 机体 8 m/s 能力台架
-- `phase23c-clearance.png` / `phase9f-clearance.png`：按“躯干 box + 机身半径 + 0.2 m 膨胀”画的净空图
-  （轨迹按精确 body margin 着色；判断有没有飞进机身半径看这张，不要只看 W4 的一个数）
-- 验收脚本要求的固定证据：`INDEX.txt`、`world-hex12.png`、`lap1-paths.png`、`lap2-paths.png`、
-  `vxyz-t.png`、`lio-err-t.png`
+- `final/sheet-BEST-177b.png`：当前最佳 177b 全套图（注意 W4 校正后为 CONTACT −0.000 m）
+- `final/phase177b-01-01_*.png`、`planexec-177b.png`、`handover-audit-177b.png`、`low-speed-177b.png`：177b 单图
+- `final/sheet-BEST-151a/150s22b/152s23b/153s24c.png`：四图（frozen/s22/s23/s24）证据
+- `final/pipeline-target.png`、`bench-1kg-8ms.png`、`bench-pva-8ms.png`：架构图与机体台架
+- `INDEX.txt`：全部保留证据与 21 个保留 run 的索引
 
 ## 硬性约定
 

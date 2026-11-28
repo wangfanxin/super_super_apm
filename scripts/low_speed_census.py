@@ -126,25 +126,36 @@ def path_loops(tag, speed_thr=99.0, ratio_thr=1.8, win_s=1.2):
 
     OWNER NOTE (2026-11-27): a loop can be fast (102a has one on the right side that never drops below
     half speed), so a speed census alone misses it.  Sliding-window path/net ratio catches the geometry.
+
+    2026-11-28 review fixes (P1):
+      * only the TRIGGERING SAMPLE is flagged, not the whole +-win window -- the old code reported
+        "duration" including 2*win_s of padding (177b: 10.1 s reported vs 2.86 s of actual triggers);
+      * MULTI-SCALE windows (0.6/1.2/2.4/4.8 s): a slow loop (0.8 m/s, r = 0.5 m) never tripped the
+        1.2 s tests (both branches unreachable inside 2.4 s) and was silently missed.
     """
     d = load(tag)
     t, E, N, U = d["t"], d["E"], d["N"], d["U"]
     air = (U > 1.2) & (t > t[0] + 1.0)
     vt, _ = truth_cmd(d)
     flags = np.zeros(len(t), bool)
+    scales = sorted({0.6, 1.2, 2.4, 4.8, float(win_s)})
     for i in range(len(t)):
-        w = (t >= t[i] - win_s) & (t <= t[i] + win_s) & air
-        if w.sum() < 15:
+        if not air[i]:
             continue
-        idx = np.flatnonzero(w)
-        pl = float(np.sum(np.hypot(np.diff(E[idx]), np.diff(N[idx]))))
-        net = float(np.hypot(E[idx[-1]] - E[idx[0]], N[idx[-1]] - N[idx[0]]))
-        if net < 0.35 and pl > 0.8:      # truly closed
-            flags[idx] = True
-        elif pl / max(net, 1e-6) > ratio_thr and pl > 1.0:
-            flags[idx] = True
+        for w_s in scales:
+            w = (t >= t[i] - w_s) & (t <= t[i] + w_s) & air
+            if w.sum() < 15:
+                continue
+            idx = np.flatnonzero(w)
+            pl = float(np.sum(np.hypot(np.diff(E[idx]), np.diff(N[idx]))))
+            net = float(np.hypot(E[idx[-1]] - E[idx[0]], N[idx[-1]] - N[idx[0]]))
+            # a loop needs the path to be long in ABSOLUTE terms and to come back near itself;
+            # scale the "long enough" floor with the window so 4.8 s does not fire on normal corners
+            if (net < 0.35 and pl > 0.5) or (pl / max(net, 1e-6) > ratio_thr and pl > max(1.0, w_s * 0.8)):
+                flags[i] = True
+                break
     out = []
-    for i0, i1 in segments(flags, t, min_n=3):
+    for i0, i1 in segments(flags, t, min_n=2):
         j = i0 + int(np.argmin(vt[i0:i1 + 1]))
         out.append(dict(t0=float(t[i0]), t1=float(t[i1]), dur=float(t[i1] - t[i0]),
                         pos=[float(E[j]), float(N[j])], vmin=float(vt[i0:i1 + 1].min()),
@@ -188,7 +199,10 @@ def census(tag, threshold):
                 if p is corners[1]:
                     first_arr = float(t[idx[0]])
                 else:
-                    last_arr = float(t[idx[0]])
+                    # 2026-11-28 review P1: the END window used the FIRST arrival at the last corner
+                    # (177b: 90.1 s of a 146 s flight) and silently excluded the whole second lap from
+                    # the census.  The end window must start from the LAST approach to the final corner.
+                    last_arr = float(t[idx[-1]])
     if last_arr < first_arr + 10:
         last_arr = t1_air - 8.0
     rows = []

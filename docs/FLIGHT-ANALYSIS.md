@@ -2778,3 +2778,43 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
 - 下一步优先级（待 owner 批准）：① 修评测口径（W4/S1/S2/R2R）并重算现有 31 个保留 run（0 飞行）；
   ② 修 `backup_traj_en` 死参数 + committed 截断/日志插桩，用现有数据定案半途换段；
   ③ R1a 改造为 keep_old_guide/via 版本 + 离线门禁；④ 再谈试飞。
+
+## 124. round 41：三路审查后的度量修复与重算（0 飞行）（2026-11-28）
+
+### 124.1 修复内容
+- **W4 改为全速率**（`scripts/accept.py`）：原先每 5 个真值点才检查一次；现在对全部 keep 样本分块向量化求最小净空，
+  并写明 "FULL rate"。177b 的 W4 因此从 +0.006 "CLEAR" 变为 **−0.00025 m CONTACT**（与 Q2 的 −0.100 m 一致：
+  点净空≈0 时机身边缘已进入柱内 0.1 m）。
+- **S1 的 END 窗口**（`scripts/low_speed_census.py`）：从"末角点首次到达"改为"末角点末次到达"；
+  177b 由 1.09 s → **3.45 s**，177c → **5.54 s**（不再漏掉第二圈）。
+- **S2 环检测**：只标记触发样本（不再把 ±win 整个窗口标成环 → 去掉 2.4 s padding），并改成
+  **多尺度窗口 0.6/1.2/2.4/4.8 s**（0.8 m/s、r=0.5 m 的慢环不再漏报）；177b 变成 **6 环/7.9 s**。
+- **quality_rows 新增记录行**：`R2R`（TrajFinish / PlanFromRest ok/failed / 每角点次数）、
+  `ADV`（ADVANCE-LOOKAHEAD 事件=0，机制当前关闭）、`SWT`（PLANDBG sent 变更=12 次）。
+- **accept.py 死代码删除**：删除 945–1584 行（640 行不可达的重复判分代码），extras 只计算一次。
+- **manifest/arm 补全**：记录 dispatch/整形/桥接的完整 env（NAV_LEAD_S、PASS_BY、PRE_GOAL、ADVANCE_LOOKAHEAD、
+  REF_WASHOUT、REF_NO_RETRACT、LIDAR_POINTS、GEOFENCE 等）+ dirty 文件路径列表 + parm 路径归一化。
+- **dispatch_replay 修正**：tour 按日志里的 target 数截断（177b=13，不再用世界文件 19）；补 `i_leg>=1` 守卫；
+  margin 默认 0.4；settle 参数从存档 arm 读取；新增"预测切换时刻 vs 记录 PLANDBG sent 变更"的对齐检查
+  （177b：12/12，|err| p50 0.26 s）；R1a 的 p50 变为 **3.91 m**（0.4 margin）。
+- **README/INDEX 校正**：当前状态改为"14/15、W4 CONTACT、Q2 FAIL、S1 3.45、S2 6 环/7.9、R2R 16 次"，
+  并列出未过项；README 文档表修正为 4 篇。
+
+### 124.2 对"1.35 完美"的判定（校正口径）
+| 指标 | 目标 | 177b | 177c |
+|---|---|---|---|
+| W1b | 13/13 | 13/13 | 13/13 |
+| Q3 | ≤0.25 | 0.157 | 0.154 |
+| W6 | ≤0.30 | 0.231 | 0.241 |
+| P1 | 无 >1 m | PASS(max 0.665) | PASS(max 0.721) |
+| **W4** | >0（body box） | **CONTACT −0.000** | CLEAR +0.006 |
+| **Q2** | ≥−0.02（body r=0.10） | **FAIL −0.100** | FAIL −0.094 |
+| Q1 | 0（完美）/≤1（Phase1） | 1 | 2 |
+| Q4 | 全过 | FAIL（个别角点 vmin<0.4） | FAIL |
+| S1 | 记录 | 3.45 s | 5.54 s |
+| S2 | 记录 | 6 环/7.9 s | 6 环/7.2 s |
+| R2R | 记录（R1a 目标 ≤2/趟） | 16 次 | 21 次 |
+
+→ **1.35 仍未"完美"**：W4/Q2 都说明存在真实擦碰（点净空≈0）；Q4/Q1/S2/R2R 也还有空间。
+下一步顺序按 §123：① 修 backup 截断/半途换段（插桩）+ ② R1a 改 keep-old-guide/via 版本 + ③ P0 竞态/PVA 终端语义，
+之后才用批准的飞行验证。
