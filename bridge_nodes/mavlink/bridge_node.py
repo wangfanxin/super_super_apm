@@ -743,9 +743,10 @@ class BridgeProcess:
         if sent is not None and self.wire_log is not None:
             p_f, yaw_out, cmd = sent
             from mavlink.mavlink_impl import (POS_YAW_MASK, POS_VEL_YAW_MASK,
-                                             POS_VEL_ACC_YAW_MASK)
+                                             POS_VEL_ACC_YAW_MASK, VEL_YAW_MASK, VEL_ACC_YAW_MASK)
             mask = {"pos": POS_YAW_MASK, "posvel": POS_VEL_YAW_MASK,
-                    "posvelacc": POS_VEL_ACC_YAW_MASK}[self.args.setpoint_mode]
+                    "posvelacc": POS_VEL_ACC_YAW_MASK,
+                    "vel": VEL_YAW_MASK, "velacc": VEL_ACC_YAW_MASK}[self.args.setpoint_mode]
             self.wire_log.write("%.4f,%s,%d,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
                                 "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d,%d\n"
                                 % (now, self.args.setpoint_mode,
@@ -997,7 +998,8 @@ def add_bridge_arguments(ap):
                     help="a gap between two SENT samples longer than this many seconds declares an estimator "
                          "reset (reset_counter++), so EKF3 accepts the jump instead of rejecting it "
                          "(0 = off)")
-    ap.add_argument("--fields", dest="setpoint_mode", default="pos", choices=["pos", "posvel", "posvelacc"])
+    ap.add_argument("--fields", dest="setpoint_mode", default="pos",
+                    choices=["pos", "posvel", "posvelacc", "vel", "velacc"])
     # ---- CLAMPS ON THE FORWARDED FEED-FORWARD (round 85) -------------------------------------------
     # WHY: opening the acceleration channel (`--fields posvelacc`) hands ArduPilot a number that its
     # `shape_pos_vel_accel_xy` adds to the velocity target UNSHAPED (`limit_total=false`), where the FCU's

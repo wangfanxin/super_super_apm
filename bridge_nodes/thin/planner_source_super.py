@@ -327,6 +327,18 @@ def main() -> int:
     ap.add_argument("--ref-catchup-mps", type=float, default=0.5,
                     help="参考最多可以比规划自己快多少（m/s）。这是 ke2-01-01 那个'追缺口追到 6 m/s、"
                          "飞出场地'的直接修复：参考只许追赶，不许超过它追的那条轨迹太多。")
+    ap.add_argument("--vel-layer", type=int, default=0,
+                    help="1 = A 分支（速度层，opt-in）：在 100 Hz 用 plan+实测状态算速度参考 "
+                         "v_cmd=v_plan+Kp*(p_plan-p_act)+Kd*(v_plan-v_act)，并让 bridge 用 vel/velacc 掩码发送；"
+                         "0 = 保持 xva（位置+速度+加速度）。需要 BRIDGE_FIELDS=velacc 配套。")
+    ap.add_argument("--vel-layer-kp", type=float, default=1.5,
+                    help="速度层的位置误差增益（1/s）。")
+    ap.add_argument("--vel-layer-kd", type=float, default=0.2,
+                    help="速度层的速度误差增益。")
+    ap.add_argument("--vel-layer-kpz", type=float, default=1.0,
+                    help="速度层的竖直位置误差增益（单独给，因为水平/竖直的动态不同；调水平增益时竖直保持闭环）。")
+    ap.add_argument("--vel-layer-vmax", type=float, default=0.0,
+                    help="速度层输出的速度上限（m/s）；0 = 用 --ref-max-speed-mps。")
     ap.add_argument("--ref-faithful", type=int, default=0,
                     help="1 = 忠实发布模式：跳过调速器（along 律），发布速度直接取 SUPER 规划速度，只过一层"
                          "加速度限幅（|dv| <= ref-gov-acc*dt）+ 位置洗涤器；用于验证『MINCO 的 PVA 本来就够好』。")
@@ -2024,6 +2036,48 @@ def main() -> int:
                         print("FINAL-SLEW #%d: |dv| %.2f -> %.2f m/s (bind, |v| now %.2f m/s)"
                               % (state["final_slew_n"], _n, _a, float(np.linalg.norm(_vdes[:2]))),
                               flush=True)
+        # ---- WHTF-VEL-LAYER (A branch, owner-approved 2026-11-28) ----
+        # The position loop moves from the FCU PSC into this 100 Hz process: send a velocity reference to a
+        # velocity+acc mask and let PSC only run its velocity loop.  Fallback to xva when odom is missing.
+        if int(getattr(args, "vel_layer", 0)) and state.get("p_l") is not None and state.get("v_l") is not None \
+                and not state.get("is_hold"):
+            # A 分支的正确反馈基准是 SUPER 的**原始参考**（s.p/s.v/s.a），不是经过 washout/governor 的
+            # p_pub/v_pub：位置掩码后 FCU 不再跟踪位置，washout 的"位置/速度偏置"在 A 分支里只会变成
+            # 额外振荡源（173b，Kp=1.5 时 Q3 0.75、S2 6 环就是证据）。
+            _p_act = np.asarray(state["p_l"], float)
+            _v_act = np.asarray(state["v_l"], float)
+            _p_ref = np.asarray(s.p, float)
+            _v_ref = np.asarray(s.v, float)
+            _ep = _p_ref - _p_act
+            _ev = _v_ref - _v_act
+            _kp = float(getattr(args, "vel_layer_kp", 1.0) or 1.0)
+            _kd = float(getattr(args, "vel_layer_kd", 0.15) or 0.15)
+            _kpz = float(getattr(args, "vel_layer_kpz", 1.0) or 1.0)
+            _v_new = _v_ref + _kd * _ev
+            _v_new[:2] = _v_new[:2] + _kp * _ep[:2]
+            _v_new[2] = _v_new[2] + _kpz * _ep[2]
+            _vmaxv = float(getattr(args, "vel_layer_vmax", 0.0) or 0.0)
+            if _vmaxv <= 0.0:
+                _vmaxv = float(getattr(args, "ref_max_speed_mps", 0.0) or 6.0)
+            _vn = float(np.linalg.norm(_v_new[:2]))
+            if _vmaxv > 0.0 and _vn > _vmaxv and _vn > 1e-9:
+                _v_new[:2] *= _vmaxv / _vn
+            # slew limit: a velocity command that steps faster than ~8 m/s^2 is a step, not a reference
+            _vprev = state.get("vel_layer_prev")
+            if _vprev is not None and state.get("last_pub_t") is not None:
+                _dty = max(1e-3, now - float(state["last_pub_t"]))
+                _dv = _v_new - np.asarray(_vprev, float)
+                _dvmax = 8.0 * _dty
+                _dvn = float(np.linalg.norm(_dv))
+                if _dvn > _dvmax and _dvn > 1e-9:
+                    _v_new = np.asarray(_vprev, float) + _dv * (_dvmax / _dvn)
+            state["vel_layer_prev"] = np.asarray(_v_new, float).copy()
+            v_pub = _v_new
+            a_pub = np.asarray(s.a, float)
+            state["vel_layer_n"] = int(state.get("vel_layer_n", 0)) + 1
+            if state["vel_layer_n"] == 1:
+                print("VEL-LAYER: ON (raw-ref feedback, kp=%.2f kd=%.2f vmax=%.2f) -- bridge must use BRIDGE_FIELDS=velacc"
+                      % (_kp, _kd, _vmaxv), flush=True)
         state["pub_prev"] = (np.asarray(p_pub, float).copy(), np.asarray(v_pub, float).copy())
         try:
             state["pub_v"] = np.asarray(v_pub, float).copy()
