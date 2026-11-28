@@ -2818,3 +2818,36 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
 → **1.35 仍未"完美"**：W4/Q2 都说明存在真实擦碰（点净空≈0）；Q4/Q1/S2/R2R 也还有空间。
 下一步顺序按 §123：① 修 backup 截断/半途换段（插桩）+ ② R1a 改 keep-old-guide/via 版本 + ③ P0 竞态/PVA 终端语义，
 之后才用批准的飞行验证。
+
+## 125. round 42：审查后的 C++ 机制修复（0 飞行实现，待飞验证）
+
+按 §123 的优先级，改动如下（全部可回退，未改 PID/未加调参层）：
+
+### 125.1 item2：备份轨迹截断 / 半途 rest2rest
+- `backup_traj_en` 原先**只读不用**（死参数）；现在真正生效：`false` 时 `PlanFromRest`/`ReplanOnce`
+  **跳过备份生成**，直接提交完整 exp 轨迹（不再截断成"旧前缀+刹车段"）。
+  意义：连续 replan 失败/NO_NEED 时不会再因为短视界 committed 到期而在腿中段 rest2rest。
+- 每次 commit 打印 `COMMIT <where> total=<s> end=(x,y,z) backup_rc=<n>`，用于把 rest2rest 分成
+  corner（端点≈角点）与 mid-leg（端点离角点远）两类。
+
+### 125.2 item3：R1a 的通过性 + 离线门禁
+- 新目标交接时 `split_dis = planning_horizon - 4 m`（保留旧轨迹到它结束的角点，A* 留 ≥4 m 视野）；
+  **普通 replan 恢复上游行为**（整段旧轨迹作 guide，`numeric_limits::max()`）——修掉 round33 把
+  `split_dis=12 m` 混进普通 replan 的变量污染。
+- 新增 `scripts/check_guide_via.py`：在世界几何 + 0.2 m 膨胀上，对每对相邻角点跑 A*，检查
+  "从角点到下一角点的路径长度 ≤ horizon − advance"；结果 **PASS**（10.7–11.4 m ≤ 12.1 m），
+  即 R1a 提前 3.9 m 后 A* 仍能连到下一角点，且旧轨迹前缀保证当前角点是内部点。
+- 启动横幅 + 互斥 FATAL：R1a 不可与 dispatch_lookahead/goal_lead/goal_lookahead/corner_carry/yaw_gate 同开。
+
+### 125.3 item4：P0 竞态与 PVA 终端语义
+- `getOneHeartbeatTime()`（100 Hz 发布线程）现在对 `cmd_traj_info_` 加锁（patch18 同类竞态）。
+- `goal_pva_en` 的终端速度/加速度**只在 guide 真的连到 goal（connected_goal）时**才施加；
+  否则不再迫使 MINCO 在腿中段命中"角点出口速度"。
+- `handover_policy` 字符串校验：未知值 → 警告并回退 `defer`；每次换段打印
+  `HANDOVER-DECIDE sim=... policy=... remain/...`。
+
+### 125.4 待飞（已获 owner 批准 item3-4 飞行）
+- 基线 A（2 趟）：新二进制 + hs_cache（backup 真关 / split 恢复 / PVA 修正 / 心跳锁）；
+- R1a B（2 趟）：A + `ADVANCE_LOOKAHEAD_S=2.4 ADVANCE_MARGIN_M=0.4`；
+- 每趟记录：15 行、W4 全速率、Q1/Q2/Q3/Q4、P1、S1/S2、**R2R（rest2rest 次数与 corner/mid-leg 分类）**、
+  ADV 事件、W1b。

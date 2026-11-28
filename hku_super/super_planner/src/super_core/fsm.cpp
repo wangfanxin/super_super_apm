@@ -60,6 +60,17 @@ namespace fsm {
             return;
         }
 
+        // 2026-11-28 review P2: an unknown handover_policy silently took a third code path
+        // ("replan immediately with split=1 m").  Validate it once and fall back loudly to defer.
+        static bool _policy_checked = false;
+        if (!_policy_checked) {
+            _policy_checked = true;
+            if (cfg_.handover_policy != "defer" && cfg_.handover_policy != "splice") {
+                std::cout << " -- [Fsm] WARNING: unknown handover_policy '" << cfg_.handover_policy
+                          << "' -> falling back to 'defer'" << std::endl;
+                cfg_.handover_policy = "defer";
+            }
+        }
         planner_ptr_->getMap()->getNearestInfCellNot(GridType::OCCUPIED, gi_.goal_p, gi_.goal_p, 3.0);
 
         TimeConsuming replan_once_time("replan_once_time", false);
@@ -79,6 +90,8 @@ namespace fsm {
             planner_ptr_->unlockCommittedTraj();
             const double _hb_elapsed = ros_ptr_->getSimTime() - _hb_swt;
             const double _hb_remain = _hb_total - _hb_elapsed;
+            std::cout << " -- [Fsm] HANDOVER-DECIDE sim=" << ros_ptr_->getSimTime()
+                      << " policy=defer remain=" << _hb_remain << "s new_goal=1" << std::endl;
             if (!_hb_fin && _hb_total > 0.0 && _hb_remain > 0.08 && _hb_remain < 2.0) {
                 static int _hb_n = 0;
                 _hb_n++;
@@ -92,6 +105,8 @@ namespace fsm {
 
         RET_CODE ret_code;
         if (gi_.new_goal) {
+            std::cout << " -- [Fsm] HANDOVER-DECIDE sim=" << ros_ptr_->getSimTime()
+                      << " policy=splice immediate-replan new_goal=1" << std::endl;
             // SPLICE handover: one immediate replan on the new goal (new_goal=true).  generateExpTraj then
             // starts from the old committed trajectory's state and keeps the old trajectory as the guide.
             ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, true,

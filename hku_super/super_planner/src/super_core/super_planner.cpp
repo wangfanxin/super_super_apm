@@ -134,6 +134,25 @@ namespace super_planner {
             ros_ptr_->info(" -- [SUPER] in [PlanFromRest] GenerateExpTrajectory SUCCESS.");
         }
 
+        auto log_commit = [&](const char *where, int backup_rc) {
+            double T = cmd_traj_info_.getTotalDuration();
+            Vec3f e = cmd_traj_info_.getPos(T);
+            std::cout << " -- [SUPER] COMMIT " << where << " total=" << T
+                      << " end=(" << e.transpose() << ") backup_rc=" << backup_rc << std::endl;
+        };
+        if (!cfg_.backup_traj_en) {
+            // 2026-11-28 review P0-2: backup_traj_en used to be a DEAD parameter; the backup was
+            // optimised unconditionally and, on success, the committed trajectory was truncated to
+            // "old prefix + brake segment", which is what lets a failed replan chain leave a short
+            // committed trajectory that expires mid-leg (rest2rest from a moving state).
+            cmd_traj_info_.setTrajectory(exp_traj_info);
+            last_exp_traj_info_ = exp_traj_info;
+            robot_on_backup_traj_ = false;
+            gi_.new_goal = false;
+            latest_replan.setRetCode(SUPER_RET_CODE::SUPER_SUCCESS_NO_BACKUP);
+            log_commit("rest2rest(no-backup)", -1);
+            return SUCCESS;
+        }
         back_traj_info.setEmpty();
         RET_CODE back_ret_code = generateBackupTrajectory(exp_traj_info, back_traj_info);;
 
@@ -146,6 +165,7 @@ namespace super_planner {
             last_exp_traj_info_ = exp_traj_info;
             robot_on_backup_traj_ = false;
             gi_.new_goal = false;
+            log_commit("rest2rest(backup)", static_cast<int>(back_ret_code));
 
             // For visualization
             {
@@ -164,6 +184,7 @@ namespace super_planner {
             cmd_traj_info_.setTrajectory(exp_traj_info);
             last_exp_traj_info_ = exp_traj_info;
             gi_.new_goal = false;
+            log_commit("rest2rest(free)", static_cast<int>(back_ret_code));
 
             // For visualization
             TimeConsuming t_viz("viz goal VisualizeCommitTrajectory", false);
@@ -240,6 +261,21 @@ namespace super_planner {
         }
 
 
+        auto log_commit = [&](const char *where, int backup_rc) {
+            double T = cmd_traj_info_.getTotalDuration();
+            Vec3f e = cmd_traj_info_.getPos(T);
+            std::cout << " -- [SUPER] COMMIT " << where << " total=" << T
+                      << " end=(" << e.transpose() << ") backup_rc=" << backup_rc << std::endl;
+        };
+        if (!cfg_.backup_traj_en) {
+            cmd_traj_info_.setTrajectory(exp_traj_info);
+            last_exp_traj_info_ = exp_traj_info;
+            robot_on_backup_traj_ = false;
+            gi_.new_goal = false;
+            latest_replan.setRetCode(SUPER_SUCCESS_NO_BACKUP);
+            log_commit("replan(no-backup)", -1);
+            return SUCCESS;
+        }
         BackupTraj back_traj_info;
         // 2）生成back轨迹
         TimeConsuming t_back("t_back", false);
@@ -273,6 +309,7 @@ namespace super_planner {
             last_exp_traj_info_ = exp_traj_info;
             robot_on_backup_traj_ = false;
             gi_.new_goal = false;
+            log_commit("replan(backup)", static_cast<int>(back_ret_code));
 
             {
                 // For visualization
@@ -309,6 +346,7 @@ namespace super_planner {
             last_exp_traj_info_ = exp_traj_info;
             robot_on_backup_traj_ = false;
             gi_.new_goal = false;
+            log_commit("replan(free)", static_cast<int>(back_ret_code));
 
             {
                 TimeConsuming t_viz("tviz", false);
@@ -327,6 +365,10 @@ namespace super_planner {
     }
 
     void SuperPlanner::getOneHeartbeatTime(double &start_WT_pos, bool &traj_finish) {
+        // 2026-11-28 review P0: this runs on the 100 Hz publish thread while the exec thread writes the
+        // committed trajectory (setTrajectory); reading Trajectory::pieces unlocked is the same class of
+        // race that crashed SITL twice before patch18.
+        cmd_traj_info_.lock();
         double eval_t = (ros_ptr_->getSimTime() - cmd_traj_info_.getStartWallTime());
         traj_finish = false;
         double total_dur = cmd_traj_info_.getTotalDuration();
@@ -340,6 +382,7 @@ namespace super_planner {
         } else {
             robot_on_backup_traj_ = false;
         }
+        cmd_traj_info_.unlock();
     }
 
     Trajectory SuperPlanner::getCommittedPositionTrajectory() {
@@ -612,11 +655,18 @@ namespace super_planner {
             /// committed trajectory: keep it up to its END (the previous corner) so the corner is a
             /// guide point of the new trajectory and the A* starts AT the corner instead of 1 m before
             /// it.  The corner stays inside the same keepout, so W1b is untouched.
-            if ((!gi_.new_goal || cfg_.keep_old_goal_guide || cfg_.handover_policy == "splice")
-                && last_exp_traj_info.wholeTrajKnownFree() && cfg_.receding_dis > 0.0) {
-                // SPLICE handover: keep following the old committed trajectory as the guide prefix, but
-                // leave the A* a usable horizon (planning_horizon - 4 m) so the new goal still connects.
-                split_dis = std::max(cfg_.receding_dis, cfg_.planning_horizon - 4.0);
+            if (last_exp_traj_info.wholeTrajKnownFree() && cfg_.receding_dis > 0.0) {
+                if (!gi_.new_goal) {
+                    // UPSTREAM behaviour for an ordinary replan: the whole committed trajectory is the
+                    // guide (round33 had changed this to 12 m, which re-enabled A* every tick and mixed
+                    // the variable into every A/B -- 2026-11-28 review P1-5).
+                    split_dis = std::numeric_limits<double>::max();
+                } else {
+                    // HANDOVER (defer or splice): keep the old trajectory -- including the corner it ends
+                    // at -- as the guide prefix, so that corner is an INTERIOR point instead of being cut
+                    // by a fresh A*; leave the A* a usable horizon (planning_horizon - 4 m).
+                    split_dis = std::max(cfg_.receding_dis, cfg_.planning_horizon - 4.0);
+                }
             }
             if (std::getenv("WHTF_REPLAN_DEBUG") != nullptr) {
                 std::ostringstream ros_;
@@ -992,12 +1042,20 @@ namespace super_planner {
 
         pos_fina_state.setZero();
         pos_fina_state.col(0) = guide_path.back();
-        if (cfg_.goal_pva_en) {
+        if (cfg_.goal_pva_en && connected_goal) {
             /// PVA GOAL (patch_goal_pva.py).  The terminal velocity comes from the GOAL, so a
             /// waypoint can be crossed without a stop while still being the goal of the
             /// trajectory.  Without this the corner is a rest point by construction.
+            /// 2026-11-28 review P1-4: only apply it when the guide ACTUALLY connects to the goal;
+            /// otherwise the optimiser is asked to hit the goal's exit velocity at a mid-leg point
+            /// (REACH_HORIZON), which pulls the trajectory shape and can make it infeasible.
             pos_fina_state.col(1) = gi_.goal_v;
             pos_fina_state.col(2) = gi_.goal_a;
+        } else if (cfg_.goal_pva_en) {
+            if (cfg_.print_log) {
+                ros_ptr_->warn(" -- [SUPER] PVA tail skipped: guide does not connect to the goal "
+                               "(endpoint {:.2f} m away)", (pos_fina_state.col(0) - gi_.goal_p).norm());
+            }
         } else if (cfg_.goal_vel_en && (gi_.goal_p - robot_state_.p).norm() > cfg_.planning_horizon / 2) {
             pos_fina_state.col(1) = (gi_.goal_p - robot_state_.p).normalized() * cfg_.exp_traj_cfg.max_vel / 2;
         }
