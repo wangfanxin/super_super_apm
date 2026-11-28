@@ -75,7 +75,15 @@ python3 tests/check_criteria_v2.py || note_fail "check_criteria_v2.py (P0 v2 swi
 # (it is kept out of the gate deliberately; do not add it back without making the probes deterministic.)
 
 step "Phase 3 merged MAVLink client (SITL, no flight): 84/331 rates, frame conversion, extnav age gate"
-bash tests/check_fcu_client.sh || note_fail "check_fcu_client.sh (merged fcu_client transport)"
+# Same known flake as the bag probe: this SITL+Super-LIO smoke test can lose /lio/robo/odom when the host is
+# loaded (round 50: failed once, passed immediately after clean_harness with no code change).  One retry,
+# both attempts must fail to fail the gate.
+if ! bash tests/check_fcu_client.sh; then
+  echo "   (fcu_client probe failed once -- retrying with a clean harness)"
+  bash scripts/clean_harness.sh >/dev/null 2>&1 || true
+  sleep 2
+  bash tests/check_fcu_client.sh || note_fail "check_fcu_client.sh (merged fcu_client transport, 2 attempts)"
+fi
 bash tests/check_launch_matrix.sh || note_fail "check_launch_matrix.sh (one FCU implementation: merged | legacy rollback)"
 bash tests/check_super_velocity_wiring.sh || note_fail "check_super_velocity_wiring.sh (LIO velocity -> rog_map -> SUPER hot_start)"
 
