@@ -702,6 +702,17 @@ namespace super_planner {
                 ros_ptr_->warn(" -- [SUPER] Invalid traj or eval t");
                 return FAILED;
             }
+            /// WHTF-REPLAN-START (2026-11-28): measure the difference between the user-proposed
+            /// "start the next segment from the PREVIOUS PLAN's progress point" (this branch) and the
+            /// measured state (what PlanFromRest/hot_start uses).
+            if (gi_.new_goal) {
+                std::cout << " -- [SUPER] REPLAN-START new_goal: ref_progress(t=" << replan_state_TT
+                          << ") p=(" << pos_init_state.col(0).transpose() << ") v=("
+                          << pos_init_state.col(1).transpose() << ") | measured p=("
+                          << robot_state_.p.transpose() << ") v=(" << robot_state_.v.transpose()
+                          << ") | dp=" << (pos_init_state.col(0) - robot_state_.p).norm()
+                          << " dv=" << (pos_init_state.col(1) - robot_state_.v).norm() << std::endl;
+            }
             // * Generate guide path with time stampe, for hot trajectory initialization
             // * the guide stamp is time from the replan start t
             guide_stamp.clear();
