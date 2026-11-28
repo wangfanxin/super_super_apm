@@ -2878,3 +2878,48 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
   规划器一次接受"当前角点 + 下一角点"作为 via，路径必须穿过 via，pacer 只做记账；
 - 下一步：① 补 180b 基线重复（确认 Q1/S2 改善不是方差）；② 实现 via-point 版 FSM/A*（工作量中等，先离线门禁
   `check_guide_via.py` 扩展为"path 必须经过 via"）；③ 修 Q2/W4 的真实擦碰（曲率限速/路径净空），再谈 1.35 "完美"。
+
+## 127. round 44：三路复核（C++修复 / 飞行数据 / via方案）汇总结论（2026-11-28）
+
+### 127.1 结论
+1. **代码无 P0，但 item2（backup 真生效）是唯一的安全语义改变，且污染了 R1a 的 A/B**（审查 C++ 侧）：
+   - 旧二进制配置写 `backup_traj_en=false` 但参数是死的 → 实际一直生成刹车备份；180a/181a/181b 起才真的没有备份；
+   - 无备份 + `goal_pva_en`（角点末速 0.9 m/s）→ `TrajFinish → 重规划` 间隙 SUPER 持续发布"角点位置+0.9 m/s"
+     （`super_planner.cpp:409-416`）→ 可能造成角点冲过/被切；**必须单变量 A/B（只切 backup_traj_en 或加零速 hold）**。
+   - 心跳加锁成对、无死锁；`robot_on_backup_traj_` 仍有锁外写（P1）；`gi_` 跨线程竞态仍在（P1，既有问题）。
+2. **R1a 否决成立，但真正机理被我 §126 写错**（审查 via 方案 + 飞行数据）：
+   - round42 的 `split=planning_horizon-4=12 m` **在决定性交接上没生效**：`wholeTrajKnownFree()` 用 **0.2 m 膨胀图**检查
+     已提交轨迹，而优化器净空只有 `robot_r=0.10 m` → 闸几乎必然 false → 回退 `split=1.0 m` → A* 从角点前 2.6 m
+     直接连下一角点 → 切角 2.5–3.1 m → pacer pass-by 永不到达 → **确定性 40 s 腿超时 + 目标序列永久错位**；
+   - 证据：181a leg2 参考在距角点 2.65 m 处转向、truth 最近 2.52 m、pass-by MISS、handover `dur=8.23 s` 远小于
+     "保留前缀"所需 ≥10.8 s；`WHTF_REPLAN_DEBUG/WHTF_GUIDE_DEBUG` **从未在 run 脚本打开**，所有 run 的
+     `REPLANDBG/GUIDEDBG=0` 条 → §125.2 的 split 修复在实飞中**从未被观测**；
+   - 另外 advance 用 LIO 尖峰速度，实测 `d_adv` 会放大到 **6.6–10.2 m**（等价被否的 R1）；且 pacer 判不到时
+     **没有 resync**，一个 miss 就永久错位。
+   - 结论：R1a 的"提前换目标"本身不是被证伪的点；被证伪的是"前缀丢失 + 无 resync + advance 无上限"。
+3. **180a 只能算"候选代码基线"，不是新性能最佳**（飞行数据侧）：
+   - 15 行实际是 13 过+1 挂+1 信息（W4 −0.012），**不如 177c 的 14/0**；
+   - **Q1=0 真实且有机制支撑**（180a 是 12 趟语料里唯一 0 次腿中段 rest2rest；旧跑 10/11 趟 Q1 段与腿中段 restart 对齐），
+     但 **150s22b 也是 Q1=0**，不能说"首个 0 段趟"；n=1 需 180b 复现；
+   - S2 的 1 环 **就是 177b/177c 同位置的 c1 钩形环**（180a 46.1–49.6 @(10.10,0.33)），消掉的是腿中段/降落环；
+   - W4/Q2 三趟同一根柱 #240、同一条 c5→c6 腿：规划净空仅 0.07–0.17 m < 跟踪误差 0.11–0.17 m → **结构性边缘**，不是方差；
+   - **口径修正**：180a 的 Q4 FAIL 是"末角点垂直降落"混进窗口的假阳性；S1 2.74 s 含 1.745 s 降落减速；R2R 15 次
+     = 3 哨坪/起飞 + 11 角点 + 1 降落，**腿中段 0**，"每角点 1.25"标签错误。
+4. **推荐下一步不是直接上 via，而是先做 R1'（约 via 的 1/4 成本）**：
+   - `new_goal` 前缀保留与 0.2 m 闸解耦（用 robot_r+margin 或 prob-map 判前缀是否被新障碍侵入）；
+   - advance 距离用**命令速度**并 clamp（如 2.8–3.8 m），不要用 LIO 尖峰；
+   - 加 **resync**（sent goal 已到而 pacer leg 未进 >1.5 s → 回退到在手角点/重发并记录）；
+   - 默认打开 `WHTF_REPLAN_DEBUG/GUIDE_DEBUG` 并写入 quality/manifest；
+   - 新增 0 飞行门禁：`check_handover_via.py`（用现有日志判每个 pacer leg 的参考/真值 pass-by，原型已用 180a/181a/181b 验证可分）、
+     扩展 `check_guide_via.py`（按实际 prefix 策略扫描 d_adv，断言 fallback prefix=1.0 必须 MISS）。
+   - via-1（在手角点作 via、goal 仍下一角点）机理成立但工作量被文档低估（msg/FSM/分段 time allocation/guide-cache key/optimizer attractor），
+     应在 R1' 仍不够时再做；via-2（下下角点）在 16 m horizon 下不可行。
+5. **必须修的证据/配置问题（飞行前）**：
+   - `hs_cache` 的 loader 副本**缺 `handover_policy`**（`hku_super/super_planner/config/...`），日志报
+     `Load param ... failed, use default value: defer` → **只改 `hku_super/config` 的 A/B 会静默失效**；install 脚本必须全量同步+cmp；
+   - `HANDOVER-DECIDE` 在 defer 配置下也打印 `policy=splice`（日志标签错误，实际已发生 7 条/趟）；
+   - `COMMIT` 无 sim 时间，且 `end` 是 L 系角点 → 不能用来分 corner/mid-leg；`ADVANCE-LOOKAHEAD` 无时间戳；
+   - `PLANDBG` 的 `d` 混用 W/L 系（坏值）；`quality_rows` 的 R2R/ADV/SWT 仍是计数、SWT |dv| 是死代码；
+   - `_invalid/` run 的 quality 不可复现（census 不认 `_invalid`）；
+   - `check_guide_via.py` 的 horizon/advance 口径与被测 split 参数不一致、未接入 gate；
+   - accept 的 Q4 需排除 land 相位、S1 的 END 需排除降落、H6/H5 需限定 flight window。
