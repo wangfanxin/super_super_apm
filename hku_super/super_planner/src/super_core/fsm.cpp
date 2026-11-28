@@ -64,13 +64,13 @@ namespace fsm {
 
         TimeConsuming replan_once_time("replan_once_time", false);
 
-        /// WHTF-DEFER-HANDOVER (patch 19, 2026-11-27).  A new goal that arrives while the committed
-        /// trajectory still contains the corner turn must NOT be re-planned yet: MEASURED phase34a/36a,
-        /// re-planning 0.3 m before every corner makes MINCO slow the new trajectory to 0.14-0.34 m/s
-        /// (a smooth commanded dip, not a hold) so the aircraft stops at every corner.  Fly the old turn
-        /// to its end first; `Traj finish` then re-enters GENERATE_TRAJ with the new goal and the plan
-        /// starts after the turn instead of in the middle of it.
-        if (gi_.new_goal) {
+        /// WHTF-HANDOVER-POLICY (2026-11-28, owner-approved): DEFER was a workaround for MINCO braking at
+        /// a corner when the new goal arrived 0.3 m before it.  It has the side effect we now fix: it flies
+        /// the old trajectory to its END and then PlanFromRest starts from the MEASURED state, so the old
+        /// turn's direction is lost.  With "splice" the new goal replans IMMEDIATELY; generateExpTraj starts
+        /// the new trajectory from the old committed trajectory's reference state and keeps the old
+        /// trajectory as the guide prefix (keep_old_goal_guide/splice in the split logic).
+        if (gi_.new_goal && cfg_.handover_policy == "defer") {
             double _hb_swt = 0.0;
             bool _hb_fin = false;
             planner_ptr_->getOneHeartbeatTime(_hb_swt, _hb_fin);
@@ -92,34 +92,10 @@ namespace fsm {
 
         RET_CODE ret_code;
         if (gi_.new_goal) {
-            /// WHTF-SMOOTH-HANDOVER (patch 14, 2026-11-26).  A NEW GOAL is first handed to the ordinary
-            /// CONTINUOUS replan (new_goal=false): that path uses the WHOLE committed trajectory as the
-            /// guide instead of receding 1 m along it and splicing, which is what fails at corner turns
-            /// (44-82 GenerateExpTrajectory failures / sortie, each one ending in a Traj finish ->
-            /// PlanFromRest -> commanded-speed collapse and an aircraft loop).  The historical new-goal
-            /// attempt is kept as the fallback, so a regression is bounded to today's behaviour.
-            RET_CODE smooth = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, false,
-                                                       gi_.goal_v, gi_.goal_a);
-            /// WHTF-HANDOVER-DEBUG (round 13, temporary): WHY does the continuous handover fail at a
-            /// corner?  Log the RET_CODE of the smooth attempt and of the historical fallback, plus the
-            /// committed trajectory's remaining time at that moment.
-            {
-                double _dbg_swt = 0.0; bool _dbg_fin = false;
-                planner_ptr_->getOneHeartbeatTime(_dbg_swt, _dbg_fin);
-                planner_ptr_->lockCommittedTraj();
-                const double _dbg_total = planner_ptr_->getCommittedPositionTrajectory().getTotalDuration();
-                planner_ptr_->unlockCommittedTraj();
-                const double _dbg_rem = _dbg_total - (ros_ptr_->getSimTime() - _dbg_swt);
-                cout << " -- [Fsm] HANDOVER smooth_rc=" << static_cast<int>(smooth)
-                     << " remain=" << _dbg_rem << "s" << endl;
-            }
-            if (smooth == SUCCESS || smooth == FINISH || smooth == NO_NEED) {
-                ret_code = smooth;
-            } else {
-                ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, true,
-                                                    gi_.goal_v, gi_.goal_a);
-                cout << " -- [Fsm] HANDOVER fallback_rc=" << static_cast<int>(ret_code) << endl;
-            }
+            // SPLICE handover: one immediate replan on the new goal (new_goal=true).  generateExpTraj then
+            // starts from the old committed trajectory's state and keeps the old trajectory as the guide.
+            ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, true,
+                                                gi_.goal_v, gi_.goal_a);
         } else {
             ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, gi_.new_goal,
                                                 gi_.goal_v, gi_.goal_a);

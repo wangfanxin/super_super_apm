@@ -60,13 +60,12 @@ namespace super_planner {
         /// proves the config file was really loaded (a silent "flag did nothing" is the worst failure mode).
         std::cout << " -- [SUPER] CONFIG: general_bc=" << (cfg_.general_bc_en ? 1 : 0)
                   << " keep_old_goal_guide=" << (cfg_.keep_old_goal_guide ? 1 : 0)
-                  << " guide_hyst=" << (cfg_.guide_hyst_en ? 1 : 0)
+                  << " handover=" << cfg_.handover_policy
                   << " guide_cache=" << (cfg_.guide_cache_en ? 1 : 0)
                   << " hot_start=" << (cfg_.hot_start_en ? 1 : 0)
                   << " hot_ratio=" << cfg_.hot_start_vel_ratio
                   << " pva_tail_len=" << cfg_.pva_tail_len
                   << " pva_tail_adaptive=" << (cfg_.pva_tail_adaptive ? 1 : 0)
-                  << " guide_round=" << (cfg_.guide_round_en ? 1 : 0)
                   << " receding_dis=" << cfg_.receding_dis
                   << " max_vel=" << cfg_.exp_traj_cfg.max_vel << std::endl;
 
@@ -613,9 +612,11 @@ namespace super_planner {
             /// committed trajectory: keep it up to its END (the previous corner) so the corner is a
             /// guide point of the new trajectory and the A* starts AT the corner instead of 1 m before
             /// it.  The corner stays inside the same keepout, so W1b is untouched.
-            if ((!gi_.new_goal || cfg_.keep_old_goal_guide)
+            if ((!gi_.new_goal || cfg_.keep_old_goal_guide || cfg_.handover_policy == "splice")
                 && last_exp_traj_info.wholeTrajKnownFree() && cfg_.receding_dis > 0.0) {
-                split_dis = std::numeric_limits<double>::max();
+                // SPLICE handover: keep following the old committed trajectory as the guide prefix, but
+                // leave the A* a usable horizon (planning_horizon - 4 m) so the new goal still connects.
+                split_dis = std::max(cfg_.receding_dis, cfg_.planning_horizon - 4.0);
             }
             if (std::getenv("WHTF_REPLAN_DEBUG") != nullptr) {
                 std::ostringstream ros_;
@@ -849,123 +850,6 @@ namespace super_planner {
         const bool connected_goal = (guide_path.back().head(2) - gi_.goal_p.head(2)).norm() < cfg_.resolution * 2;
         out_exp_traj_info.setGoalConnectedFlag(connected_goal);
 
-        /// WHTF-GUIDE-ROUND (patch 21, 2026-11-27 round 14).  A sharp polyline guide gives MINCO thin
-        /// corridor polytopes at the corner, so it brakes to 0.0-0.2 m/s before turning (MEASURED every
-        /// corner of the 1.35 m/s arm).  Replace each >45 deg vertex with a quadratic-Bezier rounding arc
-        /// (radius guide_round_radius) when the arc is known-free.  The corner stays inside the arc
-        /// (deviation ~0.25*r = 0.125 m for r=0.5 m, far inside the 0.5 m W1b box).
-        if (cfg_.guide_round_en && guide_path.size() >= 3) {
-            vec_Vec3f rounded;
-            rounded.reserve(guide_path.size() * 2);
-            rounded.emplace_back(guide_path.front());
-            bool rounded_any = false;
-            const double r = cfg_.guide_round_radius;
-            for (size_t i = 1; i + 1 < guide_path.size(); ++i) {
-                const Vec3f a = guide_path[i - 1], b = guide_path[i], c = guide_path[i + 1];
-                Vec3f d1 = b - a; d1.z() = 0.0;
-                Vec3f d2 = c - b; d2.z() = 0.0;
-                const double n1 = d1.norm(), n2 = d2.norm();
-                if (n1 < 1e-6 || n2 < 1e-6) { rounded.emplace_back(b); continue; }
-                const double cosang = d1.dot(d2) / (n1 * n2);
-                if (cosang < std::cos(45.0 * M_PI / 180.0) && n1 > 2.2 * r && n2 > 2.2 * r) {
-                    const Vec3f u1 = d1 / n1, u2 = d2 / n2;
-                    const Vec3f p0 = b - u1 * r;
-                    const Vec3f p2 = b + u2 * r;
-                    bool arc_ok = true;
-                    for (int k = 1; k <= 4; ++k) {
-                        const double t = 0.2 * static_cast<double>(k);
-                        const Vec3f q = p0 * ((1 - t) * (1 - t)) + b * (2 * (1 - t) * t) + p2 * (t * t);
-                        if (map_ptr_->getInfGridType(q) != rog_map::GridType::KNOWN_FREE) { arc_ok = false; break; }
-                    }
-                    if (arc_ok) {
-                        for (int k = 1; k <= 5; ++k) {
-                            const double t = 0.2 * static_cast<double>(k);
-                            const Vec3f q = p0 * ((1 - t) * (1 - t)) + b * (2 * (1 - t) * t) + p2 * (t * t);
-                            rounded.emplace_back(q);
-                        }
-                        rounded_any = true;
-                        continue;
-                    }
-                }
-                rounded.emplace_back(b);
-            }
-            rounded.emplace_back(guide_path.back());
-            if (rounded_any) {
-                guide_path = rounded;
-                guide_stamp.clear();
-                double tt = 0.0;
-                const double vref = std::max(cfg_.exp_traj_cfg.max_vel, 1e-3);
-                for (size_t i = 0; i < guide_path.size(); ++i) {
-                    if (i > 0) { tt += (guide_path[i] - guide_path[i - 1]).norm() / vref; }
-                    guide_stamp.emplace_back(tt);
-                }
-                if (cfg_.print_log) {
-                    cout << " -- [SUPER] GUIDE-ROUND: guide " << guide_path.size() << " points" << endl;
-                }
-            }
-        }
-
-        /// WHTF-GUIDE-HYST (Phase 1 round 13, 2026-11-27).  MEASURED (phase129a + GUIDE-DEBUG): the S2
-        /// "loops at the edge midpoints" coincide with the A* guide FLIPPING its detour side around a
-        /// pillar cluster (side-flip events at sim 43.8/72.0/95.8/123.1/125.2, and the 124-129 s loop
-        /// sits exactly between the last two flips).  Equal-cost alternatives around a cluster are
-        /// re-chosen every replan; the receding execution then curls.  Hysteresis: if the new guide picks
-        /// the OPPOSITE side of the start->goal line and the PREVIOUS guide is still collision-free from
-        /// our current position, keep the previous guide instead.
-        if (cfg_.guide_hyst_en) {
-            static vec_Vec3f hyst_guide;
-            static Vec3f hyst_goal(9999, 9999, 9999);
-            const auto side_of = [](const vec_Vec3f &gp, const Vec3f &st, const Vec3f &gl) -> double {
-                Vec3f d = gl - st; d.z() = 0.0;
-                Vec3f n(-d.y(), d.x(), 0.0);
-                const double nn = n.norm();
-                if (nn < 1e-6 || gp.size() < 3) { return 0.0; }
-                Vec3f mid = gp[gp.size() / 2];
-                return (mid - st).dot(n) / nn;
-            };
-            if (hyst_guide.size() >= 3 && guide_path.size() >= 3 &&
-                (gi_.goal_p.head(2) - hyst_goal.head(2)).norm() < 0.8) {
-                const double snew = side_of(guide_path, guide_path.front(), gi_.goal_p);
-                const double sold = side_of(hyst_guide, guide_path.front(), gi_.goal_p);
-                if (snew * sold < 0.0 && std::fabs(snew) > 0.20 && std::fabs(sold) > 0.20) {
-                    double dnear = 1e9;
-                    size_t jbest = 0;
-                    for (size_t j = 0; j < hyst_guide.size(); ++j) {
-                        const double dd = (hyst_guide[j] - guide_path.front()).norm();
-                        if (dd < dnear) { dnear = dd; jbest = j; }
-                    }
-                    bool free_ok = (dnear <= 0.6);
-                    for (size_t j = jbest; j < hyst_guide.size() && free_ok; ++j) {
-                        if (map_ptr_->getInfGridType(hyst_guide[j]) == rog_map::GridType::OCCUPIED) { free_ok = false; }
-                        if (j + 1 < hyst_guide.size()) {
-                            const Vec3f m = (hyst_guide[j] + hyst_guide[j + 1]) * 0.5f;
-                            if (map_ptr_->getInfGridType(m) == rog_map::GridType::OCCUPIED) { free_ok = false; }
-                        }
-                    }
-                    if (free_ok && (hyst_guide.back() - gi_.goal_p).norm() < 1.0) {
-                        vec_Vec3f g2;
-                        g2.reserve(hyst_guide.size() - jbest + 1);
-                        g2.push_back(guide_path.front());
-                        for (size_t j = jbest; j < hyst_guide.size(); ++j) { g2.push_back(hyst_guide[j]); }
-                        guide_path = g2;
-                        guide_path_length = geometry_utils::computePathLength(guide_path);
-                        guide_stamp.clear();
-                        double tt = 0.0;
-                        const double vr = std::max(cfg_.exp_traj_cfg.max_vel, 1e-3);
-                        for (size_t i = 0; i < guide_path.size(); ++i) {
-                            if (i > 0) { tt += (guide_path[i] - guide_path[i - 1]).norm() / vr; }
-                            guide_stamp.emplace_back(tt);
-                        }
-                        std::cout << " -- [SUPER] GUIDE-HYST: kept previous detour side (new "
-                                  << snew << " m, kept " << sold << " m, " << guide_path.size() << " pts)"
-                                  << std::endl;
-                    }
-                }
-            }
-            hyst_guide = guide_path;
-            hyst_goal = gi_.goal_p;
-        }
-
         /// WHTF-PVA-TAIL (patch 15, 2026-11-26).  A PVA goal carries a terminal velocity, but SUPER's
         /// trajectory endpoint is `guide_path.back()`, which is the goal itself -- so MINCO has to finish
         /// AT the corner and the reference collapses there (MEASURED phase9f: command 0.07-0.29 m/s at
@@ -1174,29 +1058,6 @@ namespace super_planner {
                  << " v_min(1.2s)=" << _vmin
                  << " v(0.5s)=" << out_traj.getVel(std::min(0.5, _dur)).norm()
                  << " goal_dist=" << (gi_.goal_p - robot_state_.p).norm() << endl;
-        }
-        /// WHTF-NO-BACKWARD-HEAD (patch 11): refuse a plan whose first move is BACKWARDS.
-        /// MEASURED (docs/FLIGHT-ANALYSIS.md §82): 7-10 published folds per sortie, half of them mid-leg
-        /// 4-5 m from any corner, 5.3-5.6 s after the handover, with PathSearch/Minco failures
-        /// around them: the old plan keeps being published while the new one is unplannable, and the
-        /// plan that finally succeeds starts by going back the way the vehicle came.  The optimiser
-        /// is handed the current velocity in pos_init_state.col(1), so "does the new trajectory
-        /// honour it?" is a testable property of the plan, not a preference.
-        if (!last_exp_traj_info.empty() && !out_traj.empty()) {
-            const double remain = last_exp_traj.getTotalDuration() - replan_process_start_TT;
-            const Vec3f v0 = pos_init_state.col(1);
-            const double v0n = v0.norm();
-            if (remain > 1.0 && v0n > 0.30) {
-                const double head = std::min(0.6, out_traj.getTotalDuration());
-                const Vec3f d = out_traj.getPos(head) - out_traj.getPos(0.0);
-                const double along = d.head(2).dot(v0.head(2));
-                if (along < 0.0) {
-                    ros_ptr_->warn(" -- [SUPER] WHTF-NO-BACKWARD-HEAD: the new plan starts BACKWARDS "
-                                   "({} m along a {} m/s heading) -- keeping the committed plan",
-                                   along, v0n);
-                    return FAILED;
-                }
-            }
         }
         double replan_total_t = (ros_ptr_->getSimTime() - replan_process_start_WT);
         /// WHTF-REPLAN-TIME-LIMIT (patch 10): the same conflation as in ReplanOnce, with the same
@@ -1565,11 +1426,6 @@ namespace super_planner {
         // 		For start point, must be collision free
         rog_map::GridType start_type;
         start_type = map_ptr_->getGridType(start_pt);
-        { char dbg_buf_[192];
-          snprintf(dbg_buf_, sizeof(dbg_buf_), "[DBG] start=(%.3f,%.3f,%.3f) gridtype=%d",
-                   start_pt.x(), start_pt.y(), start_pt.z(), (int)start_type);
-          ros_ptr_->warn(dbg_buf_); }  // WHTF-STARTTYPE-TRACE
-
         /// If the start_pt is obstacle in prob map, just shift it to the nearest free point.
         if (start_type == rog_map::GridType::OCCUPIED ||
             start_type == rog_map::GridType::OUT_OF_MAP) {

@@ -2450,3 +2450,47 @@ A* 内核（astar.cpp:233）：
 3. **guide 前缀继承**（§113.5-3）：换目标时把旧轨迹剩余 0.3–0.8 s 采样点拼到新 guide 前（类似 keep_old_goal_guide），
    消除 A* 从角点重新选路导致的参考卷曲（153c）；
 4. 之后按 owner 优先级做 **PVA 3 m/s**（hex12w + 6000 点）+ SITL PID step/chirp 辨识。
+
+## 115. round 33：B/C 类补丁清理 + `handover_policy=splice`（提前交接、从旧参考状态拼接）（2026-11-28）
+
+### 115.1 清理（owner 指示"B 类都清理"）
+**删除的补丁/代码（B 类）**
+- patch 11 `WHTF-NO-BACKWARD-HEAD`（规划后反向检查）——splice 方案下不再需要，删除；
+- patch 14 `WHTF-SMOOTH-HANDOVER`（new_goal 先当同目标 replan 的双重尝试）——行为不可解释，删除；
+- ~~patch 16 continuous_new_goal~~（只存在于已删的 patch 脚本）、patch 13 no_midleg_slowdown、patch 12 sfc_margin
+  （§94/§95 已否决）——脚本一并删除；
+- patch 19 `DEFER-HANDOVER`——改为**配置项**（`handover_policy: defer | splice`），默认保留 defer 做回退；
+- patch 21 `GUIDE-ROUND` 与 `GUIDE-HYST`——代码/配置字段全部删除（不再实验）；
+- **C 类调试残留**：`WHTF-STARTTYPE-TRACE`（每拍 warn 的 `[DBG] start=...`）、`HANDOVER smooth_rc/fallback_rc`
+  打印（随 patch14 删除）——移除。
+**check_static.sh 同步**：只检查仍留在源码里的补丁（10/15/17/20/22 + 9/18），删除 patch12 段。
+结果：`check_static.sh` **PASS**、`KILL` 无、`build_super.sh rc=0`、`tests/run_all.sh` **GATE: PASS**。
+
+### 115.2 新增 `handover_policy`（splice = 提前交接 + 旧参考状态拼接 + 旧轨迹作 guide）
+实现（C++）：
+- `Config::handover_policy`（"defer" 默认 / "splice"），启动日志加入 `handover=` 字段；
+- `fsm.cpp::callReplanOnce`：
+  - defer：保留原 DEFER-HANDOVER（旧轨迹剩余 0.08–2.0 s 时等它飞完）；
+  - splice：**新目标立即 replan**（跳过 DEFER），走 `ReplanOnce(new_goal=true)`；
+- `super_planner.cpp::generateExpTraj` 的 `split_dis`：`(!new_goal || keep_old_goal_guide || policy=="splice") && wholeTrajKnownFree`
+  → `split_dis = max(receding_dis, planning_horizon - 4.0)`（保留旧轨迹作为 guide 前缀，同时给 A* 留 ≥4 m 视野）；
+- replan 分支本身已经满足"新轨迹起点 = 旧 committed 轨迹在 `replan_state_TT` 的参考状态"（§113.3），
+  因此 splice 模式下新轨迹：
+  `旧参考状态起步（不丢方向/速度） + 旧轨迹作 guide 穿过角点 + A* 只接角点到新目标`。
+- 新配置 `super_planner_hex_hs_splice.yaml`（= 最佳配置 + `handover_policy: splice`），
+  `super_planner_hex_hs_cache.yaml` 显式写 `handover_policy: defer`（基线不变）。
+
+### 115.3 离线校验（0 飞行）
+- 重新 `bash scripts/build_super.sh`：**rc=0**；
+- `scripts/check_static.sh`：**STATIC GATE: PASS**；
+- `tests/run_all.sh`：**GATE: PASS**。
+- 说明：`handover=` 启动日志字段只能在首次飞行时验证（离线的 fsm_node 启动不落到 stdout），A/B 第一趟日志会带出。
+
+### 115.4 待 owner 批准的 A/B（2 趟/arm）
+| arm | 配置 | 期望 |
+|---|---|---|
+| A（基线） | hs_cache（defer） | 现有四图 15/15 基线 |
+| B（splice） | hs_splice（splice） | 换目标处不再"飞完旧轨迹→从实测 rest2rest"；S2 环/Q1/P1 应下降，W1b 不掉 |
+
+判据：15 行、H0–H6 clean、W1b 13/13、Q1、Q3、W6、P1、S2（环数/总时长）、corner truth vmin；
+外加日志里 `handover=splice` 与 `GUIDE-CACHE/REPLANDBG` 行为。

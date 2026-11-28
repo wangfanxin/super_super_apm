@@ -28,10 +28,10 @@ tail -3 /tmp/static_frozen.txt
 echo "frozen rc=$rc_frozen"
 
 echo
-echo "===== patches 10/11 (they live in the BUILT source, so check them, not the docs)"
+echo "===== the patches that remain in the BUILT source (10/15/17/20/22 + 9/18)"
 rc_patch=0
 PATCHES=hku_super/patches
-for p in patch_super_replan_time_limit patch_super_no_backward_head patch_super_smooth_handover patch_super_pva_tail patch_super_general_bc patch_super_committed_traj_race patch_super_defer_handover patch_super_adaptive_tail patch_super_keep_old_goal_guide patch_super_guide_round; do
+for p in patch_super_replan_time_limit patch_super_pva_tail patch_super_general_bc patch_super_adaptive_tail patch_super_keep_old_goal_guide; do
   out=$(python3 "$PATCHES/$p.py" --check 2>&1)
   case "$out" in
     *"is APPLIED"*) echo "  $(printf '%-34s' "$p") APPLIED" ;;
@@ -40,27 +40,9 @@ for p in patch_super_replan_time_limit patch_super_no_backward_head patch_super_
 done
 echo "patch rc=$rc_patch"
 
-echo
-echo "===== patch 12 (sfc_margin) -- OPTIONAL, and REJECTED on evidence (§94/§95)"
-out=$(python3 $PATCHES/patch_super_sfc_margin.py --check 2>&1 | tail -1)
-rc_sfc=0
-case "$out" in
-  *"is APPLIED"*)
-    echo "  patch_super_sfc_margin              APPLIED -- default 0.0 is a no-op, but a config can turn"
-    echo "                                      it on; measured harmful at 0.12 (W1b 3/13, §95)"
-    echo "===== is its knob read by the header the flight links?"
-    bash scripts/test_sfc_margin_load.sh > /tmp/static_sfc.txt 2>&1
-    rc_sfc=$?
-    grep -n -e FAIL -e "loader test" /tmp/static_sfc.txt || true
-    ;;
-  *)
-    echo "  patch_super_sfc_margin              not applied (expected: the delivered tree is patches 10+11)"
-    ;;
-esac
-echo "sfc-margin rc=$rc_sfc"
 
 echo
-if [ "$rc_spec" -eq 0 ] && [ "$rc_frozen" -eq 0 ] && [ "${rc_patch:-1}" -eq 0 ] && [ "${rc_sfc:-1}" -eq 0 ]; then
+if [ "$rc_spec" -eq 0 ] && [ "$rc_frozen" -eq 0 ] && [ "${rc_patch:-1}" -eq 0 ]; then
   echo "STATIC GATE: PASS (clear to fly)"
   exit 0
 fi

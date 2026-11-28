@@ -77,16 +77,15 @@ namespace super_planner {
         /// WHTF-KEEP-OLD-GOAL (patch 22, plan A): at a new-goal handover keep the committed trajectory up
         /// to its END (the previous corner) as the guide prefix, so the corner stays a guide point.
         bool keep_old_goal_guide;
-        bool guide_hyst_en;
+        /// WHTF-HANDOVER-POLICY: "defer" (historical: fly the old committed trajectory to its end, then
+        /// PlanFromRest from the MEASURED state) or "splice" (replan immediately on the new goal, starting
+        /// from the OLD COMMITTED trajectory's state and keeping the old trajectory as the guide prefix).
+        std::string handover_policy;
         bool guide_cache_en;
         double guide_cache_max_age;
         /// WHTF-ADAPTIVE-TAIL (patch 20): choose the run-out direction/length from the map's free space
         /// instead of always following goal_v.  Only active when pva_tail_len > 0.
         bool pva_tail_adaptive;
-        /// WHTF-GUIDE-ROUND (patch 21): round the guide path at sharp vertices before corridor generation.
-        /// The corner stays inside the rounding arc (deviation <= 0.25*r), so W1b is untouched.
-        bool guide_round_en;
-        double guide_round_radius;
         double safe_corridor_line_max_length;
         // for fov cut
         double sensing_horizon;
@@ -145,12 +144,10 @@ namespace super_planner {
             loader.LoadParam("super_planner/receding_dis", receding_dis, 5.0);
             loader.LoadParam("super_planner/pva_tail_len", pva_tail_len, 0.0);
             loader.LoadParam("super_planner/keep_old_goal_guide", keep_old_goal_guide, false);
-            loader.LoadParam("super_planner/guide_hyst_en", guide_hyst_en, false);
+            loader.LoadParam("super_planner/handover_policy", handover_policy, std::string("defer"));
             loader.LoadParam("super_planner/guide_cache_en", guide_cache_en, false);
             loader.LoadParam("super_planner/guide_cache_max_age", guide_cache_max_age, 1.0);
             loader.LoadParam("super_planner/pva_tail_adaptive", pva_tail_adaptive, false);
-            loader.LoadParam("super_planner/guide_round_en", guide_round_en, false);
-            loader.LoadParam("super_planner/guide_round_radius", guide_round_radius, 0.5);
             loader.LoadParam("super_planner/robot_r", robot_r, 0.3);
             loader.LoadParam("super_planner/iris_iter_num", iris_iter_num, 1);
             loader.LoadParam("super_planner/yaw_mode", yaw_mode, 1);
