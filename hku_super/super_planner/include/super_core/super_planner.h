@@ -91,6 +91,10 @@ namespace super_planner {
             double goal_yaw{0};
             bool new_goal{true};
             bool goal_valid{true};
+            /// WHTF-VIA (2026-11-28): optional mandatory waypoint (L frame).  plan-box puts the pacer's
+            /// IN-HAND corner here when it advances the goal early, so the new guide MUST pass through it.
+            Vec3f via_p{0, 0, 0};
+            bool has_via{false};
         } gi_;
 
         FOVChecker::Ptr fov_checker_;
@@ -142,14 +146,18 @@ namespace super_planner {
                               const double &goal_yaw,
                               const bool &new_goal,
                               const Vec3f &goal_v = Vec3f(0, 0, 0),
-                              const Vec3f &goal_a = Vec3f(0, 0, 0));
+                              const Vec3f &goal_a = Vec3f(0, 0, 0),
+                              const Vec3f &via_p = Vec3f(0, 0, 0),
+                              const bool &has_via = false);
 
         RET_CODE
         ReplanOnce(const Vec3f &goal_p,
                    const double &goal_yaw,
                    const bool &new_goal,
                    const Vec3f &goal_v = Vec3f(0, 0, 0),
-                   const Vec3f &goal_a = Vec3f(0, 0, 0));
+                   const Vec3f &goal_a = Vec3f(0, 0, 0),
+                   const Vec3f &via_p = Vec3f(0, 0, 0),
+                   const bool &has_via = false);
 
     private:
         RET_CODE generateExpTraj(ExpTraj &last_exp_traj_info,

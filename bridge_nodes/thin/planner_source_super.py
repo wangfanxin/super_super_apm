@@ -1282,6 +1282,16 @@ def main() -> int:
             if nv > 1e-6:
                 vout = np.array([vc * u[0] / nv, vc * u[1] / nv, 0.0])
         state["last_goal_pt_l3"] = np.array([float(pl[0]), float(pl[1]), float(pl[2])], float)
+        # ★ WHTF-VIA (2026-11-28) ★  When the goal is advanced EARLY (R1/advance), the corner the pacer is
+        # still measuring must be a MANDATORY waypoint of the new plan.  It rides in the otherwise-unused
+        # kx/kv slots of PositionCommand: kx = via (L), kv[0] = 1 marks it.  This is the only mechanism that
+        # guarantees the new guide passes the pacer's in-hand corner (the audit showed prefix retention
+        # alone does not: the old committed trajectory may already aim one corner further).
+        _via_l = None
+        if (float(getattr(args, "advance_lookahead_s", 0.0) or 0.0) > 0.0
+                and pacer.i_leg >= 1 and state.get("pre_goal_leg") == pacer.i_leg
+                and gi_t != pacer.i_leg and pacer.i_leg < len(corners_l)):
+            _via_l = np.asarray(corners_l[pacer.i_leg], float).copy()
         if int(getattr(args, "goal_pva", 0)):
             m = MarsMsg()
             m.header.stamp = node.get_clock().now().to_msg()
@@ -1293,10 +1303,14 @@ def main() -> int:
             m.yaw, m.yaw_dot = 0.0, 0.0
             m.trajectory_id = int(pacer.i_leg + 1)
             m.trajectory_flag = 1
+            if _via_l is not None:
+                m.kx = [float(_via_l[0]), float(_via_l[1]), float(_via_l[2])]
+                m.kv = [1.0, 0.0, 0.0]
             goal_pva_pub.publish(m)
-            print("GOAL %d/%d → SUPER [PVA]: W(%s) = L(%.2f, %.2f, %.2f)  v_out (%.2f, %.2f)%s"
+            print("GOAL %d/%d → SUPER [PVA]: W(%s) = L(%.2f, %.2f, %.2f)  v_out (%.2f, %.2f)%s%s"
                   % (pacer.i_leg + 1, len(corners_w), np.round(corners_w[gi_t], 2),
                      pl[0], pl[1], pl[2], vout[0], vout[1],
+                     ("  VIA at L(%.2f, %.2f)" % (_via_l[0], _via_l[1])) if _via_l is not None else "",
                      "  [resend]" if force else ""), flush=True)
             return
         g.pose.position.x, g.pose.position.y, g.pose.position.z = float(pl[0]), float(pl[1]), float(pl[2])

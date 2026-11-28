@@ -282,7 +282,12 @@ namespace fsm {
             super_utils::Vec3f p{msg->position.x, msg->position.y, msg->position.z};
             super_utils::Vec3f v{msg->velocity.x, msg->velocity.y, msg->velocity.z};
             super_utils::Vec3f a{msg->acceleration.x, msg->acceleration.y, msg->acceleration.z};
-            setGoalPVA(p, v, a);
+            /// WHTF-VIA (2026-11-28): the thin layer carries an optional mandatory waypoint in the
+            /// otherwise-unused kx/kv slots (kx = via position in L, kv[0] = 1 marks it valid).  This keeps
+            /// the message definitions and every other field untouched.
+            super_utils::Vec3f via{msg->kx[0], msg->kx[1], msg->kx[2]};
+            const bool has_via = (msg->kv[0] > 0.5);
+            setGoalPVA(p, v, a, via, has_via);
         }
 
         void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {

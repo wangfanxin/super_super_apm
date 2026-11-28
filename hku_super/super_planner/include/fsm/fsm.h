@@ -69,6 +69,8 @@ namespace fsm {
             Vec3f goal_v{0, 0, 0};
             Vec3f goal_a{0, 0, 0};
             double goal_yaw;
+            Vec3f via_p{0, 0, 0};      ///< WHTF-VIA: mandatory waypoint (L), sent by plan-box with the goal
+            bool has_via{false};
         } gi_;
 
         Eigen::Vector3d auto_pilot_vel_w_;
@@ -163,7 +165,8 @@ namespace fsm {
         void setGoalPosiAndYaw(const Vec3f &p, const Quatf &q);
         /// PVA goal: the waypoint AND the velocity/acceleration the trajectory should end with
         /// (patch_goal_pva.py).  v/a are in the same frame as p.
-        void setGoalPVA(const Vec3f &p, const Vec3f &v, const Vec3f &a);
+        void setGoalPVA(const Vec3f &p, const Vec3f &v, const Vec3f &a,
+                        const Vec3f &via = Vec3f(0, 0, 0), const bool &has_via = false);
 
         void ChangeState(const string &call_func, const MACHINE_STATE &new_state);
 

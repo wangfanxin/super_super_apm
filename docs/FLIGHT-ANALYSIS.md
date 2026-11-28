@@ -3012,3 +3012,33 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
   A* 两段（当前/via → via/goal），guide/时间分配/SFC 一致；薄层在 advance 时同时发 via 与 goal。
   0 飞行门禁：扩展 check_handover_via 要求 reference 的 A*/guide 必须过 via（由构造保证）+ check_guide_via 两段。
 - 之后 2 趟验证；若仍不行，才是 full through-poses。
+
+## 131. round 48：via-1 实现、有效飞行与失败机理（2026-11-28）
+
+### 131.1 实现
+- goal 消息复用 `PositionCommand` 的 `kx`/`kv` 空位：`kx`=via(L)、`kv[0]=1` 标记有效（不改 msg、不重编 msgs）；
+- FSM→SuperPlanner 全链路加 `via_p/has_via`；`generateExpTraj` 两段 A*（prefix→via、via→goal）+ 分段 time allocation；
+  若 prefix 已过 via（dmin<0.5）或 prefix→via→goal 超 horizon 则跳过 via（避免自伤）；
+- guide 去重 + corridor 生成 `try/catch`（181h 的崩溃改为 RET_CODE，plan box 不再被杀死）。
+
+### 131.2 飞行
+- **181h**（未加固）：planbox 36.9 s 静默 → supervisor ABORT；根因 = via 造成退化 guide 使 `CorridorGenerator` 抛
+  `runtime_error`，fsm_node 进程崩溃。已修（try/catch + 去重 + 可行性跳过）。
+- **181i**（加固后，H6/H5 clean）：W1 10/13、W1b 6/13、W4 −0.079；`check_handover_via` **reference 8/12**（leg2/3/9/12 MISS：
+  reference 距角点 1.1–1.4 m）、S2 16 环/86 s；`VIA: skipped` 444 次（prefix→via→goal 需 19.9 m > horizon 16 m）；
+  日志 56 条 "VIA at"、1003 条 "SUPER VIA"。
+
+### 131.3 机理结论（新的硬约束）
+- **"guide 过 via" ≠ "reference 过 via"**：guide 只用于生成 SFC 走廊；MINCO 在宽走廊内会**平滑掉 guide 顶点**
+  （实测 reference 距 via 仍有 1.1–1.4 m）。要真正强制过 via，必须在优化器里加**硬/强吸引约束**（`waypoint_attractor`
+  或把轨迹分段、在 via 处固定中间状态），这是下一步大改，不是薄层能解决的。
+- **薄层 R1'/via 两条路线到此为止**：R1'（前缀）被 181f 有效飞行否决；via-1（A* 两段）被 181i 有效飞行否决
+  （reference 仍切角 1.1–1.4 m）。**决策：停止薄层提前换目标，回到 DEFER 基线（180b）**，把精力放到
+  1.35 完美定义里真正未过的项：**Q2（−0.039→≥−0.02）、Q4 c3、S2 c1 环**，以及 docs/cleanup。
+
+### 131.4 下一步（目标不变：1.35 完美）
+1. 180d：基线复现（H6-clean 的第 2 趟）→ 锁定 2 趟有效基线；
+2. **Q2 机制修复**：新建 `super_planner_hex_hs_cache_r15.yaml`（`robot_r` 0.10→0.15，纯规划净空，不改 PID），
+   SFC/A* 净空 (+5 cm)，先跑 0 飞行"规划参考最小 body-edge margin"行，再 2 趟 A/B；
+3. Q4/S2：用同一 A/B 观察 c3 与 c1 环是否变化；若不变，单独查 c3 角点几何/参考曲率；
+4. 清理：删除 R1'/via 的默认关闭开关（保留代码但文档标明未启用）、清理 `_invalid` 旧 run、合并文档过期段。

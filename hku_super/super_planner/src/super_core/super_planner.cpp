@@ -85,7 +85,9 @@ namespace super_planner {
                                const double &goal_yaw,
                                const bool &new_goal,
                                const Vec3f &goal_v,
-                               const Vec3f &goal_a) {
+                               const Vec3f &goal_a,
+                               const Vec3f &via_p,
+                               const bool &has_via) {
         std::lock_guard<std::mutex> guard(replan_lock_);
         latest_replan.reset();
         latest_replan.setGoal(goal_p, goal_yaw, robot_state_);
@@ -100,6 +102,8 @@ namespace super_planner {
         gi_.goal_a = goal_a;
         gi_.new_goal = new_goal;
         gi_.goal_valid = true;
+        gi_.via_p = via_p;
+        gi_.has_via = has_via;
         vec_Vec3f viz_pts{goal_p, robot_state_.p};
 
         {
@@ -206,7 +210,9 @@ namespace super_planner {
                              const double &goal_yaw,
                              const bool &new_goal,
                              const Vec3f &goal_v,
-                             const Vec3f &goal_a) {
+                             const Vec3f &goal_a,
+                             const Vec3f &via_p,
+                             const bool &has_via) {
         TimeConsuming replan_total_t("ReplanOnce", false);
         std::lock_guard<std::mutex> guard(replan_lock_);
 
@@ -216,6 +222,8 @@ namespace super_planner {
         gi_.goal_a = goal_a;
         gi_.new_goal = new_goal;
         gi_.goal_valid = true;
+        gi_.via_p = via_p;
+        gi_.has_via = has_via;
         latest_replan.reset();
         latest_replan.setGoal(goal_p, goal_yaw, robot_state_);
 
@@ -748,102 +756,112 @@ namespace super_planner {
             guide_stamp.insert(guide_stamp.begin(), 0.0);
         }
 
-        // if need a geometry path
-        if (temp_horizon > cfg_.resolution * 2) {
-            /// start point TT + exp_traj start_WT
-//            double path_search_start_point_WT = guide_stamp.back() + guide_pos_traj.start_WT;
-            // if the goal is close to the last point of the guide path, just add the goal to the guide path
-            if ((guide_path.back() - gi_.goal_p).norm() < cfg_.resolution * 5) {
+        // ★ WHTF-VIA (2026-11-28) ★  A new goal may carry a MANDATORY waypoint (the pacer's in-hand
+        // corner).  The 0-flight audit proved that "keep the old trajectory as the prefix" does NOT
+        // guarantee that corner (the old committed trajectory may already be aiming one corner further),
+        // so the only robust fix is to make the A*/guide pass through it explicitly:
+        //   guide = prefix (old trajectory if available) -> A*(prefix end .. via) -> A*(via .. goal)
+        auto append_astar = [&](const Vec3f &target, double horizon) -> bool {
+            if (horizon <= cfg_.resolution * 2) {
+                return true;
+            }
+            if ((guide_path.back() - target).norm() < cfg_.resolution * 5) {
                 guide_stamp.push_back(guide_stamp.back() +
-                                      (guide_path.back() - gi_.goal_p).norm() / cfg_.exp_traj_cfg.max_vel);
-                guide_path.push_back(gi_.goal_p);
-                // NO NEED
-            } else {
-                vec_Vec3f new_path;
-                // project goal within the planning horizon
-//                const Vec3f dir = (gi_.goal_p - robot_state_.p).normalized();
-//                const double dis2goal = (gi_.goal_p - robot_state_.p).norm();
-//                Vec3f cadi_p = gi_.goal_p;
-//                if(dis2goal > cfg_.planning_horizon) {
-//                    double proj_l = cfg_.planning_horizon;
-//                    Vec3f cadi_p = robot_state_.p + dir * proj_l;
-//                    int max_iter = 100;
-//                    while(map_ptr_->isOccupiedInflate(cadi_p) && max_iter-- > 0) {
-//                        if(map_ptr_->getNearestInfCellNot(OCCUPIED, cadi_p, cadi_p, 1.0)) {
-//                            break;
-//                        }
-//                        proj_l -= 2.0;
-//                        if(proj_l < 1){
-//                            ros_ptr_->warn(" -- [SUPER] Project goal failed");
-//                            gi_.goal_valid = false;
-//                            return FAILED;
-//                        }
-//                        cadi_p = robot_state_.p + dir * proj_l;
-//                    }
-//                    if(max_iter <= 0) {
-//                        ros_ptr_->warn(" -- [SUPER] Project goal failed");
-//                        gi_.goal_valid = false;
-//                        return FAILED;
-//                    }
-//                }
-                astar_used = true;
-                if (!PathSearch(guide_path.back(), gi_.goal_p, temp_horizon, new_path)) {
-                    ros_ptr_->warn(" -- [SUPER] PathSearch for new path failed");
-                    return FAILED;
-                }
-                if (new_path.size() < 2) {
-                    ros_ptr_->warn(" -- [SUPER] PathSearch for new path failed");
-                    return FAILED;
-                }
+                                      (guide_path.back() - target).norm() / cfg_.exp_traj_cfg.max_vel);
+                guide_path.push_back(target);
+                return true;
+            }
+            vec_Vec3f new_path;
+            astar_used = true;
+            if (!PathSearch(guide_path.back(), target, horizon, new_path)) {
+                ros_ptr_->warn(" -- [SUPER] PathSearch for new path failed");
+                return false;
+            }
+            if (new_path.size() < 2) {
+                ros_ptr_->warn(" -- [SUPER] PathSearch for new path failed");
+                return false;
+            }
+            double total_dis{0.0};
+            vector<double> dis(new_path.size());
+            Vec3f last_p = new_path.back();
+            for (int i = static_cast<int>(new_path.size()) - 2; i >= 0; i--) {
+                total_dis += (new_path[i] - last_p).norm();
+                dis[i + 1] = total_dis;
+                last_p = new_path[i];
+            }
+            total_dis += (new_path.front() - guide_path.back()).norm();
+            dis[0] = total_dis;
+            vector<double> stamps(new_path.size(), 0), dt(new_path.size(), 0);
+            double last_stamp = 0;
+            for (int i = static_cast<int>(dis.size()) - 1; i >= 0; i--) {
+                double vel;
+                geometry_utils::simplePMTimeAllocator(cfg_.exp_traj_cfg.max_acc, cfg_.exp_traj_cfg.max_vel,
+                                                      guide_path_end_vel, total_dis, dis[i], stamps[i], vel);
+                dt[i] = stamps[i] - last_stamp;
+                last_stamp = stamps[i];
+            }
+            double time_stamp = guide_stamp.back();
+            for (long unsigned int i = 1; i < new_path.size(); i++) {
+                time_stamp += dt[i];
+                guide_path.emplace_back(new_path[i]);
+                guide_stamp.emplace_back(time_stamp);
+            }
+            // the next segment starts with the velocity at the end of this one (approx: max_vel)
+            guide_path_end_vel = std::min(cfg_.exp_traj_cfg.max_vel, std::max(0.3, guide_path_end_vel));
+            return true;
+        };
 
-                // compute total dis
-                // backward compute dis for all points
-                double total_dis{0.0};
-                vector<double> dis(new_path.size());
-                Vec3f last_p = new_path.back();
-                for (int i = new_path.size() - 2; i >= 0; i--) {
-                    auto d = (new_path[i] - last_p).norm();
-                    total_dis += d;
-                    dis[i+1] = total_dis;
-                    last_p = new_path[i];
+        if (temp_horizon > cfg_.resolution * 2) {
+            if (gi_.has_via) {
+                // Does the existing guide ALREADY pass the via?  (the old committed trajectory often runs
+                // through the in-hand corner, in which case adding an A* leg to it would double back and
+                // can crash the corridor stage.)
+                double dmin = 1e9;
+                for (const auto &gp : guide_path) {
+                    dmin = std::min(dmin, (gp - gi_.via_p).norm());
                 }
-                total_dis += (new_path.front() - guide_path.back()).norm();
-                dis[0] = total_dis;
-//                for (int i = 0; i < dis.size(); i++) {
-//                    cout << dis[i] << " ";
-//                }
-//                cout << endl;
-                vector<double> stamps(new_path.size(), 0);
-                vector<double> dt(new_path.size(), 0);
-                double last_stamp = 0;
-                for (int i = dis.size() - 1; i >= 0; i--) {
-                    double vel;
-                    geometry_utils::simplePMTimeAllocator(cfg_.exp_traj_cfg.max_acc, cfg_.exp_traj_cfg.max_vel,
-                                                          guide_path_end_vel,
-                                                          total_dis,
-                                                          dis[i], stamps[i], vel);
-                    dt[i] = stamps[i] - last_stamp;
-                    last_stamp = stamps[i];
-                }
-                double time_stamp = guide_stamp.back();
-
-//                for (int i = 0; i < stamps.size(); i++) {
-//                    cout << stamps[i] << " ";
-//                }
-//                cout << endl;
-//
-//                for (int i = 0; i < dt.size(); i++) {
-//                    cout << dt[i] << " ";
-//                }
-//                cout << endl;
-
-                for (long unsigned int i = 1; i < new_path.size(); i++) {
-                    double t = dt[i];
-                    time_stamp += t;
-                    guide_path.emplace_back(new_path[i]);
-                    guide_stamp.emplace_back(time_stamp);
+                const double need = (guide_path.back() - gi_.via_p).norm()
+                                    + (gi_.via_p - gi_.goal_p).norm();
+                if (dmin < 0.5) {
+                    std::cout << " -- [SUPER] VIA: prefix already passes it (dmin " << dmin
+                              << " m), no extra segment" << std::endl;
+                } else if (need > cfg_.planning_horizon - 1.0) {
+                    // The via would consume the whole horizon; skipping it keeps the planner alive.  The
+                    // thin layer logs DISPATCH-VIA-SKIP and can fall back to the old behaviour.
+                    ros_ptr_->warn(" -- [SUPER] VIA: skipped (prefix->via->goal needs {:.2f} m > horizon {:.2f})",
+                                   need, cfg_.planning_horizon);
+                } else {
+                    std::cout << " -- [SUPER] VIA: guide must pass " << gi_.via_p.transpose()
+                              << " (prefix end " << guide_path.back().transpose() << ")" << std::endl;
+                    if (!append_astar(gi_.via_p, temp_horizon)) {
+                        return FAILED;
+                    }
+                    guide_path_length = geometry_utils::computePathLength(guide_path);
+                    temp_horizon = cfg_.planning_horizon - guide_path_length;
+                    if (temp_horizon <= cfg_.resolution * 2) {
+                        ros_ptr_->warn(" -- [SUPER] VIA: no horizon left after the via segment");
+                        return FAILED;
+                    }
                 }
             }
+            if (!append_astar(gi_.goal_p, temp_horizon)) {
+                return FAILED;
+            }
+        }
+        // sanitize: the corridor generator throws on degenerate polylines (duplicate consecutive points,
+        // zero-length segments).  A via segment can create such a point; drop them before the SFC stage.
+        {
+            vec_Vec3f sanitized;
+            vector<double> sanitized_stamp;
+            for (size_t i = 0; i < guide_path.size(); ++i) {
+                if (!sanitized.empty() && (guide_path[i] - sanitized.back()).norm() < 1e-3) {
+                    continue;
+                }
+                sanitized.push_back(guide_path[i]);
+                sanitized_stamp.push_back(i < guide_stamp.size() ? guide_stamp[i] : 0.0);
+            }
+            guide_path = sanitized;
+            guide_stamp = sanitized_stamp;
         }
 
         /// WHTF-GUIDE-CACHE (Phase 1 round 14, 2026-11-27): Nav2 CheckIfNewPathNeeded-style path reuse.
@@ -1032,7 +1050,17 @@ namespace super_planner {
             time_consuming_[VISUALIZATION] += t_viz.stop();
         }
         shifted_sfc_start_pt_ = Vec3f(9999,9999,9999);
-        bool bool_ret_code = cg_ptr_->SearchPolytopeOnPath(guide_path, sfc, shifted_sfc_start_pt_, cfg_.use_fov_cut);
+        bool bool_ret_code = false;
+        try {
+            bool_ret_code = cg_ptr_->SearchPolytopeOnPath(guide_path, sfc, shifted_sfc_start_pt_,
+                                                          cfg_.use_fov_cut);
+        } catch (const std::exception &e) {
+            // 2026-11-28: a malformed guide (e.g. a via segment doubling back) threw out of the corridor
+            // generator and KILLED fsm_node mid-flight, which the supervisor reported as "plan box silent".
+            // A planning failure must be a RET_CODE, never a crash.
+            ros_ptr_->warn(" -- [SUPER] corridor generation threw [{}] -- plan rejected", e.what());
+            return FAILED;
+        }
 
         if (!bool_ret_code) {
             ros_ptr_->warn(" -- [SUPER] SearchPolytopeOnPath for new path failed");

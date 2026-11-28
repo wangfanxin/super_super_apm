@@ -112,10 +112,10 @@ namespace fsm {
             // SPLICE handover: one immediate replan on the new goal (new_goal=true).  generateExpTraj then
             // starts from the old committed trajectory's state and keeps the old trajectory as the guide.
             ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, true,
-                                                gi_.goal_v, gi_.goal_a);
+                                                gi_.goal_v, gi_.goal_a, gi_.via_p, gi_.has_via);
         } else {
             ret_code = planner_ptr_->ReplanOnce(gi_.goal_p, gi_.goal_yaw, gi_.new_goal,
-                                                gi_.goal_v, gi_.goal_a);
+                                                gi_.goal_v, gi_.goal_a, gi_.via_p, gi_.has_via);
         }
         if (ret_code == FAILED) {
 //            cout << YELLOW << " -- [Fsm] ReplanOnce failed." << RESET << endl;
@@ -195,7 +195,7 @@ namespace fsm {
                     return;
                 }
                 int retcode = planner_ptr_->PlanFromRest(gi_.goal_p, gi_.goal_yaw, gi_.new_goal,
-                                                         gi_.goal_v, gi_.goal_a);
+                                                         gi_.goal_v, gi_.goal_a, gi_.via_p, gi_.has_via);
                 if (!planner_ptr_->goalValid()) {
                     cout << YELLOW << " -- [Fsm] Goal is invalid, skip this goal." << RESET << endl;
                     ChangeState("MainFsmCallback", WAIT_GOAL);
@@ -284,7 +284,8 @@ namespace fsm {
         gi_.goal_a.setZero();
     }
 
-    void Fsm::setGoalPVA(const Vec3f &p, const Vec3f &v, const Vec3f &a) {
+    void Fsm::setGoalPVA(const Vec3f &p, const Vec3f &v, const Vec3f &a,
+                          const Vec3f &via, const bool &has_via) {
         /// PVA GOAL (patch_goal_pva.py).  Same goal handling as setGoalPosiAndYaw -- including the
         /// `getNearestInfCellNot` snap and the click_height override -- but the velocity and
         /// acceleration are carried through to the optimiser's terminal boundary.  Yaw is disabled
@@ -297,8 +298,13 @@ namespace fsm {
             gi_.goal_v = v;
             gi_.goal_a = a;
             gi_.goal_yaw = NAN;
+            gi_.via_p = via;
+            gi_.has_via = has_via;
             gi_.new_goal = true;
             started_ = true;
+            if (has_via) {
+                std::cout << " -- [Fsm] PVA goal WITH VIA at " << via.transpose() << std::endl;
+            }
             cout << GREEN << " -- [Fsm] PVA goal at " << gi_.goal_p.transpose()
                  << " with v " << v.transpose() << RESET << endl;
         } else {
