@@ -2955,3 +2955,34 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
 | 181e | H6 max 100.3 ms（86.4 s）/ LIO stale → 估计器丢失（tap 81 m vs FCU 14.8 m） | 8 次 advance 触发；主机 load 6.7、scan 有 100 ms + behind → **主机无效，不是 R1' 结论** |
 - 需在主机干净时重飞 R1' 2 趟；判据：15 行、W4/Q2、R2R（chase=0、mid-leg=0、defer 决策 remain 应显著 >0.33 s）、
   ADV 事件全部 pass、S2 只剩 c1 钩形环、W1b 13/13。
+
+## 129. round 46：180b 成为新候选基线 + 当前"改了什么/还没改什么"（2026-11-28）
+
+### 129.1 180b（新二进制）成绩
+- **15 行全过**：W1b 13/13、W6 **0.209**、W4 **CLEAR +0.061**、H6 max 39 ms / skip 3、W2 p90 1.46；
+- 质量行：**Q1 = 0**、Q3 **0.145**、P1 **PASS（max 0.355，0 个 >0.5 m）**、S2 **2 环/3.7 s**（c1 钩形环 3.5 s + 0.2 s）、
+  S1 **1.17 s**（land 142.4 s 已排除）、**Q2 −0.039（FAIL，但离 −0.02 门槛仅 1.9 cm）**、Q4 c3 vmin 0.32（FAIL）；
+- R2R：TrajFinish 15、rest2rest 15（defer 决策 71 次，remain p50 **0.33 s**）→ **角点 rest2rest 仍由 DEFER 主导**；
+- 对比旧 best（177c）：W6 0.209 vs 0.241、W4 +0.061 vs +0.006、Q3 0.145 vs 0.154、Q1 0 vs 2、S1 1.17 vs 5.54；
+  S2 2/3.7 s vs 1/3.5 s（同位置 c1 环）；180b 唯一"退步"是 Q2 −0.039 vs −0.094（实际更好，但仍 FAIL）。
+- 全套图：`docs/evidence/final/sheet-BEST-180b.png` + `phase180b-01-01_*` + `planexec-180b.png` +
+  `handover-audit-180b.png` + `low-speed-180b.png` + `phase180b-clearance.png`。
+
+### 129.2 本轮"改了什么"（相对 180a/旧 best）
+1. **prefix 保留与 0.2 m 膨胀闸解耦**（new_goal 的 split=12 m 现在真的生效，180b 日志 `REPLANDBG new_goal=1 split=12.000 whole_free=1`）；
+2. **配置副本全量同步 + cmp**（此前 loader 副本缺 handover_policy，A/B 会静默失效）；
+3. **advance clamp（3.8 m）+ resync**（薄层；R1' 用，默认关闭）；
+4. **日志**：COMMIT sim=、HANDOVER policy/path 标签、ADVANCE t_wall、PLANDBG d 改 W 系；
+5. **评测口径**：H6 只统计 takeoff..land、Q4 排除 land、S1 排除降落、R2R 统计升级、`_invalid/` 可复现；
+6. 之前 round42 的：backup_traj_en 真生效、普通 replan 恢复整段 guide、PVA 终端速度仅 connected_goal、心跳加锁。
+
+### 129.3 还没改 / 还没验证
+- **R1' 未得到有效飞行评价**：两趟都无效（181c 自身 resync bug 已修；181e 主机 LIO starvation）→ 待主机干净重飞 2 趟；
+- **C++ via-1 / through-poses 未实现**（R1' 无效才做）；
+- **Q2/Q4 的结构性问题未修**：规划净空 0.07–0.17 m < 跟踪误差，c3 角点 vmin 0.32；需要曲率限速/净空裕度（R2）；
+- **180c 复现未做**（2 趟/arm 规则）；
+- **backup on/off 单变量 A/B 未做**（item2 的语义变化需隔离）；
+- 审计 P1 遗留：`gi_` 跨线程 race、`robot_on_backup_traj_` 锁外写；
+- 审计 P2 遗留：SWT |dv| 仍为计数、`keep_old_goal_guide` 死参数与 patch 门禁假阳性、build 脚本 `|| true` 吞错、
+  `check_guide_via.py` 未接入 gate、COMMIT 的 NO_NEED 重复提交计数、PVA 抑制无可观测性；
+- docs 的 ACCEPTANCE/PIPELINE 仍有"当前基线=9f+/23c"等过期段落。
