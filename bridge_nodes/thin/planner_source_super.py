@@ -455,6 +455,16 @@ def main() -> int:
     ap.add_argument("--time-scale-gate", type=float, default=0.10,
                     help="同步门槛（m）：先按 k=1 求值多项式，与 SUPER 这条 100 Hz 参考比；"
                          "差超过该值就这一拍回退到参考（换目标瞬间的旧轨迹保护）。")
+    ap.add_argument("--curv-accel-max", type=float, default=0.0,
+                    help="曲率限速（0=off）：v <= sqrt(a_lat_max / kappa) 限制**发布参考点前进速度**；"
+                         "a_lat_max 建议 1.2-2.0 m/s²（180d 实测参考 a_lat p90 1.30、max 4.79）。"
+                         "这是物理上可实现的实现方式：SUPER 每 100 ms 从实测状态重规划，"
+                         "纯时间重定时不可行；这里用位置指令的进给速率上限实现同样的速度上限。")
+    ap.add_argument("--curv-min-speed", type=float, default=0.40)
+    ap.add_argument("--curv-kappa-clip", type=float, default=3.0)
+    ap.add_argument("--curv-max-lag-m", type=float, default=0.8,
+                    help="参考点落后实测位置的上限（m），超过则放弃限速、重新对齐（防止被限速拖死在角点）")
+    ap.add_argument("--curv-log", type=int, default=0)
     ap.add_argument("--time-scale", type=float, default=1.0,
                     help="★ 时间缩放 ★ >1 时按倍速求值 SUPER 自己的多项式（`--poly-topic`），即**同一条路径、"
                          "时间压缩 k 倍**：路径不变，所以净空与 W1b 不变。实测同路径的时间最优是 3.53 m/s"
@@ -1492,6 +1502,73 @@ def main() -> int:
                                      else cmd_stream.TRAJECTORY_STATUS_READY)
             state["hold_yaw"] = yaw_ned               # latch：断流时保持这个航向，不要发 0.0
             state["_src"] = "super"
+        # ★ WHTF-CURV-GOV (2026-11-28) ★ 曲率限速：让"参考点的前进速度"不超过 sqrt(a_lat_max / kappa)。
+        #   为什么不是重定时：SUPER 每 100 ms 就从**实测状态**重新规划，轨迹起点永远是飞机当前位置，
+        #   所以无法通过"延迟回放"把参考变慢（延迟点会落在新轨迹之外）；能实现同一速度上限的方式是
+        #   限制**发布点的进给速率**：p_pub 每拍最多向 ref 前进 v_lim*dt，弯道里 ref 很快而 p_pub 被限速，
+        #   飞机因此减速，SUPER 下一拍从（已经慢下来的）实测状态重规划。直道 v_lim=|v_ref|，不受影响。
+        if (float(getattr(args, "curv_accel_max", 0.0) or 0.0) > 0.0
+                and state.get("_src") == "super" and not state.get("is_hold", False)
+                and ref is not None):
+            try:
+                _v = np.asarray(ref[1], float); _a = np.asarray(ref[2], float)
+                _vh = _v[:2]; _ah = _a[:2]
+                _sp = float(np.linalg.norm(_vh))
+                _kl = float(abs(_vh[0] * _ah[1] - _vh[1] * _ah[0]) / max(_sp ** 3, 1e-6))
+                _kl = min(_kl, float(getattr(args, "curv_kappa_clip", 3.0) or 3.0))
+                # IIR 平滑，避免 a 的噪声让限速抖动
+                state["curv_kappa_f"] = 0.7 * float(state.get("curv_kappa_f", _kl)) + 0.3 * _kl
+                _kf = float(state["curv_kappa_f"])
+                _amax = float(args.curv_accel_max)
+                _vlim = float(np.sqrt(_amax / max(_kf, 1e-4))) if _kf > 1e-3 else _sp
+                _vlim = float(min(_sp, max(_vlim, float(getattr(args, "curv_min_speed", 0.4) or 0.4))))
+                _dt_g = max(1e-4, now - state["last_pub_t"]) if state.get("last_pub_t") is not None \
+                    else 1.0 / max(1.0, args.cmd_rate)
+                _p_ref = np.asarray(ref[0], float).reshape(3)
+                _p_pub = state.get("curv_pub")
+                if _p_pub is None:
+                    state["curv_pub"] = np.array(_p_ref, float).copy(); _p_pub = state["curv_pub"]
+                else:
+                    _step = _p_ref - _p_pub
+                    _ds = float(np.linalg.norm(_step[:2]))
+                    if _ds > 1e-6:
+                        _allow = min(_ds, _vlim * _dt_g)
+                        _p_pub = _p_pub + _step * (_allow / _ds)
+                    state["curv_pub"] = _p_pub
+                    # the vehicle itself must stay within --curv-max-lag-m of the published point; if the
+                    # lag explodes (a corner the plan keeps accelerating through), SNAP forward and log it.
+                    _pl = state.get("p_l")
+                    if _pl is not None and float(np.linalg.norm((_p_ref - _p_pub)[:2])) > float(args.curv_max_lag_m):
+                        state["curv_pub"] = _p_ref.copy()
+                        state["curv_snap_n"] = int(state.get("curv_snap_n", 0)) + 1
+                        if int(getattr(args, "curv_log", 0)):
+                            print("CURVGOV-SNAP: lag cap %.2f m hit, re-align at kappa=%.2f v_ref=%.2f"
+                                  % (float(args.curv_max_lag_m), _kf, _sp), flush=True)
+                    _p_pub = state["curv_pub"]
+                if _p_pub is None:                     # defensive: never let the governor publish None
+                    _p_pub = np.array(_p_ref, float).copy(); state["curv_pub"] = _p_pub
+                state["curv_vlim"] = _vlim
+                state["curv_n"] = int(state.get("curv_n", 0)) + 1
+                if int(getattr(args, "curv_log", 0)) and state["curv_n"] % 50 == 0:
+                    print("CURVGOV n=%d kappa=%.2f v_ref=%.2f v_lim=%.2f lag=%.2f snap=%d"
+                          % (state["curv_n"], _kf, _sp, _vlim,
+                             float(np.linalg.norm((_p_ref - _p_pub)[:2])),
+                             int(state.get("curv_snap_n", 0))), flush=True)
+                # publish the RATE-LIMITED point, with the velocity/acceleration consistent with the rate
+                _frac = 1.0
+                if float(np.linalg.norm((_p_ref - _p_pub)[:2])) > 1e-9 and _sp > 1e-6:
+                    _frac = min(1.0, float(np.linalg.norm((_p_ref - _p_pub)[:2])) /
+                                max(_vlim * _dt_g, 1e-9))
+                s = cmd_stream.CmdSample(
+                    np.array([_p_pub[0], _p_pub[1], _p_pub[2]]),
+                    np.asarray(s.v, float) * _frac,
+                    np.asarray(s.a, float) * _frac * _frac,
+                    s.yaw, s.yaw_dot, s.trajectory_id, s.trajectory_flag)
+            except Exception as _e_curv:                 # noqa: BLE001
+                if int(getattr(args, "curv_log", 0)):
+                    import traceback as _tb_curv
+                    print("CURVGOV error:", _e_curv, flush=True)
+                    print(_tb_curv.format_exc(), flush=True)
         # ★ WHTF-REF-VSLEW：指令速度的 slew 限制（0 = 关）★
         #   位置保持规划器给的点（位置本来就有速率钳位），只把速度限制成飞机跟得上的变化率。
         if float(getattr(args, "ref_v_slew", 0.0) or 0.0) > 0.0 and state.get("n_ref", 0) > 0:

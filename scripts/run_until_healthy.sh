@@ -179,6 +179,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
 --goal-lookahead-m ${GOAL_LOOKAHEAD_M:-0.0} \
 --goal-lead ${GOAL_LEAD:-0} \
 --dispatch-lookahead ${DISPATCH_LOOKAHEAD:-0} --advance-lookahead-s ${ADVANCE_LOOKAHEAD_S:-0} --advance-max-m ${ADVANCE_MAX_M:-3.8} --advance-margin-m ${ADVANCE_MARGIN_M:-0.4} --resync-s ${RESYNC_S:-1.5} --pre-goal-m ${PRE_GOAL_M:-0} \
+                    --curv-accel-max ${CURV_ACCEL_MAX:-0} --curv-min-speed ${CURV_MIN_SPEED:-0.4} --curv-max-lag-m ${CURV_MAX_LAG_M:-0.8} --curv-log ${CURV_LOG:-0} \
 --poly-check ${POLY_CHECK:-0} \
 --clr-gov-margin ${CLR_GOV_M:-0} \
 --time-scale ${TIME_SCALE:-1.0} \
