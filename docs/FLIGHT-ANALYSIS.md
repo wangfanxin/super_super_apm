@@ -2311,3 +2311,142 @@ bridge 在"几乎静止"时回退 posvelacc（否则起飞/悬停失去高度控
 3. **Through-poses（彻底）**：plan-box 一次发当前+下一个角点，SUPER 规划一条穿越多点的 committed 轨迹，
    换目标只做 pass-by 记账（真正的 Nav2 `NavigateThroughPoses`）。
 → 先做 1+2（改动小、可快速 A/B），若仍不够再做 3。
+
+## 113. SUPER 规划管线逐级剖析：A* 逻辑、A* 之后、以及重规划/换目标路径（2026-11-28）
+
+> 依据：`hku_super/super_planner/src/super_core/{fsm.cpp, super_planner.cpp, astar.cpp, corridor_generator.cpp}`、
+> `src/traj_opt/exp_traj_optimizer_s4.cpp`、`include/utils/geometry/geometry_utils.h`；配置 = `super_planner_hex_hs_cache.yaml`。
+> 行号为当前仓库快照。
+
+### 113.0 入口与状态机（100 Hz 主状态 + 10 Hz 重规划）
+- plan-box 通过 `/planning/click_goal`（`click_goal_en`）发 **单个 PoseStamped goal**（`click_height=-10` 表示不覆盖 z）；
+  `setGoalPosiAndYaw` 把 goal 吸附到 3 m 内最近非占据格，置 `gi_.new_goal=true`（fsm.cpp:250）。
+- FSM 状态：`INIT → WAIT_GOAL → GENERATE_TRAJ → FOLLOW_TRAJ`（fsm.cpp:147）：
+  - `GENERATE_TRAJ`：先 `closeToGoal(0.25)` 判跳过；否则 `PlanFromRest()`；
+  - `FOLLOW_TRAJ`：100 Hz 发布 committed 轨迹的采样（`pubCmdTimerCallback`）；轨迹播完（`traj_finish_`）时：
+    `closeToGoal(0.1)` → `WAIT_GOAL`，否则 → `GENERATE_TRAJ`（从**实测状态** rest2rest 重规划）；
+  - `WAIT_GOAL`：等 `gi_.new_goal`，下一拍进 `GENERATE_TRAJ`。
+- 10 Hz 重规划：`callReplanOnce()`（fsm.cpp:45）只在 `FOLLOW_TRAJ` 且 `!finish_plan/plan_from_rest_` 时执行。
+- **`PlanFromRest`（super_planner.cpp:85）**：起点吸附到最近自由格 → **`last_exp_traj_info_.setEmpty()`** →
+  `generateExpTraj(last=empty)` → **rest2rest**：`pos_init_state.col(0)=local_start_p_`（实测），
+  `col(1)/col(2)=robot_state_.v/a`（GENERAL-BC/hot start，按 max_vel/max_acc 截断）。
+
+### 113.1 A* 逻辑（`PathSearch` → `Astar::pointToPointPathSearch`）
+`SuperPlanner::PathSearch(start, goal, horizon)`（super_planner.cpp:1555）：
+1. 起点若在 OCCUPIED/OUT_OF_MAP 直接失败（先由 `PlanFromRest`/replan 的 `getNearestCellNot` 移出）；
+2. **escape 搜索** `escapePathSearch(start, flag)`：起点附近若有 UNKNOWN/OCCUPIED 邻域，先做一次"逃出"搜索，
+   把起点移到自由区，避免 A* 起点不可扩展；
+3. **主搜索**：`flag = ON_INF_MAP | UNKNOWN_AS_FREE | DONT_USE_INF_NEIGHBOR`（`frontend_in_known_free=false` 时
+   UNKNOWN 当 FREE，但在膨胀图上判定障碍）→ `pointToPointPathSearch(shifted_start, goal, horizon, path)`；
+4. 若 `NO_PATH`：退回 **prob map**（`ON_PROB_MAP | USE_INF_NEIGHBOR`）再搜一次；
+5. 结果拼上 escape 路径 + 起点（`REACH_GOAL` 时补 goal）；`horizon<=0` 或空路径失败。
+
+A* 内核（astar.cpp:233）：
+- **网格**：`map_voxel_num=[480,480,60]`、`resolution=0.05`（局部地图以当前点为中心，±12 m；**hex12w 配置改为 720=±18 m**）；
+- **邻域**：26 邻域（dx,dy,dz∈{-1,0,1}，`allow_diag=true`）；
+- **边代价** = 1 / √2 / √3 × resolution（欧氏步长，astar.cpp:489）；**启发** = `heu_type=2` 即 **EUCL**
+  （`tie_breaker_ × ||Δidx||`，astar.cpp:141）；有 tie-breaker 但不改变最优性次序太多——**等代价绕行侧向因此可翻转**；
+- **障碍判定**：`getInfGridType()`（膨胀图，`inflation_step=2` × 0.1 m = **0.2 m 膨胀**）；
+  UNKNOWN 在 `UNKNOWN_AS_OCCUPIED` 时只进 frontier 不扩展，否则当 FREE；
+- **终止**：到达 goal（REACH_GOAL）或路径长度 > horizon（REACH_HORIZON，返回局部段）；
+- **horizon** = `planning_horizon − 当前 guide 长度`（rest2rest 时 = 16 m）。
+
+### 113.2 A* 之后（严格按代码顺序）
+1. **时间分配 `simplePMTimeAllocator`**（geometry_utils.h:66）：按 `max_acc/max_vel` 与末端速度做匀加速-匀速-匀减速
+   剖面，给每个 A* 点一个 **guide_stamp**（相对时间）→ 这是 MINCO 的"热启动时间"初值；
+2. **guide cache**（`guide_cache_en=true`）：goal 未动（<0.3 m）、缓存 <1.0 s、缓存路径在膨胀图上仍 free 且可从当前位置裁剪
+   → 直接复用（时间戳 = 路径长 / max_vel）；否则 A* 结果入缓存（super_planner.cpp:791）；
+3. **guide round**（`guide_round_en`，当前配置未开）：>45° 顶点用二次 Bezier 圆角，需圆角 free；
+4. **guide hyst**（`guide_hyst_en`，未开）：新旧 guide 在起-终线两侧翻转且旧 guide 仍 free → 保留旧侧；
+5. **PVA tail**（`goal_pva_en=true`）：终点若有 goal_v（来自 PVA goal），沿 goal_v（或 adaptive 空闲方向）追加 3 个点
+   （0.35/0.70/1.0×tail_len），把 MINCO 终点推到角点**之后**，角点仍留在 guide 内部；
+6. **SFC 生成** `CorridorGenerator::SearchPolytopeOnPath(guide, sfc)`（corridor_generator.cpp:55）：CIRI——
+   沿 guide 每段取 seed line（`corridor_line_max_length=1.0`、safe 6.0），IRIS 迭代 2 次生成凸多面体并相邻重叠；
+   guide 起点在膨胀占据格则先补一个空多面体；失败 → 整个规划失败；
+7. **位置轨迹优化**（`ExpTrajOpt::optimize`，exp_traj_optimizer_s4.cpp:838）：
+   head = `pos_init_state`（rest2rest=实测；replan=旧轨迹在 `replan_state_TT` 的**参考状态**）、
+   tail = guide 终点 + goal_v/goal_a（或 0）、guide_path/guide_stamp 热启动、SFC 硬约束 → **MINCO**（L-BFGS）；
+   失败且用了 GENERAL-BC → **清零起始 v/a 重试一次**；
+8. **no-backward-head 检查**（patch 11）：replan 且旧轨迹剩余 >1 s、起始速度 >0.3 m/s 时，
+   若新轨迹前 0.6 s 的位移方向与起始速度反向 → 拒绝（保留旧轨迹）；
+9. **yaw 轨迹优化**（`YawTrajOpt`）：以旧 yaw 状态为起点、goal_yaw/free end 为终点的 min-snap；
+10. **拼接**：`temp_exp_traj = old_prefix[0, replan_state_TT] + new_traj`（rest2rest 时 old 为空），
+    写入 `ExpTraj`（SFC、yaw、start_WT=now）；`ReplanOnce` 再生成 backup 轨迹（本配置 `backup_traj_en=false`），
+    提交 `cmd_traj_info_`，`gi_.new_goal=false`；
+11. **发布**：FSM 100 Hz `getOnePositionCommand` 采样 committed 轨迹 → `PositionCommand`（PVA+yaw）→ plan-box → wire。
+
+### 113.3 重规划逻辑（10 Hz）
+`callReplanOnce()`（fsm.cpp:45）：
+1. **DEFER-HANDOVER（patch 19）**：若 `gi_.new_goal` 且旧 committed 轨迹剩余 **0.08–2.0 s** → **不重规划**，
+   继续发布旧轨迹，直到轨迹播完；
+2. **new_goal 的两种重规划**：
+   - 先 `ReplanOnce(goal, new_goal=false)`（"smooth handover"：当作同目标 replan，可用旧轨迹整段作 guide）；
+   - 失败再 `ReplanOnce(goal, new_goal=true)`（历史路径：new_goal 分支）；
+3. **非 new_goal**：`ReplanOnce(new_goal=false)`（普通 receding replan）；
+4. 返回码：`SUCCESS/FINISH` → `gi_.new_goal=false` + 发布新 poly traj；`NEW_TRAJ` → GENERATE_TRAJ；
+   `EMER` → EMER_STOP；`FAILED` → 保持旧 committed 轨迹继续飞（不中断）。
+
+`generateExpTraj`（super_planner.cpp:412）在 **last_exp_traj 非空**时（replan branch）：
+- `replan_state_TT = (now − last_exp_traj.start_WT) + replan_forward_dt`（**0.1 s 轨迹时间前视**）；
+- 早退条件：replan 点超过 committed/exp 轨迹末端 → `NO_NEED`；单走廊且连到 goal 且非 new_goal → `NO_NEED`；
+  距 goal < 3×resolution（0.15 m）→ `NO_NEED`；
+- **碰撞检查**：从 `replan_state_TT` 起按 `sample_traj_dt=resolution/max_vel≈0.037 s` 采样 committed 轨迹，
+  膨胀图上遇到 OCCUPIED/OUT_OF_MAP 标记 `wholeTrajKnownFree=false`；
+- **切分距离 `split_dis`**：默认 `receding_dis=1.0 m`；若 `(!new_goal || keep_old_goal_guide) && wholeTrajKnownFree`
+  → 取 max（整段旧轨迹都作为 guide，不平移前视）——**new_goal 时默认仍 1.0 m**（keep_old_goal_guide 关闭）；
+- **guide 初始化**：`pos_init_state = committed_traj.getState(replan_state_TT)`（**旧轨迹参考状态**，
+  仍是轨迹时间前视 0.1 s，不是实测）；`guide_path` = 旧轨迹从 replan_state 起、距起点 ≤split_dis 的采样点
+  → **guide 起点 = 旧参考状态**；
+- 之后接 A*（从 guide 末端到 goal，horizon = planning_horizon − guide 长）→ 113.2 的第 1–11 步；
+- 若没法得到旧轨迹状态/部分轨迹 → 失败返回。
+- **`NEW_TRAJ` 返回码实际上在本文件无生产者**（grep 只有 ReplanOnce 中的分支），所以实际只有 SUCCESS/NO_NEED/FAILED。
+- 每条新轨迹起点比"现在"提前 0.1 s（`replan_forward_dt`）——这是为了让新轨迹与已发布参考的时间轴对齐；
+- 若 replan 墙钟 > `replan_time_limit=0.35 s` → FAILED（保持旧轨迹）。
+
+### 113.4 换目标那一刻到底走哪条路（回答"未执行路径算不算进下一次起始"）
+- plan-box 在一次 pass-by/预目标时发下一个 goal → FSM 设 `gi_.new_goal=true`；
+- 旧 committed 剩余 0.08–2.0 s → **DEFER**：继续飞旧轨迹到末端（`Traj finish`）；
+- `Traj finish`：若在旧 goal 0.1 m 内 → `WAIT_GOAL`（计划盒早已发新 goal → 下一拍 `GENERATE_TRAJ`）；
+  否则 → `GENERATE_TRAJ`；
+- `GENERATE_TRAJ` → `PlanFromRest` → **`last_exp_traj_info_.setEmpty()`** → **rest2rest**：
+  起点 = **实测位置**（最近自由格）+ **实测 v/a**（GENERAL-BC），**旧轨迹剩余段完全丢弃**；
+- 只有"new goal 到达时旧轨迹剩余 >2.0 s"（或 DEFER 窗口外）才走 replan branch，那里起点 = **旧参考状态**
+  （replan_state_TT，轨迹时间前视 0.1 s）；此时旧轨迹前缀被拼接保留。
+
+**所以：未执行旧路径既不算下一次起始，也不算引导；换目标的不连续发生在"DEFER 后 rest2rest 从实测状态重新起步"
+（方向/曲率与旧转弯无关，A* 重新选路），以及 washout/goal_pva 偏移，不是"旧路径被算进起点"。**
+
+### 113.5 由此得到的修复优先级（1.35 做完美 + 换目标）
+1. **末腿到达**：最后一条腿没有 pass-by，0.3 m 半径 + 跟踪残差 → 末目标绕圈（158a 4.7 s）。已实现 `--final-arrive-m`（0.5），待 A/B；
+2. **DEFER 后 rest2rest 的起点**：把 `PlanFromRest` 的起点从"实测"改为"旧参考末端状态"（p/v/a），
+   让新轨迹与旧转弯方向连续（C++：PlanFromRest 接受可选初始状态；fsm 在 DEFER/换目标时传入旧 committed 末状态）；
+3. **A* 起点/引导继承**：换目标时把旧 committed 轨迹的剩余 0.3–0.8 s 采样点作为 guide 前缀（类似 keep_old_goal_guide），
+   避免 A* 从角点重新选路产生卷曲；
+4. （彻底）through-poses：一次发多目标，让 SUPER 规划一条穿越轨迹。
+
+## 114. round 32：1.35 收尾 A/B（末腿到达 + goal-switch yaw gate）与管线剖析落地（2026-11-28）
+
+### 114.1 新实现（都 opt-in，默认关）
+- `--final-arrive-m`（pacer）：**最后一条腿**的到达半径（默认 0 = 沿用 arrive_m）。依据 158a 末目标 4.7 s 绕圈；
+- `--goal-switch-yaw-gate-deg/hold-s`（上一轮已实现）：goal 切换前要求速度方向与新目标方向夹角 < 门槛，
+  最多暂缓 hold 秒（153c/150s22b 的换目标瞬态）。
+
+### 114.2 A/B 真飞（frozen，其余=四图最佳配置）
+| 趟 | 配置 | 15 行 | W4 | W6 | Q3 | P1 | Q1 | S2 | 备注 |
+|---|---|---|---|---|---|---|---|---|---|
+| 176a | FINAL_ARRIVE=0.5 | 14/15(W4) | 接触 −0.030 | 0.230 | 0.177 | PASS(max 0.71) | 1 | 3（45–59 s 早段角点，**末段绕圈消失**） | 末目标绕圈修复有效 |
+| **176b** | FINAL_ARRIVE=0.5 + YAW_GATE=60/hold 0.8 | **15/15** | **CLEAR +0.006** | 0.237 | 0.184 | PASS(max 0.78) | 4 | **0（无环）** | 最好的一趟 |
+| 176c | 同 176b 复跑 | 14/15(W1b 8/13,W4,W6) | 接触 −0.087 | 0.303 | 0.357 | FAIL（1.81 尖峰） | 2 | 2（10.5 s） | **方差大，yaw gate 未证明稳定** |
+
+**结论**：
+1. **末腿到达 0.5 m**：176a 里 158a 的末段 4.7 s 绕圈不再出现 → 方向有效；但早段角点环是另一回事；
+2. **yaw gate 60°**：一趟完美（15/15、W4 CLEAR、S2=0），一趟明显差 → **需要 2 趟/arm 重复**，暂不改默认；
+3. 1.35 仍未"完美"：Q4 c1/c3 仍有个别 vmin 0.02–0.35，Q1 0–4 段 ≤0.5 s 的钩形。
+
+### 114.3 下一轮（1.35 收尾 + 换目标）
+1. **重复 A/B**：final-arrive 0.5 / yaw gate（各再 1–2 趟，2 趟/arm），确认是否稳定；稳定后合入默认；
+2. **C++ 参考状态拼接**（§113.5-2）：`PlanFromRest` 增加可选初始状态；FSM 在 DEFER 后换目标时传入
+   **旧 committed 轨迹末端 state(p,v,a)**，让新轨迹从旧参考末端连续起步，而不是从实测状态 rest2rest；
+3. **guide 前缀继承**（§113.5-3）：换目标时把旧轨迹剩余 0.3–0.8 s 采样点拼到新 guide 前（类似 keep_old_goal_guide），
+   消除 A* 从角点重新选路导致的参考卷曲（153c）；
+4. 之后按 owner 优先级做 **PVA 3 m/s**（hex12w + 6000 点）+ SITL PID step/chirp 辨识。

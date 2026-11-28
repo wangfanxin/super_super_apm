@@ -420,6 +420,9 @@ def main() -> int:
                          "尖峰发生在 pass-by 后立即换目标、飞机还在转弯的瞬间。0=关。")
     ap.add_argument("--goal-switch-yaw-gate-hold-s", type=float, default=1.0,
                     help="goal 切换 yaw-gate 的最长暂缓时间（秒）。")
+    ap.add_argument("--final-arrive-m", type=float, default=0.0,
+                    help="最后一条腿的到达半径（0=沿用 --arrive-m）。最后一条腿没有 pass-by，"
+                         "实测 0.3 m 会让飞机在末目标附近绕圈（158a 4.7 s）；0.5 m 让它一次通过。")
     ap.add_argument("--pass-by-m", type=float, default=0.0,
                     help="『越过航点』判据的横向容差，m。>0 时到达 = **已越过航点所在平面**且横向偏差"
                          "≤该值（不是『进入半径』）。半径判据在高速切角时永远触发不了：90° 角、"
@@ -908,9 +911,10 @@ def main() -> int:
                                  entry_hold_s=args.first_hold_s, holds=holds,
                                  # >0 turns on the "passed the waypoint" arrival test, which is what
                                  # lets the tour advance when the plan CARRIES SPEED through a
-                                 # corner instead of stopping on it (see cmd_stream.py:step)
+                                 # corner instead of stopping on it (see cmd_stream.py:step,
                                  pass_by_m=args.pass_by_m,
-                                 pass_by_long_m=getattr(args, "pass_by_long_m", 0.0))
+                                 pass_by_long_m=getattr(args, "pass_by_long_m", 0.0),
+                                 final_arrive_m=float(getattr(args, "final_arrive_m", 0.0) or 0.0))
 
     node.create_subscription(Odometry, args.odom, on_odom, best_effort)
     node.create_subscription(Odometry, args.odom_vel_topic, on_odom_vel, best_effort)

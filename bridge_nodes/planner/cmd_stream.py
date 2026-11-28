@@ -160,7 +160,8 @@ class TourPacer:
     def __init__(self, targets_w, hold_s, arrive_m, settle_speed_mps, settle_s, leg_timeout_s, now,
                  log=None, seg_len_w=None, odom_label="", leg_speed=0.30, entry_hold_s=0.0,
                  arm_above_m=0.50, arm_move_m=0.50, arm_near_m=0.30, warn_period_s=15.0,
-                 vertical_arrive_slack_m=0.20, holds=None, pass_by_m=0.0, pass_by_long_m=0.0):
+                 vertical_arrive_slack_m=0.20, holds=None, pass_by_m=0.0, pass_by_long_m=0.0,
+                 final_arrive_m=0.0):
         self.targets_w = np.asarray(targets_w, dtype=float)
         self.n_leg = int(len(self.targets_w))
         self.hold_s = float(hold_s)
@@ -171,6 +172,11 @@ class TourPacer:
         #: extra gate for a VERTICAL leg only -- see the arrival block in `step`.  0.20 m covers this stack's
         #: measured ~0.1 m altitude-datum term with room to spare, and it is applied to NO other leg.
         self.vertical_arrive_slack_m = float(vertical_arrive_slack_m)
+        #: FINAL-GOAL tolerance: the last leg has no pass-by (i+1 == n_leg), so its goal is still the
+        #: pacer's arrival radius.  MEASURED (phase158a): the aircraft orbits its last target for 4.7 s
+        #: because the tracking residual (0.15-0.2 m) keeps it outside the 0.3 m gate; a larger last-leg
+        #: gate lets the tour finish at the first good pass.  0 keeps the old behaviour.
+        self.final_arrive_m = float(final_arrive_m)
         #: >0 enables the PASSED-THE-WAYPOINT arrival test (see `step`); 0 keeps the old
         #: radius-only test, so every existing caller behaves exactly as before
         self.pass_by_m = float(pass_by_m)
@@ -408,6 +414,8 @@ class TourPacer:
             # climb would ask for the datum to be perfect.  A vertical leg therefore gets
             # `vertical_arrive_slack_m` on top of the gate.  No other leg's gate changes.
             gate = self.arrive_m + (self.vertical_arrive_slack_m if vertical_leg else 0.0)
+            if (not vertical_leg) and self.i_leg + 1 >= self.n_leg and self.final_arrive_m > 0.0:
+                gate = max(gate, self.final_arrive_m)
             if vertical_leg:
                 d = abs(float(p_w[2]) - float(tgt[2]))            # the climb's height error
             else:
