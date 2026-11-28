@@ -500,7 +500,7 @@ def main() -> int:
                     help="PVA goal 的出弯速度大小，m/s。由几何决定：本世界两个紧角净空圆角 R=0.95 m，"
                          "v=sqrt(a_lat*R)≈2.0（scripts/corner_room.py）；2.5 m/s 时深偏差 0.40 m，"
                          "仍小于紧角的参考净空 0.45 m，但余量很薄。")
-    ap.add_argument("--advance-lookahead-s", type=float, default=2.4,
+    ap.add_argument("--advance-lookahead-s", type=float, default=0.0,
                     help="R1a：把'推进到下一个角点'的触发距离改为 **v_f·该秒数 + margin**（v_f=低通后的 LIO 水平速度）。"
                          "取 2.4（DEFER 窗口上界 2.0 s + 0.4 s 裕度）让 goal 切换发生在旧轨迹还剩 >2 s 时，"
                          "从而走 replan 拼接分支而不是'飞完→rest2rest'。0 = 关闭（沿用 --pre-goal-m）。")
@@ -569,6 +569,33 @@ def main() -> int:
              float(getattr(args, "ref_catchup_mps", 0.0) or 0.0),
              float(getattr(args, "ref_lead_s", 0.0) or 0.0),
              float(getattr(args, "ref_lp_tau", 0.0) or 0.0)), flush=True)
+
+    _adv_s = float(getattr(args, "advance_lookahead_s", 0.0) or 0.0)
+    print("dispatch: advance_s=%.2f advance_margin=%.2f pre_goal=%.2f dispatch_lookahead=%d goal_lead=%d "
+          "goal_lookahead=%.2f corner_carry=%.2f yaw_gate=%.0f"
+          % (_adv_s, float(getattr(args, "advance_margin_m", 0.0) or 0.0),
+             float(getattr(args, "pre_goal_m", 0.0) or 0.0),
+             int(getattr(args, "dispatch_lookahead", 0) or 0),
+             int(getattr(args, "goal_lead", 0) or 0),
+             float(getattr(args, "goal_lookahead_m", 0.0) or 0.0),
+             float(getattr(args, "corner_carry_m", 0.0) or 0.0),
+             float(getattr(args, "goal_switch_yaw_gate_deg", 0.0) or 0.0)), flush=True)
+    if _adv_s > 0.0:
+        _bad = []
+        if int(getattr(args, "dispatch_lookahead", 0) or 0):
+            _bad.append("dispatch_lookahead")
+        if int(getattr(args, "goal_lead", 0) or 0):
+            _bad.append("goal_lead")
+        if float(getattr(args, "goal_lookahead_m", 0.0) or 0.0) > 0.0:
+            _bad.append("goal_lookahead_m")
+        if float(getattr(args, "corner_carry_m", 0.0) or 0.0) > 0.0:
+            _bad.append("corner_carry_m")
+        if float(getattr(args, "goal_switch_yaw_gate_deg", 0.0) or 0.0) > 0.0:
+            _bad.append("goal_switch_yaw_gate_deg")
+        if _bad:
+            print("FATAL: --advance-lookahead-s > 0 cannot be combined with %s (they change the goal "
+                  "independently and would make the dispatch ambiguous)" % ", ".join(_bad), flush=True)
+            return 2
 
     add_lio_path(args.lio_root)
     from common import frames                      # noqa: E402  前工程：唯一的 L↔W 换算

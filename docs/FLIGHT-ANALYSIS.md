@@ -2727,3 +2727,54 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
 - `reviewer-thinlayer`：薄层 dispatch/pacer + bridge + PSC 控制链、R1a 边界与日志需求；
 - `reviewer-eval`：验收指标/工具/门禁/文档一致性/证据可复现性。
 三份报告回来后合并成审查结论，再决定 R1a 是否试飞（不先飞）。
+
+## 123. round 40：三路独立审查结果汇总（R1a 之后；0 飞行）（2026-11-28）
+
+按 owner 要求，R1a 完成后派了三个只读子代理分别审查全链路：`reviewer-planner`（SUPER+FSM）、
+`reviewer-thinlayer`（薄层+bridge+PSC）、`reviewer-eval`（评测/门禁/文档/证据）。三份报告的结论合并如下。
+
+### 123.1 结论（一致意见）
+1. **R1a 当前实现 NO-GO（两个独立审查都定量否决，且互相印证）**：
+   - `reviewer-thinlayer`：R1a 在角点前 ~3.4 m 换目标后，`split_dis=receding_dis=1.0 m`，A* 从旧轨迹上自由选路到下一角点；
+     **离线 A*（同 0.2 m 膨胀口径）6/6 角点的路径到当前角点最近距离 1.08–2.94 m**，pass-by 盒 0/6 命中 → pacer 永远判不到到达 → 每腿 40 s timeout；
+   - `reviewer-planner`：独立离线 A*（522 柱世界）在 d_adv=3.0/3.5/4.0/5.0 m 时，**W1b 命中 4/6、1/6、0/6、0/6；pass-by 盒 0/6**；
+   - 两者都指出 §122.2 的"离线校验"是**循环论证**：回放用的是旧飞行真值（旧飞行本来就经过角点），验证不了"A* 会绕过角点"；
+   - `reviewer-planner` 补充：d_adv 用 LIO 速度×时间近似"旧轨迹剩余 >2 s"不成立（P1-11），IIR τ≈67 ms 压不住角点瞬态。
+2. **"当前最优 177b 的 W4 CLEAR" 是全采样率假象（reviewer-eval）**：`accept.py:702-703` 每 5 个真值样本才检查一次；
+   全速率复算 **min = −0.00025 m @139.567 s**（末段环内擦柱）→ W4 应为 **CONTACT**；31 个保留 run 中只有 177b 翻转。
+3. **S1/S2 口径有系统性错误（reviewer-eval）**：S1 的 END 从"末角点首次到达"开始（177b 90.09 s），把第二圈整段排除
+   （177b 报 1.09 s，实际只排除起飞应为 3.5 s）；S2 的"环时长"是 ±1.2 s 滑窗覆盖宽度（含 2.4 s padding），
+   177b 报 10.1 s，实际触发跨度 2.86 s；0.8 m/s 慢环在 2.4 s 窗内两个判据都够不到，会漏报。
+4. **rest2rest 计数与归因不准确（reviewer-planner + eval）**：177b 是 `Traj finish` 16 次、`PlanFromRest` 成功 16 次、
+   **失败 5 次**（不是文档写的 10 次 = 5×2 行日志）；且 16 次里有**腿中段**一次（51.21 s）；
+   177c 是 21/25 次——"每角点一次 rest2rest"不成立。
+5. **腿中段换段的更可能机制（reviewer-planner）**：`backup_traj_en` 是**死参数**（无读取），备份轨迹**无条件生成**；
+   备份成功时 committed 轨迹被截断为"旧前缀+刹车段"（视界由 6 m 视线决定）→ 连续 replan 失败/NO_NEED 时
+   已提交短视界轨迹到期 → 半途 TrajFinish → 从运动中实测状态 rest2rest（177b 51.21 s 事件：SUPER raw 速度 0.01 m/s、
+   端点 (7.4,3.5)、只飞了 4.4 m，紧随其后 51.1–52.1 s 真值环）。这是"换段/钩形"的**证据支持假设**，需插桩定案。
+6. **其他 P0/P1（reviewer-planner）**：100 Hz 发布线程无锁读 `cmd_traj_info_`（patch18 同类竞态）；
+   `goal_pva_en` 在未连到 goal 时仍把 goal 的终端速度赋给中途端点（MINCO 被硬约束拉歪/不可行）；
+   round33 的 `split_dis=planning_horizon-4` **对普通 replan 也生效**（与上游"整段保留"不同，混入跨轮比较）；
+   splice 只在 FOLLOW_TRAJ 生效、降级仍会 rest2rest（178a 仍有 11 次）；goal 回调与 FSM 主线程竞态、
+   `gi_.new_goal=false` 可能吞掉新目标；GENERATE_TRAJ 失败无重试上限；hot_start 失败无回退；MINCO 速度检查被注释。
+7. **reviewer-eval 的其他发现**：accept.py 有 **638 行不可达重复代码**；README 的"当前最佳/证据/复现命令"整体过期；
+   INDEX 引用的 158a 四图**全部不存在**；ACCEPTANCE 的标准命令按默认 laps 跑 177b 会 W1b FAIL；
+   manifest/accept.json 缺关键 dispatch/shaping 参数（无法从产物重建飞行配置）；门禁 guard 只保护 1 个文件、
+   无判分算法回归测试、不检查 built binary 新鲜度；`dispatch_replay.py` tour 用 18 角点（实际 12）、margin 0.3≠0.4、
+   缺 `i_leg>=1` 守卫、settle_s 不一致。
+
+### 123.2 立即可做（不需要飞）
+- 把 `--advance-lookahead-s` 默认改回 0（已改）并加入 check_static 断言 + 启动 dispatch 横幅（已改）；
+- W4 改为全采样率 + 回归测试；S1 的 END 改"末次到达后"；S2 去 padding/多尺度；S1/S2 合成测试；
+- quality_rows 增加 R2R（rest2rest 次数：Traj finish/PlanFromRest 成功/失败）、R1A advance 事件、GOAL-SWITCH 参考连续性；
+- 修 accept.py 死代码、manifest 记录完整 plan-box env/argv、README/INDEX/ACCEPTANCE 与 §118 对齐；
+- `scripts/check_r1a_via.py`（把两个审查员的离线 A* 检查固化）作 R1a 试飞前置门禁。
+
+### 123.3 产物与判定
+- **R1a：NO-GO**（除非将其改为"旧轨迹整段作 guide / via points"再验证）；
+- **1.35 基线**：15/15 与 Q3/W6 的结论仍成立，但 **W4 "CLEAR" 需按全速率重判**（177b 实为 CONTACT −0.00025 m），
+  S1/S2 数字要按新口径重算；
+- **换段机制**：修订为"角点 rest2rest + 腿中段备份截断/NO_NEED 两类"，后者更可能是半途停/环的驱动量；
+- 下一步优先级（待 owner 批准）：① 修评测口径（W4/S1/S2/R2R）并重算现有 31 个保留 run（0 飞行）；
+  ② 修 `backup_traj_en` 死参数 + committed 截断/日志插桩，用现有数据定案半途换段；
+  ③ R1a 改造为 keep_old_guide/via 版本 + 离线门禁；④ 再谈试飞。
