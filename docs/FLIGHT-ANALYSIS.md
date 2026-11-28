@@ -2986,3 +2986,29 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
 - 审计 P2 遗留：SWT |dv| 仍为计数、`keep_old_goal_guide` 死参数与 patch 门禁假阳性、build 脚本 `|| true` 吞错、
   `check_guide_via.py` 未接入 gate、COMMIT 的 NO_NEED 重复提交计数、PVA 抑制无可观测性；
 - docs 的 ACCEPTANCE/PIPELINE 仍有"当前基线=9f+/23c"等过期段落。
+
+## 130. round 47：180c 复现 + R1' 有效飞行（失败，机理更新）（2026-11-28）
+
+### 130.1 180c（基线重复）
+- **15 行 14/15：H6 FAIL（max 105.6 ms，超 100 门槛 5.6 ms）**，其余全过：W4 **CLEAR +0.002**、W1b 13/13、W6 0.216；
+- 质量：Q1 **0**、Q3 0.148、**Q4 全角点 PASS**、P1 PASS（0 尖峰，max 0.457）、S1 **0.58 s**、S2 2 环/4.4 s、
+  Q2 −0.098（FAIL）；R2R 18/19（defer 决策 83，remain p50 0.38 s；mid 1、chase 7）；
+- 结论：180b 的"15 行全过 + Q1=0 + W4 CLEAR"在 180c 复现（除 H6 边界），**但换目标/角点 rest2rest 未改变**。
+
+### 130.2 R1' 有效飞行 181f（H6/H5 clean）：仍然失败，且失败模式被精确定位
+- 15 行：W1 **7/13**、W1b 5/13、W4 −0.081、W6 0.350；Q1 3、Q2 −0.181、Q4 多数角点 fail、P1 22 spikes、
+  S2 8 环/130 s、R2R **47 次**（chase 40）；
+- **check_handover_via**：reference/truth pass **3/9**；**第一次失败在 leg2**：
+  `leg 2 [40.7-80.7 s dur 40.0] ref min 2.86 m MISS → LEG 2 TIMEOUT 40 s`，之后每腿连锁超时；
+- REPLANDBG：`new_goal=1 split=12.000 whole_free=0 remain≈3.0-3.8` → **split 分支确实生效**，但
+  **旧 committed 轨迹的终点并不保证是 pacer 在手的角点**（advance 时刻它可能已经在追"下一个"角点，
+  或轨迹更短），因此"保留旧轨迹到角点"的前缀仍然不经过 pacer 的角点 → A* 切角 2.86 m。
+- 结论：**薄层"提前推进 + 旧轨迹前缀"这条路被有效飞行否决**（不是全轨；这次 H6/H5 干净、结论可信）。
+  根因是"规划器不知道 pacer 在手的角点必须是必经点"；只有 **via（显式必经点）**能保证。
+
+### 130.3 下一步（目标不变：1.35 完美）
+- 当前最佳保留：**180b（15/15 + W4 CLEAR + Q1=0 + S2 2 环/3.7 s）**；180c 为复现（H6 边界）。
+- **实现 C++ via-1**：goal 携带 via=在手角点（用 PositionCommand 的 kx/kv 空位承载，避免改 msg/重编 msgs），
+  A* 两段（当前/via → via/goal），guide/时间分配/SFC 一致；薄层在 advance 时同时发 via 与 goal。
+  0 飞行门禁：扩展 check_handover_via 要求 reference 的 A*/guide 必须过 via（由构造保证）+ check_guide_via 两段。
+- 之后 2 趟验证；若仍不行，才是 full through-poses。
