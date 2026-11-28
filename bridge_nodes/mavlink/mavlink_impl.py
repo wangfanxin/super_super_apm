@@ -56,9 +56,6 @@ VEL_YAW_MASK = (1 << 0) | (1 << 1) | (1 << 2) | IGNORE_AFX | IGNORE_AFY | IGNORE
 POS_VEL_YAW_MASK = IGNORE_AFX | IGNORE_AFY | IGNORE_AFZ | IGNORE_YAW_RATE
 # position + velocity + acceleration + yaw: everything the trajectory can feed forward
 POS_VEL_ACC_YAW_MASK = IGNORE_YAW_RATE
-# velocity-level control (owner-approved A branch): the FCU ignores the POSITION target and tracks the
-# velocity (+ optional acceleration feedforward) directly.  Never used unless BRIDGE_FIELDS=vel/velacc.
-VEL_ACC_YAW_MASK = (1 << 0) | (1 << 1) | (1 << 2) | IGNORE_YAW_RATE
 
 
 class MavlinkBridge(Bridge):
@@ -490,7 +487,7 @@ class MavlinkBridge(Bridge):
     # plan's end let the aircraft fly on at 2.6 m/s for 2.6 m until the geofence aborted it, while the same
     # mission on POS_YAW stopped 0.020-0.023 m from the commanded point.  So "posvelacc" is available,
     # documented, and NOT the default.
-    SETPOINT_FIELDS = ("pos", "posvel", "posvelacc", "vel", "velacc")
+    SETPOINT_FIELDS = ("pos", "posvel", "posvelacc")
 
     def send_cmd(self, cmd_l, calib, yaw_rad=None, fields="pos"):
         """A `PositionCommand`-shaped command in **L**, placed on the wire in ONE conversion.
@@ -541,29 +538,7 @@ class MavlinkBridge(Bridge):
         p_f = frames.l_to_wire(cmd_l.p, calib)
         yaw = float(cmd_l.yaw if yaw_rad is None else yaw_rad)
         x_ned, y_ned, z_ned = float(p_f[1]), float(p_f[0]), -float(p_f[2])
-        # HYBRID SAFETY (A branch): a velocity-level mask ignores the position target, so hovering /
-        # take-off / hold would lose altitude control (MEASURED phase173a: the sortie never left the pad
-        # because the hold-phase command was (v=0, p=pad) and the mask threw the pad position away).
-        # While the command is essentially stationary, fall back to posvelacc for that message.
-        if fields in ("vel", "velacc"):
-            _v_f_norm = frames.l_to_wire_velocity(cmd_l.v, calib)
-            _spd = float((float(_v_f_norm[0]) ** 2 + float(_v_f_norm[1]) ** 2) ** 0.5)
-            _acc = float((float(cmd_l.a[0]) ** 2 + float(cmd_l.a[1]) ** 2 + float(cmd_l.a[2]) ** 2) ** 0.5)
-            if _spd < 0.30 and _acc < 0.10:
-                fields = "posvelacc"
-        if fields in ("vel", "velacc"):
-            # A branch: position target is IGNORED by the mask; velocity (+acc) is tracked.
-            v_f = frames.l_to_wire_velocity(cmd_l.v, calib)
-            vx, vy, vz = float(v_f[1]), float(v_f[0]), -float(v_f[2])
-            if fields == "velacc":
-                a_f = frames.l_to_wire_velocity(cmd_l.a, calib)
-                ax, ay, az = float(a_f[1]), float(a_f[0]), -float(a_f[2])
-                mask = VEL_ACC_YAW_MASK
-            else:
-                ax = ay = az = 0.0
-                mask = VEL_YAW_MASK
-            x_ned = y_ned = z_ned = 0.0
-        elif fields == "pos":
+        if fields == "pos":
             # LITERAL zeros, not the command's (zero) velocity: the mask says the FCU ignores them, and
             # `-0.0` is a different byte from `0.0` to the zero-tolerance A/B this method is proven with.
             vx = vy = vz = ax = ay = az = 0.0

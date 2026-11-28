@@ -1,127 +1,34 @@
-docs/evidence/INDEX — 证据索引（2026-11-26 清理后）
+# 证据索引（2026-11-28 清理后）
 
-只保留三类图：
-  1) 历史最佳实飞（phase9f）与当前最佳（phase23c = 9f+，1.35 m/s）
-  2) 当前轮次（phase23c：9f+ 首次确认，除 H2 外 15/15）
-  3) 机体能力台架（1 kg 机体 8 m/s）
-加上验收脚本要求的固定证据文件。其余历史趟的图已按 owner 要求清理（git 历史仍保留）。
+## 当前最佳配置（冻结，四图验证）
+SUPER_CONFIG=super_planner_hex_hs_cache.yaml
+NAV_LEAD_S=0.06  PASS_BY_M=0.6  PASS_BY_LONG_M=1.0
+REF_WASHOUT_TAU=2.0 REF_WASHOUT_VMAX=0.15 REF_NO_RETRACT=1 REF_ALONG_FLOOR=0.9
+GOAL_PVA=1 CORNER_MODE=bisector CORNER_SPEED=0.9 ARRIVE_M=0.3 PRE_GOAL_M=0.8
+REF_Z_OFFSET_M=0.118 REF_Z_HOLD=2.0 REF_Z_TOL=0.005 REF_Z_LATCH_M=1.2
+EXTRA_PARMS=guided_limits_bench5_vert_agile.parm
 
-== 固定证据（check_evidence_links.sh 要求）
-  world-hex12.png              冻结地图审阅图
-  lap1-paths.png               第1圈路径 vs 轨迹
-  lap2-paths.png               第2圈路径 vs 轨迹
-  vxyz-t.png                   速度/位置时序（历史格式）
-  lio-err-t.png                LIO 误差时序+CDF（历史格式）
+## 四图最佳证据（frozen / s22 / s23 / s24，全部 15/15 + W4 CLEAR）
+final/BEST-fourmap.txt              四图关键数字汇总
+final/sheet-BEST-158a.png           frozen 复现趟（W6 0.220 / Q3 0.163 / P1 0 尖峰 / S1 0.55 s / S2 1）
+final/sheet-BEST-151a.png           frozen（W4 CLEAR +0.077）
+final/sheet-BEST-150s22b.png        s22（W4 CLEAR +0.031；P1 有 1 个 1.49 m 尖峰）
+final/sheet-BEST-152s23b.png        s23（W4 CLEAR +0.014）
+final/sheet-BEST-153s24c.png        s24（W4 CLEAR +0.024；S1 0.10 s）
+final/phase158a-01-01_*.png         158a 全套单图（topdown/timeseries/corner/clearance）
+final/planexec-158a.png             158a P1 规划-执行偏差
+final/handover-audit-158a.png       158a 换段/handover 审计
+final/low-speed-158a.png            158a 低速普查（S1/S2）
 
-== phase9f（历史最佳实飞，1.35 m/s，9f 配置）
-  phase9f-topdown.png          整趟俯视图
-  phase9f-topdown-lap1.png     第1圈
-  phase9f-topdown-lap2.png     第2圈
-  phase9f-topdown-launch.png   起飞段
-  phase9f-xyz-t.png            xyz-t
-  phase9f-vnorm.png            速度2-范数（真值 vs 指令）
-  phase9f-speed-t.png          |v_xy| / |v_z| 时序
-  phase9f-lio-truth.png        LIO/FCU vs 真值误差
-  phase9f-tracking-decomp.png  跟踪=执行+定位分解
-  phase9f-z-t.png              高度：指令/真值/FCU/LIO
-  phase9f-corner-forensics.png 六角点法医（按速度着色，标出最慢点）
-  phase9f-lowspeed-census.png  低速段普查（<0.5 m/s，分类着色）
-  phase9f-corner1-zoom.png     corner1 放大
-  phase9f-corner2-zoom.png     corner2 放大
-  phase9f-corner3-zoom.png     corner3 放大
-  phase9f-corner4-zoom.png     corner4 放大
-  phase9f-corner5-zoom.png     corner5 放大
-  phase9f-corner6-zoom.png     corner6 放大
+## 速度包线证据（hex12w）
+final/sheet-BEST-*（历史保留）      1.35 档历史最佳（140a/144a/120a/121a 等）
+（2.5/3.0 档试验结论见 docs/FLIGHT-ANALYSIS.md §104–§111；对应 run 若已清理，数字保留在文档表格）
 
-== phase23c（当前最佳：9f+ 首次确认；除已知 H2 外 15/15 行通过）
-  phase23c-topdown.png           整趟俯视图
-  phase23c-topdown-lap1.png      第1圈
-  phase23c-topdown-lap2.png      第2圈
-  phase23c-topdown-launch.png    起飞段
-  phase23c-xyz-t.png             xyz-t
-  phase23c-vnorm.png             速度 2-范数（真值 vs 指令）
-  phase23c-speed-t.png           |v_xy| / |v_z|
-  phase23c-lio-truth.png         LIO/FCU vs 真值误差（新增图）
-  phase23c-tracking-decomp.png   跟踪 = 执行 + 定位 分解
-  phase23c-z-t.png               高度：指令/真值/FCU/LIO（W3 bias +0.003）
-  phase23c-corner-forensics.png  六角点法医（按速度着色）
-  phase23c-lowspeed-census.png   低速段普查（<0.5 m/s，分类着色）
-  phase23c-corner{1..6}-zoom.png 每角点放大（含躯干 box + 机身半径环 + 膨胀环 + 净空着色）
-  phase23c-clearance.png         障碍物+机身半径+膨胀环的净空图（青色=自由/红=接触；含 body margin 与 W4 数值）
+## 保留的 .runs（/home/fanxin/sp_runs，21 个）
+phase140a 144a 151a 158a 150s22b 152s23b 153s24c 163a 164a 164b 165a 166a 167a 168a 169a 170a 171a 172a 173b 173c 174b
+（143 个过期 run 及全部 _invalid 已删除；需要时按 docs 里的 tag 重飞）
 
-
-  phase9f-clearance.png          同上（历史最佳趟的对照）
-
-== 机体能力台架
-  bench-1kg-8ms.png             1 kg/250 mm 机体 8 m/s 台架（max 8.34 m/s、8 m/s²、51.6°）
-  bench-pva-8ms.png             1 kg 机体 PVA 跟踪台架（连续调幅正弦，8 m/s 跟踪 p90 0.24 m）
-
-== 最终交付对照（2026-11-27 round 27，docs/evidence/final/）
-  两条路线的代表趟都出了全套图（topdown 整趟/分圈、xyz-t、速度 2-范数、速度标量、角点 zoom、clearance）：
-
-  phase44b-*   A 路线代表（15 行全过、质量最好）：agile + no-retract + PRE_GOAL 0.8，1.35 m/s 档。
-               topdown/laps 见 phase44b_topdown.png / phase44b_laps-lap*.png；
-               xyz-t / vnorm-t / speed-t：phase44b-01-01_-*.png；
-               角点 zoom：phase44b-01-01_corner-1..6.png；净空：phase44b-clearance.png。
-               实测：W4 +0.037、W6 p90 0.259、Q1 1 段、Q3 0.193；角点真值仍会掉到 0.02-0.12 m/s。
-
-  phase66a-*   B 路线代表（全程指令 >=1 m/s、角点真值 5/6 >=0.5 不停车）：corner 1.0 + REF_GOV_MIN 1.0。
-               topdown/laps：phase66a_topdown.png / phase66a_laps-lap*.png；
-               xyz-t / vnorm-t / speed-t：phase66a-01-01_-*.png；
-               角点 zoom：phase66a-01-01_corner-1..6.png；净空：phase66a-clearance.png（含机身半径侵入）。
-               实测：指令 min/p1 1.00 m/s；角点真值 0.56/0.70/0.10/0.68/0.75/0.64；Q3 0.448、Q1 2 段、W4 -0.088 接触。
-
-== A 路线多地图复测（2026-11-27 追加）
-  sheet-A-multimap.png   frozen + s22/s23/s24 四图 topdown+clearance 对照（44 配置原样复跑）
-  sheet-A-77s22.png      s22 全套图（14 图；W4 -0.003、Q2 -0.196、Q3 0.174、Q1 1、Q4 fail）
-  sheet-A-77s23.png      s23 全套图（15/15；W4 +0.003、Q2 -0.188、Q1 0 PASS、Q3 0.234、Q4 fail）
-  sheet-A-77s24.png      s24 全套图（W4 -0.076、Q2 -0.195、Q3 0.223、Q1 1、Q4 fail）
-  单图：docs/evidence/final/phase77s2{2,3,4}-01-01_*（topdown/laps/xyz-t/vnorm/speed/corner1-6）+ phase77s2{2,3,4}-clearance.png
-
-== 新增判据 P1：规划路径 vs 实际执行（2026-11-27，owner 建议）
-  planexec-phase44b.png   P1 PASS 示例（p90 0.235、无 >1.0m 尖峰、几何 p90 0.117）
-  planexec-phase66a.png   P1 FAIL（p90 0.389、4 个 >1.0m 尖峰）
-  planexec-phase81a.png   P1 FAIL（p90 0.367、3 个 >1.0m 尖峰）
-  planexec-phase83a.png   S2 的 NO-RESULT 证据（p90 1.284、40 个 >1.0m 尖峰、峰值 2.86 m）
-  planexec-phase90a.png   plan A 首测（LIO stale 中止前窗口 P1 0.291）
-  复算：python3 scripts/plan_exec.py --tag <run> [--fig out.png]；quality_rows.py 已含 P1 行
-
-== 当前最佳配置四图复测（2026-11-27，44 + REF_ALONG_FLOOR=0.9）
-  sheet-BEST-94a.png     frozen hex12（14/15，角点真值 0.09-0.54，P1 PASS）
-  sheet-BEST-98s22.png   s22（14/15，角点真值 0.42-0.70，P1 PASS）
-  sheet-BEST-98s23.png   s23（15/15，角点真值 0.10-0.70，P1 PASS）
-  sheet-BEST-98s24.png   s24（15/15，角点真值 0.04-0.71，P1 FAIL 1 个 1.29m 尖峰）
-  sheet-BEST-multimap.png 四图 topdown/clearance/P1 对照
-  BEST-fourmap.txt      四图数字表
-  每组另有 15 张单图：docs/evidence/final/phase{94a,98s22,98s23,98s24}-01-01_* + planexec-best-*.png
-
-== 换段/腿起点离线审计（2026-11-27，scripts/handover_audit.py；不飞）
-  handover-audit.png     44b/94a/s22/s23/s24 的 published |v| + 换段(红) + 冻结(橙) + 跳变(紫)
-                         结论：换段 |dv| p50 0.01 / max 0.12 m/s、角度 max 2.5°，**换段几乎不连续**；
-                         掉速发生在每条腿起点后 0.4-0.6 s，伴随短冻结（见 FLIGHT-ANALYSIS §77）
-
-== 当前最佳单趟 phase102a-01-01（44基线+REF-WASHOUT τ2.0/vmax0.15+REF_ALONG_FLOOR=0.9+corner0.9）
-  sheet-BEST-102a.png    全套图 contact sheet（topdown/launch/lap1/lap2/xyz-t/速度/clearance/P1/audit/6角点）
-  phase102a-01-01_topdown.png 等 15 张单图 + planexec-102a.png + handover-audit-102a.png
-  15行 14/15（W4 record-only，owner已批准）；Q1=1、Q3 0.223 PASS、P1 PASS、W6 0.270；角点首访真值 0.53–0.75
-  ⚠ 重复性：同配置复飞 Q3 0.309/0.309、W6 0.313/0.346 —— 该配置是"边缘好趟"，尚未稳定达标（FLIGHT-ANALYSIS §84/§85）
-
-== Phase 1 复测三趟（同配置 44+REF-WASHOUT+floor0.9+corner0.9，干净主机）
-  sheet-BEST-120a.png / sheet-BEST-121a.png / sheet-BEST-122a.png   全套图 contact sheet（各16图）
-  phase120a/121a/122a-01-01_* + planexec-120a/121a/122a.png + handover-audit-*.png + low-speed-*.png
-  120a: Q1=0 PASS, Q3 0.231, P1 PASS, W6 PASS, S1 1.02s, S2 1环4.3s
-  121a: Q1=3, Q3 0.206 PASS, P1 PASS, W6 PASS, S1 0.62s（最好）, S2 2环7.0s
-  122a: Q1=2, Q3 0.277, P1 1.08尖峰, W6 PASS, S1 1.96s, S2 3环13.3s
-
-== 暂停测试时的最佳全套图（2026-11-28 07:30，owner: 暂停测试并汇报）
-  sheet-BEST-158a.png        frozen 复现趟：15/15 + W4 CLEAR +0.046、W6 0.220、Q3 0.163、P1 0 尖峰、Q1 1、S1 0.55s、S2 1
-  sheet-BEST-151a.png        frozen：15/15 + W4 CLEAR +0.077、W6 0.221、Q3 0.163、P1 max 0.59、Q1 1、S1 1.24、S2 2
-  sheet-BEST-150s22b.png     s22：15/15 + W4 CLEAR +0.031、W6 0.239、Q3 0.168、P1 1 个 1.49m 尖峰、Q1 0、S1 0.60、S2 2
-  sheet-BEST-152s23b.png     s23：15/15 + W4 CLEAR +0.014、W6 0.207、Q3 0.156、P1 PASS、Q1 1、S1 0.71、S2 1
-  sheet-BEST-153s24c.png     s24：15/15 + W4 CLEAR +0.024、W6 0.214、Q3 0.168、P1 PASS 0 尖峰、Q1 1、S1 0.10、S2 1
-  最佳配置（冻结）：SUPER_CONFIG=super_planner_hex_hs_cache.yaml; NAV_LEAD_S=0.06; PASS_BY_M=0.6/PASS_BY_LONG_M=1.0;
-    REF_WASHOUT_TAU=2.0/VMAX=0.15; REF_NO_RETRACT=1; REF_ALONG_FLOOR=0.9; GOAL_PVA=1; CORNER_MODE=bisector;
-    CORNER_SPEED=0.9; ARRIVE_M=0.3; PRE_GOAL_M=0.8; REF_Z_OFFSET_M=0.118; REF_Z_HOLD=2.0; REF_Z_TOL=0.005; REF_Z_LATCH_M=1.2;
-    EXTRA_PARMS=guided_limits_bench5_vert_agile.parm
-  速度包线（hex12w/6000点）：1.35 可用；1.5 边际；2.0/2.5 任务能完成但跟踪不合格（Q3 0.76-1.3）→ 架构决策待 owner。
-
+## 其他仍被文档引用的图
+bench-1kg-8ms.png  bench-pva-8ms.png  lap1-paths.png  lap2-paths.png  lio-err-t.png
+phase23c-*.png  final/sheet-A-*.png  final/sheet-BEST-94a/98s2x/102a/120a/121a/122a.png
+final/phase44b_*.png  final/planexec-phase44b/66a/81a/83a/90a/102a.png  final/pipeline-target.png

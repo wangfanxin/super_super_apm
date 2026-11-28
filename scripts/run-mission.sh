@@ -502,8 +502,8 @@ else
     BRIDGE_FIELDS="${BRIDGE_FIELDS:-pos}"
 fi
 case "$BRIDGE_FIELDS" in
-    pos|posvel|posvelacc|vel|velacc) ;;
-    *) echo "BRIDGE_FIELDS='$BRIDGE_FIELDS' -- use pos, posvel, posvelacc, vel or velacc" >&2; exit 4 ;;
+    pos|posvel|posvelacc) ;;
+    *) echo "BRIDGE_FIELDS='$BRIDGE_FIELDS' -- use pos, posvel or posvelacc" >&2; exit 4 ;;
 esac
 BRIDGE_ARGS="--fields $BRIDGE_FIELDS ${BRIDGE_ARGS:-}"
 # THE FCU'S OWN ESTIMATE ON A TOPIC, but only when the Route B contract is in use: `fcu_pose_feed` converts it

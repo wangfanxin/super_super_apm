@@ -1234,7 +1234,7 @@ P1 PASS（p90 0.226、无 >1.0 m 尖峰）；角点 cmd 最低 0.25–0.72、**�
 - **8 m/s 必须达成**，10 m/s 尝试即可。
 
 **Phase 5（可选）**：MPPI/MPC 作为 PVA 生成器 A/B；只有当 Phase 1 的连续化在本轮预算内做不成时，
-才启用"Follower（备选）"作为兜底（触发条件与判据写在 `docs/NAV2-THIN-LAYER.md`）。
+才启用"Follower（备选）"作为兜底（触发条件与判据写在 `docs/PIPELINE.md` 的 Nav2 附录）。
 
 ### 77.4 需要 owner 确认的决策点（**2026-11-27 owner 已全部批准**）
 1. 批准 **SUPER 内部**加 goal queue / 旧角点 guide（不改外部接口、不加 via 话题）——**已批准**；
@@ -2269,3 +2269,45 @@ bridge 在"几乎静止"时回退 posvelacc（否则起飞/悬停失去高度控
 **尚未**：Q4 角点 vmin 0.17–0.39 / dwell 3.51–3.65 未过；158a 末腿 4.7 s 绕圈（末目标 0.3 m 收敛）；
 153c 3.1 s 参考卷曲（换目标）；s22 1 个 1.49 m P1 尖峰；W4/Q2 仍 record-only；Phase-2 的 p90≥1.6 在 1.35 档不可达（实测 1.44–1.50，需按档重订）。
 结论：**1.35 主指标达标但不完美，剩 5 个语义/质量收尾点。**
+
+## 112. round 31：代码/空间/文档清理 + 换目标时"未执行路径"的代码级答案（2026-11-28）
+
+### 112.1 清理清单（owner 指示）
+**代码（过期/无效块）**
+- 删除 A 分支（速度层）全部实现：plan-box `--vel-layer*`、bridge `BRIDGE_FIELDS=vel|velacc`、
+  `VEL_ACC_YAW_MASK`/hybrid fallback、launcher 白名单、wrapper 参数、`scripts/vel_layer_replay.py`；
+  **默认控制层级回到唯一路径 xva(PVA)→PSC**；
+- 删除被否决的 parm 变体（fast/vel52/agile5/pos24/pos35 等 23 个未引用文件）与 26 个一次性 planner 配置
+  （保留：`super_planner_hex_hs_cache.yaml`（当前最佳）、`super_planner_hex_w.yaml`（大世界地图尺寸）、
+  `super_planner_hex_hs3w.yaml`（3 m/s 下一阶段）、`super_planner_hex.yaml/fast.yaml` 等基础档）；
+- 删除 8 个未引用/失效脚本（`check_flight_rtf.py`、`jerk_check.sh`、`lio_*.sh` 组、`show_pacer2.sh`）；
+  保留通用分析工具（`make_contact_sheet.py` 等）。
+**空间**
+- `.runs`：18 GB → **2.8 GB**（143 个过期 run 目录删除；保留 21 个：四图最佳 5、历史最佳 2、hex12w/速度实验 8、A 分支 3、最新验证 3）；
+- `docs/evidence`：328 MB → **66 MB**（788 个未被文档引用的旧图删除；保留四图/最佳/被引用的 76 个）。
+**文档**
+- `docs/` 5 篇 → **4 篇**：把 `NAV2-THIN-LAYER.md`（306 行）合并进 `PIPELINE.md` 作为"Nav2 对照调研"附录并删除原文件，
+  同步修正 README/FLIGHT-ANALYSIS 里的引用；`INDEX.txt` 重写为"当前证据索引"（含保留 run 清单）。
+
+### 112.2 换目标时，上一轮"未执行路径"算进下一次起始了吗？——不算
+代码路径（`fsm.cpp` / `super_planner.cpp`）：
+1. **goal 回调**：`setGoalPosiAndYaw/PVA` 只设 `gi_.new_goal=true`，不继承旧轨迹；
+2. **DEFER-HANDOVER（patch 19）**：换目标时若旧 committed 轨迹还剩 0.08–2.0 s，
+   **先飞完旧轨迹**（153s24c 日志里两次：剩余 0.6538 s / 0.133 s），然后 FSM 进入 `GENERATE_TRAJ`；
+3. **新轨迹的初始条件**：`generateExpTraj` 在 `last_exp_traj_info` 为空的分支里做 rest2rest：
+   `pos_init_state.col(0)=local_start_p_`（实测位置附近的最近自由格）+ `col(1)=robot_state_.v`、
+   `col(2)=robot_state_.a`（GENERAL-BC，实测速度/加速度）——**旧路径剩余段不作为路径/引导/起始点**；
+4. 只有"同一目标、轨迹仍有效时的 replan"才走 `last_exp_traj_info` 非空分支：用旧轨迹在 replan 时刻的
+   **参考状态**作为新轨迹起点（拼接），但目标变化时通常已被 DEFER 拦截。
+→ **结论：未执行旧路径既不会被算作下一次起始，也不会作为新规划的引导点；它要么被飞完（DEFER），
+要么整体丢弃**。换目标处的不连续来自：新 MINCO + 新 A* guide 从**实测状态**重新起步（方向/曲率与旧转弯无关），
+以及 washout/goal_pva 的偏移，而不是"把旧路径算进了起点"。
+
+### 112.3 修复"换目标不连贯"的三条实现路径（下一步，按代价排序）
+1. **参考状态拼接**（最小改动）：goal 变化时不从实测状态起步，而用旧 committed 轨迹在切换时刻的
+   `(p_ref, v_ref, a_ref)` 作为新 MINCO 的初始条件；实测落后量交给 washout 补齐 → 轨迹方向连续，不再"往回卷"；
+2. **旧轨迹热启动**：把旧轨迹剩余 0.3–0.8 s 的采样点作为新轨迹 MINCO 的初始控制点 / 新 A* 的初始方向约束，
+   避免 A* 重新搜索出绕行路径（对应 153s24c 的参考卷曲）；
+3. **Through-poses（彻底）**：plan-box 一次发当前+下一个角点，SUPER 规划一条穿越多点的 committed 轨迹，
+   换目标只做 pass-by 记账（真正的 Nav2 `NavigateThroughPoses`）。
+→ 先做 1+2（改动小、可快速 A/B），若仍不够再做 3。
