@@ -41,7 +41,7 @@ super_planner:
   use_fov_cut: false
   print_log: false   # [改] 调参期打开，验收时关掉
   visual_process: false
-  frontend_in_known_free: false
+  frontend_in_known_free: true
   goal_yaw_en: false            # [改] 航点不给 yaw，让它按速度方向
   # ★ goal_vel_en: false ★ —— 开过一次，实测更差，退回 ★
   #   上游开关（super_planner.cpp:727-729）：目标在 planning_horizon/2 以外时，把轨迹终点的速度设成
@@ -249,7 +249,7 @@ astar:
 rog_map:
   resolution: 0.05
   inflation_resolution: 0.1
-  inflation_step: 2   # ★第 88 轮用户指定 = 2★ 地图按 0.1 × 2 = **0.2 m** 膨胀（第 83-87 轮是 1 = 0.1 m）。
+  inflation_step: 3   # ★第 88 轮用户指定 = 2★ 地图按 0.1 × 2 = **0.2 m** 膨胀（第 83-87 轮是 1 = 0.1 m）。
                       #   依据（第 88 轮实测）：两趟达标飞行的**规划**最小柱面净空只有 +0.014 / +0.100 m，
                       #   而跟踪残差是 p50 0.14 / p90 0.34 m ⇒ 净空比残差小一个量级，W4 擦碰是**结构性**的，
                       #   不是跟踪坏。抬到 0.2 m 让规划自己先留出这个量。
@@ -261,7 +261,7 @@ rog_map:
                       #   上游 static_dense/forest_15m 是 3（0.3 m），click_smooth 是 2；
                       #   第 79/80 轮曾用 0（那时格子 0.8 m，0.3 m 膨胀会把通道挤没）。
   unk_inflation_en: false
-  unk_inflation_step: 0
+  unk_inflation_step: 2
   map_size: [ 24, 24, 6 ]
   fix_map_origin: [ 0, 0, 2.0 ]
   frontier_extraction_en: false

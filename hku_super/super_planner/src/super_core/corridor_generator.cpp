@@ -31,7 +31,8 @@ namespace super_planner {
                                          const rog_map::ROGMapROS::Ptr &map_ptr, const double bound_dis,
                                          const double seed_line_max_dis, const double min_overlap_threshold,
                                          const double virtual_groud_height, const double virtual_ceil_height,
-                                         const double robot_r, const int box_search_skip_num, const int iris_iter_num)
+                                         const double robot_r, const int box_search_skip_num, const int iris_iter_num,
+                                         const bool unknown_as_occ)
             : ros_ptr_(ros_ptr), map_ptr_(map_ptr) {
         ciri_ = std::make_shared<CIRI>(ros_ptr_);
         ciri_->setupParams(robot_r, iris_iter_num);
@@ -41,6 +42,7 @@ namespace super_planner {
         robot_r_ = robot_r;
         box_search_skip_num_ = box_search_skip_num;
         iris_iter_num_ = iris_iter_num;
+        unknown_as_occ_ = unknown_as_occ;
         virtual_ceil_height_ = virtual_ceil_height - robot_r;
         virtual_groud_height_ = virtual_groud_height + robot_r;
 //        failed_traj_log.open(DEBUG_FILE_DIR("sfc.csv"), std::ios::out | std::ios::trunc);
@@ -211,6 +213,16 @@ namespace super_planner {
         // TODO the box did not consider the robot_r
         map_ptr_->boundBoxByLocalMap(box_min, box_max);
         map_ptr_->boxSearch(box_min, box_max, OCCUPIED, pc);
+        if (unknown_as_occ_) {
+            vec_E<Vec3f> upc;
+            map_ptr_->boxSearch(box_min, box_max, UNKNOWN, upc);
+            pc.insert(pc.end(), upc.begin(), upc.end());
+        }
+        if (unknown_as_occ_) {
+            vec_E<Vec3f> upc;
+            map_ptr_->boxSearch(box_min, box_max, UNKNOWN, upc);
+            pc.insert(pc.end(), upc.begin(), upc.end());
+        }
         box_min.z() += robot_r_;
         box_max.z() -= robot_r_;
         MatD4f planes;

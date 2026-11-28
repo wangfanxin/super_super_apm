@@ -57,6 +57,11 @@ namespace super_planner {
         double robot_r_;
         int box_search_skip_num_;
         int iris_iter_num_;
+        /// WHTF-SFC-UNKNOWN (2026-11-28): when true, UNKNOWN cells inside the seed bbox are fed to CIRI as
+        /// obstacles too.  The A* already treats unknown as occupied when frontend_in_known_free=true, but
+        /// CIRI only looked at OCCUPIED cells -- so a corridor could still extend through not-yet-observed
+        /// space and MINCO could cut through the pillar that is later revealed there (Q2/W4 contacts).
+        bool unknown_as_occ_{false};
         double virtual_groud_height_ = 0.0;
         double virtual_ceil_height_ = 0.0;
         rog_map::ROGMapROS::Ptr map_ptr_;
@@ -84,7 +89,8 @@ namespace super_planner {
                           const double virtual_ceil_height,
                           const double robot_r,
                           const int box_search_skip_num,
-                          const int iris_iter_num);
+                          const int iris_iter_num,
+                          const bool unknown_as_occ = false);
 
         ~CorridorGenerator() = default;
 

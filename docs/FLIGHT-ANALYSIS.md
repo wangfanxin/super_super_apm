@@ -3154,3 +3154,34 @@ FSM 的 goal 消息带 via 列表；参考状态拼接沿用。SUPER 里已有 `
    若有而地图仍缺 → RO G-map 更新/射线 free-carve 的问题，需要查 updater；
 3. 根据原因决定修复：传感器覆盖（不能改 SPEC 安装，但可改 map 更新策略/保守化）或 map 更新 bug；
 4. 修复前保持 180d 为最佳（完美候选 1/2）。
+
+## 136. round 53：保守建图实验（184g）与"修改方案有效性总账"（2026-11-28）
+
+### 136.1 184g（corridor 也把 UNKNOWN 当障碍；safe 配置：inf3 + unk_inflate2 + frontend known-free + clrlog）
+- **15 行全过**（H6 max 86.5 ms）、W4 **+0.017 CLEAR**、W1b 13/13、Q1=0、Q3 0.189、P1 PASS（1 个 0.69 尖峰）、
+  S2 2 环/3.4 s、handover 13/13、**PlanFromRest failed 0**（CIRI 在 unknown-as-occ 下仍能规划）；
+- 但 **Q2 −0.083 FAIL**、Q4 c1/c3 vmin FAIL、S1 2.65 s、TRAJ-CLEARANCE 0 命中。
+- 结论：保守建图能改善 W4（点净空转正），但**不能修 Q2（body-radius 净空）**；代价是 Q4/S1 变差。
+
+### 136.2 修改方案有效性总账（2026-11-28 全部）
+| 方案 | 类型 | 有效？ | 证据 |
+|---|---|---|---|
+| 度量修复（W4 全速率/S1 END/S2 多尺度/R2R 分类/H6 起降窗） | 评测 | **有效** | 177b 被判 CONTACT；180d 可判完美候选 |
+| item2：backup 真生效（不再截断 committed） | 机制 | **有效（部分）** | 180a/180b 腿中段 rest2rest 从 1–7 降到 **0**；Q1=0 |
+| item3：普通 replan 恢复整段 guide / new_goal 前缀解耦 | 机制 | 代码生效，飞行未改善 | REPLANDBG split=12 已证实；R1' 仍失败 |
+| item4：心跳锁 / PVA 终端仅 connected / 配置副本同步 | 稳定性 | **有效** | 无崩溃、handover policy 正确加载 |
+| R1'（提前推进+clamp+resync） | 换目标 | **无效** | 181f 有效飞行 handover 3/9、leg2 切角 2.86 m→40 s 超时 |
+| C++ via-1（goal 带 via+A* 两段） | 换目标 | **无效** | 181h 崩溃（已修）、181i 有效飞行 handover 8/12：**guide 过 via ≠ reference 过 via**（MINCO 平滑掉顶点） |
+| robot_r 0.15 / 0.20 | 规划净空 | **无效/更差** | Q2 −0.048/−0.108；r20 导致 W4 CONTACT、PlanFromRest failed 383 |
+| inflation_step 3（0.3 m 膨胀壳） | 建图保守 | W4 改善、**Q2 无效** | 184d 15 行全过、W4 CLEAR，Q2 −0.048 FAIL |
+| unk_inflation_step=1 + frontend known-free | 建图保守 | W4 改善、**Q2 无效** | 184b W4 −0.014（改善）、Q2 −0.114 |
+| LIDAR_POINTS=15000 | 感知密度 | **无效** | 184f H6 失效、W4 −0.062、Q2 −0.162 |
+| corridor UNKNOWN 当障碍 | 建图保守 | W4 转正、**Q2 无效** | 184g W4 +0.017、Q2 −0.083、Q4 变差 |
+| 参考曲率限速 / 跟踪误差分解 | — | **未实现**（下一步） | — |
+
+### 136.3 当前最佳（保留）
+- **180d**：15 行全过、W4 +0.084 CLEAR、**Q2 −0.016 PASS**、Q4 全过、Q1=0、S2 1 环/3.5 s、handover 13/13
+  → 满足完美定义（除"连续 2 趟"与 R2R full-leg 计数）；证据 `sheet-BEST-180d.png`。
+- 次佳：180b（15 行全过，Q2 −0.039/Q4 c3 FAIL）、184g（15 行全过、W4 CLEAR、Q2 −0.083）。
+- **Q2/W4 未解**：参考轨迹在 (7.75,3.54) 窄缝处仍会贴近/穿过柱体；已排除 robot_r/膨胀/密度/CIRI 单一因素；
+  离线 raycast 证实该柱在 t≈48–52 s 可被雷达看到，但规划时刻（更早、被遮挡）地图仍缺该柱 → **遮挡/建图时序** 是剩余嫌疑。

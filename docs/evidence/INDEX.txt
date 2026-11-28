@@ -8,13 +8,12 @@ GOAL_PVA=1 CORNER_MODE=bisector CORNER_SPEED=0.9 ARRIVE_M=0.3 PRE_GOAL_M=0.8
 REF_Z_OFFSET_M=0.118 REF_Z_HOLD=2.0 REF_Z_TOL=0.005 REF_Z_LATCH_M=1.2
 EXTRA_PARMS=guided_limits_bench5_vert_agile.parm
 
-## 当前最优（2026-11-28，round49）
-final/sheet-BEST-180d.png    完美候选（1/2 趟）：**15 行全过**、W4 CLEAR +0.084、Q2 **−0.016 PASS**、Q4 全过、
-                             Q1=0、Q3 0.161、W6 0.226、P1 PASS(max 0.496)、S1 0.83 s、S2 1 环/3.5 s(c1)、
-                             handover 13/13；R2R 14（defer 78，classes pad2/corner11/mid0/chase1）
+## 当前最优（2026-11-28，round53）
+final/sheet-BEST-180d.png    完美候选（1/2 趟）：15 行全过、W4 +0.084 CLEAR、Q2 **−0.016 PASS**、Q4 全过、
+                             Q1=0、Q3 0.161、W6 0.226、P1 PASS(max 0.496)、S1 0.83 s、S2 1 环/3.5 s、handover 13/13
 final/phase180d-01-01_*.png  180d 全套单图；planexec-180d / handover-audit-180d / low-speed-180d
-final/sheet-BEST-180b.png    第 1 候选（15 行全过但 Q2 −0.039 / Q4 c3 FAIL）
-说明：Q2/W4 是窄缝跟踪误差主导；robot_r 0.15/0.20 的 A/B（182a/183a）被否决并删除配置。
+final/sheet-BEST-180b.png    15 行全过但 Q2 −0.039/Q4 c3 FAIL
+（round53 实验：184b/184d/184e/184g 为保守建图 A/B；184a/184c/184f 无效入 _invalid）
 
 ## 四图最佳证据（frozen / s22 / s23 / s24，全部 15/15 + W4 CLEAR）
 final/BEST-fourmap.txt              四图关键数字汇总
