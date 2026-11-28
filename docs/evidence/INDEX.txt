@@ -8,6 +8,13 @@ GOAL_PVA=1 CORNER_MODE=bisector CORNER_SPEED=0.9 ARRIVE_M=0.3 PRE_GOAL_M=0.8
 REF_Z_OFFSET_M=0.118 REF_Z_HOLD=2.0 REF_Z_TOL=0.005 REF_Z_LATCH_M=1.2
 EXTRA_PARMS=guided_limits_bench5_vert_agile.parm
 
+## 当前最优（2026-11-28，defer 基线）
+final/sheet-BEST-177b.png    15/15、W4 CLEAR +0.006、W6 0.231、Q3 0.157、P1 PASS(max 0.665)、Q1 1、S1 1.09 s、S2 3 环/10.1 s
+final/phase177b-01-01_*.png  全套单图（topdown/laps/timeseries/corner/clearance）
+final/planexec-177b.png      P1 规划-执行偏差
+final/handover-audit-177b.png 换段/handover 审计
+final/low-speed-177b.png     S1/S2 普查
+
 ## 四图最佳证据（frozen / s22 / s23 / s24，全部 15/15 + W4 CLEAR）
 final/BEST-fourmap.txt              四图关键数字汇总
 final/sheet-BEST-158a.png           frozen 复现趟（W6 0.220 / Q3 0.163 / P1 0 尖峰 / S1 0.55 s / S2 1）

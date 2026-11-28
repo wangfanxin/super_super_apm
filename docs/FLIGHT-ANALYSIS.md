@@ -2551,3 +2551,20 @@ A 臂 = `hs_cache`（handover=defer，默认）；B 臂 = `hs_splice`（handover
 2. c1/c2 角点钩形：离线比对钩形窗口的 `PLANDBG`（goal 切换时刻）与 `LEADER/LEGDBG`，再决定是
    pass-by 方位、corner 出口方向还是 yaw 参考的问题（不盲目改参数）；
 3. 然后回到 owner 指定的 **PVA 3 m/s**（hex12w + 6000 点）与 SITL PID 辨识。
+
+## 118. 当前最优（2026-11-28 13:30）：defer 基线 177b
+
+**配置（冻结）**：`SUPER_CONFIG=super_planner_hex_hs_cache.yaml`（handover=defer）、`NAV_LEAD_S=0.06`、
+`PASS_BY_M=0.6/PASS_BY_LONG_M=1.0`、`REF_WASHOUT_TAU=2.0/VMAX=0.15`、`REF_NO_RETRACT=1`、`REF_ALONG_FLOOR=0.9`、
+`GOAL_PVA=1`、`CORNER_MODE=bisector`、`CORNER_SPEED=0.9`、`ARRIVE_M=0.3`、`PRE_GOAL_M=0.8`、
+`REF_Z_OFFSET_M=0.118/REF_Z_HOLD=2.0/REF_Z_TOL=0.005/REF_Z_LATCH_M=1.2`、
+`EXTRA_PARMS=guided_limits_bench5_vert_agile.parm`；**不启用** final-arrive / yaw gate（这两项尚未证明稳定）。
+
+**177b 数字**：15/15、**W4 CLEAR +0.006**、W2 p90 1.48、W6 0.231、Q3 0.157、**P1 PASS（max 0.665，无 >1 m）**、
+Q1 1（0.47 s @(7.4,3.9)）、S1 1.09 s、S2 3 环/10.1 s（c1/c2 真值钩形 + 末段参考环）。
+复现趟 177c：15/15、W4 CLEAR +0.008、W6 0.241、Q3 0.154、P1 PASS、Q1 2、S1 2.70、S2 4 环/12.1 s。
+
+**全套图**（`docs/evidence/final/`）：
+- `sheet-BEST-177b.png`（16 图汇总）、`phase177b-01-01_topdown.png`、`phase177b-01-01_laps.png`、
+  `phase177b-01-01_timeseries*.png`、`phase177b-01-01_corner*.png`、`planexec-177b.png`、
+  `handover-audit-177b.png`、`low-speed-177b.png`、clearance 图（`phase177b-01-01_clearance.png`）。
